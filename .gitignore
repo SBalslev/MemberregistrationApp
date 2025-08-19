@@ -1,0 +1,56 @@
+# Gradle
+.gradle/
+build/
+*/build/
+
+# Android Studio/IntelliJ
+*.iml
+.idea/
+app/src/main/.idea/
+
+# Local configuration
+local.properties
+keystore.properties
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Android/NDK intermediates
+.externalNativeBuild/
+.cxx/
+
+# Logs
+*.log
+
+# Artifacts
+*.apk
+*.aab
+*.ap_
+
+# Keystores (never commit private keys)
+*.keystore
+*.jks
+
+# Firebase/Google services (if used)
+google-services.json
+
+# Misc
+captures/
+out/
+
+# Temporary/accidental wrapper directory
+wrapper_tmp/
+temp.wrapper.*
+
+# Kotlin/Java compiled
+*.class
+
+# Sensitive data files
+# Ignore any members_import.csv regardless of path
+members_import.csv
+**/members_import.csv
+
+# Ignore local import data folder but keep a placeholder
+imports/*
+!imports/.gitkeep

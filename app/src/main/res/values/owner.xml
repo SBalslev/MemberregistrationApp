@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ownership and legal metadata -->
+    <string name="owner_name">ISS Skydning Registrering</string>
+    <string name="owner_email">owner@example.com</string>
+    <string name="owner_website">https://example.com</string>
+    <string name="terms_url">https://example.com/terms</string>
+    <string name="privacy_url">https://example.com/privacy</string>
+    <string name="license_text">Proprietary — All rights reserved © 2025 ISS Skydning Registrering</string>
+</resources>

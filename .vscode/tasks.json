@@ -1,0 +1,35 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build • Install • Launch (Debug)",
+			"type": "shell",
+			"command": "pwsh -NoLogo -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\runDebug.ps1\"",
+			"isBackground": false,
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Assemble Debug (check UI changes)",
+			"type": "shell",
+			"command": "./gradlew.bat :app:assembleDebug --stacktrace",
+			"isBackground": false,
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Assemble Debug (check UI changes)",
+			"type": "shell",
+			"command": "./gradlew.bat :app:assembleDebug --stacktrace",
+			"isBackground": false,
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		}
+	]
+}
