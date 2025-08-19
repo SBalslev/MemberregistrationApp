@@ -3,6 +3,7 @@
 Thanks for your interest in contributing. This repo aims for a small, friendly, and pragmatic vibe.
 
 ## Ground rules (the vibe)
+- Docs are never optional: update SPEC.md, README.md, and CHANGELOG.md with any behavior or UI change.
 - Keep PRs small and focused; prefer iterative improvements over big-bang changes.
 - Favor clarity over cleverness. Prefer explicit names and simple flows.
 - User-facing text is Danish; keep it short, clear, and consistent.
@@ -36,7 +37,7 @@ Thanks for your interest in contributing. This repo aims for a small, friendly, 
 - Builds locally (`./gradlew :app:assembleDebug`).
 - No sensitive files committed (CSV, keystore, local.properties).
 - UI labels are Danish and accessible at large font sizes.
-- Docs updated when behavior changes (README/SPEC/CHANGELOG).
+- Docs updated when behavior changes (README, SPEC, and CHANGELOG entry).
 - Screenshots/GIFs for UI tweaks (optional but helpful).
 
 ## Tests (as feasible)
