@@ -59,37 +59,69 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
 
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Eksport", style = MaterialTheme.typography.titleMedium)
+                Text("Eksport (forhåndsvisning)", style = MaterialTheme.typography.titleMedium)
+                // Export action buttons
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { scope.launch { membersCsv = csvService.exportMembers() } }) {
                             Icon(Icons.Default.FileDownload, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Eksporter medlemmer (forhåndsvisning)")
+                            Text("Medlemmer")
                         }
+                        if (membersCsv != null) OutlinedButton(onClick = { membersCsv = null }) { Text("Ryd") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { scope.launch { sessionsCsv = csvService.exportSessions() } }) {
                             Icon(Icons.Default.FileDownload, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Eksporter skydninger")
+                            Text("Skydninger")
                         }
+                        if (sessionsCsv != null) OutlinedButton(onClick = { sessionsCsv = null }) { Text("Ryd") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { scope.launch { checkInsCsv = csvService.exportCheckIns() } }) {
                             Icon(Icons.Default.FileDownload, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Eksporter check-ins")
+                            Text("Check-ins")
                         }
+                        if (checkInsCsv != null) OutlinedButton(onClick = { checkInsCsv = null }) { Text("Ryd") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { scope.launch { scanEventsCsv = csvService.exportScanEvents() } }) {
                             Icon(Icons.Default.FileDownload, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Eksporter scanninger")
+                            Text("Scanninger")
+                        }
+                        if (scanEventsCsv != null) OutlinedButton(onClick = { scanEventsCsv = null }) { Text("Ryd") }
+                    }
+                }
+                // Previews
+                fun PreviewBlock(label: String, content: String?) {
+                    if (content == null) return
+                    val lines = content.lineSequence().toList()
+                    val count = if (lines.isNotEmpty()) lines.size - 1 else 0 // minus header
+                    var expanded by remember(label) { mutableStateOf(false) }
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                Text("$label ($count rækker)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Skjul" else "Vis") }
+                            }
+                            if (expanded) {
+                                val preview = if (lines.size <= 21) lines else lines.take(20) + listOf("…(${lines.size - 20} flere)")
+                                Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)) {
+                                    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        preview.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+                PreviewBlock("Medlemmer", membersCsv)
+                PreviewBlock("Skydninger", sessionsCsv)
+                PreviewBlock("Check-ins", checkInsCsv)
+                PreviewBlock("Scanninger", scanEventsCsv)
             }
         }
 
@@ -100,20 +132,20 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
                 Text("Gem / del", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
-                        scope.launch { val f = exporter.saveCsv("members", csvService.exportMembers()); Toast.makeText(context, "Gemt ${'$'}{f.name}", Toast.LENGTH_SHORT).show() }
+                        scope.launch { val f = exporter.saveCsv("members", csvService.exportMembers()); Toast.makeText(context, "Gemt ${f.name}", Toast.LENGTH_SHORT).show() }
                     }) { Text("Medlemmer") }
                     Button(onClick = { scope.launch { val f = exporter.saveCsv("members", csvService.exportMembers()); context.startActivity(exporter.shareIntent(f)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { scope.launch { val f = exporter.saveCsv("sessions", csvService.exportSessions()); Toast.makeText(context, "Gemt ${'$'}{f.name}", Toast.LENGTH_SHORT).show() } }) { Text("Skydninger") }
+                    Button(onClick = { scope.launch { val f = exporter.saveCsv("sessions", csvService.exportSessions()); Toast.makeText(context, "Gemt ${f.name}", Toast.LENGTH_SHORT).show() } }) { Text("Skydninger") }
                     Button(onClick = { scope.launch { val f = exporter.saveCsv("sessions", csvService.exportSessions()); context.startActivity(exporter.shareIntent(f)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { scope.launch { val f = exporter.saveCsv("checkins", csvService.exportCheckIns()); Toast.makeText(context, "Gemt ${'$'}{f.name}", Toast.LENGTH_SHORT).show() } }) { Text("Check-ins") }
+                    Button(onClick = { scope.launch { val f = exporter.saveCsv("checkins", csvService.exportCheckIns()); Toast.makeText(context, "Gemt ${f.name}", Toast.LENGTH_SHORT).show() } }) { Text("Check-ins") }
                     Button(onClick = { scope.launch { val f = exporter.saveCsv("checkins", csvService.exportCheckIns()); context.startActivity(exporter.shareIntent(f)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { scope.launch { val f = exporter.saveCsv("scanevents", csvService.exportScanEvents()); Toast.makeText(context, "Gemt ${'$'}{f.name}", Toast.LENGTH_SHORT).show() } }) { Text("Scanninger") }
+                    Button(onClick = { scope.launch { val f = exporter.saveCsv("scanevents", csvService.exportScanEvents()); Toast.makeText(context, "Gemt ${f.name}", Toast.LENGTH_SHORT).show() } }) { Text("Scanninger") }
                     Button(onClick = { scope.launch { val f = exporter.saveCsv("scanevents", csvService.exportScanEvents()); context.startActivity(exporter.shareIntent(f)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
             }
@@ -134,7 +166,7 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
                                 "scanevents" to csvService.exportScanEvents()
                             )
                             val zip = exporter.saveZip(bundle)
-                            Toast.makeText(context, "Gemt ${'$'}{zip.name}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Gemt ${zip.name}", Toast.LENGTH_SHORT).show()
                         }
                     }) { Icon(Icons.Default.Archive, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Gem ZIP") }
                     Button(onClick = {
