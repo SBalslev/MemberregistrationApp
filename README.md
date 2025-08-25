@@ -39,7 +39,7 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`
 - Ready screen split view: camera preview uses top half; bottom half shows a compact multi-discipline leaderboard in two columns. For each classification, shows the 3 most recent sessions. Empty groups and disciplines are hidden. Quick toggle to switch front/rear camera (buttons labeled “Front” / “Bagside”).
 	- A banner between camera and leaderboard instructs: “Hold dit medlemskort foran kameraet for at scanne”.
 - CSV: Import members with dedupe/overwrite rules; export all tables; ZIP share with manifest rows per file.
-- Admin Mode (Attendant): 4-digit PIN unlock; auto re-lock after inactivity.
+- Admin Mode (Attendant): 4-cifret PIN (standard 3715, kan ændres i admin-menuen) med automatisk relock efter inaktivitet.
 	- Shortcut: scanning membership ID 99000009 on the Ready screen auto-unlocks Admin and opens the Admin menu.
 
 ## Notes

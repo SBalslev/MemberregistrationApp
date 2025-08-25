@@ -73,6 +73,7 @@ fun AttendantMenuScreen(
     var showAbout by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var manualId by remember { mutableStateOf("") }
+    var showChangePin by remember { mutableStateOf(false) }
     val activeMembers by adminVm.activeMembers.collectAsState(initial = emptyList())
     val filtered = remember(query, activeMembers) {
         if (query.isBlank()) activeMembers else activeMembers.filter {
@@ -196,6 +197,11 @@ fun AttendantMenuScreen(
                             Icon(Icons.Default.Info, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text("Om")
+                        }
+                        Button(onClick = { attendant.registerInteraction(); showChangePin = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                            Icon(Icons.Default.Lock, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Skift PIN")
                         }
                         Spacer(Modifier.weight(1f))
                     }
@@ -378,6 +384,38 @@ fun AttendantMenuScreen(
                         Text("ISS Skydning Registrering")
             Text("© 2025 Balslev.biz (CVR 32402402)")
             Text("Licens: MIT – fri brug, kopiering og ændring med angivelse af ophavsret og licens.")
+                    }
+                }
+            )
+        }
+        if (showChangePin) {
+            AlertDialog(
+                onDismissRequest = { showChangePin = false },
+                confirmButton = {},
+                title = { Text("Skift PIN") },
+                text = {
+                    var oldPin by remember { mutableStateOf("") }
+                    var newPin by remember { mutableStateOf("") }
+                    var newPin2 by remember { mutableStateOf("") }
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(oldPin, onValueChange = { if (it.length <=4 && it.all(Char::isDigit)) oldPin = it }, label = { Text("Nuværende PIN") }, singleLine = true)
+                        OutlinedTextField(newPin, onValueChange = { if (it.length <=4 && it.all(Char::isDigit)) newPin = it }, label = { Text("Ny PIN") }, singleLine = true)
+                        OutlinedTextField(newPin2, onValueChange = { if (it.length <=4 && it.all(Char::isDigit)) newPin2 = it }, label = { Text("Gentag ny PIN") }, singleLine = true)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            TextButton(onClick = { showChangePin = false }) { Text("Annuller") }
+                            val enabled = oldPin.length==4 && newPin.length==4 && newPin == newPin2
+                            Button(onClick = {
+                                attendant.registerInteraction()
+                                val ok = attendant.changePin(oldPin, newPin)
+                                if (ok) {
+                                    scope.launch { snack.showSnackbar("PIN opdateret") }
+                                    showChangePin = false
+                                } else {
+                                    scope.launch { snack.showSnackbar("Kunne ikke skifte PIN") }
+                                }
+                            }, enabled = enabled) { Text("Gem") }
+                        }
+                        Text("Standard-PIN er 3715 første gang.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     }
                 }
             )

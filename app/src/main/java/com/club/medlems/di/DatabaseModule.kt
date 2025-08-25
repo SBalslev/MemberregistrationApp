@@ -56,5 +56,5 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun attendantManager(scope: CoroutineScope) = AttendantModeManager(scope)
+    fun attendantManager(scope: CoroutineScope, @ApplicationContext context: Context) = AttendantModeManager(scope, context)
 }

@@ -14,7 +14,7 @@ Self‑service kiosk Android app for a shooting club that lets members instantly
 
 Modes:
 - Kiosk Mode (default): Locked UI, large touch targets, camera auto-active, no destructive actions.
-- Attendant Mode (UI: Admin): Unlocked via 4-digit PIN (plain stored MVP), auto re-lock after 60s inactivity. Also supports auto-unlock when scanning a special attendant badge (see §3.11).
+- Attendant Mode (UI: Admin): Unlocked via 4-digit PIN (default 3715 on first launch, stored hashed in SharedPreferences). PIN can be changed in the Admin menu. Auto re-lock after 60s inactivity. Also supports auto-unlock when scanning a special attendant badge (see §3.11).
 
 ## 3. Core User Flows (MVP)
 ### 3.1 First Scan of Day
@@ -175,7 +175,7 @@ Mine resultater (bottom sheet):
 | Leaderboard | None (empty states) | Display friendly empty state text |
 
 ## 7. Security (MVP)
-- 4-digit PIN stored plain (SharedPreferences). Auto re-lock after 60s inactivity in attendant UI.
+- 4-digit PIN stored hashed (SHA-256, unsalted MVP) in SharedPreferences; default seeded to 3715 on first launch. Auto re-lock after 60s inactivity in attendant UI.
 - Programmatic unlock path: scanning special attendant badge `99000009` triggers an immediate unlock (no PIN) and navigates to Admin. This does not write any data.
 - Unlimited attempts (flagged risk). Phase 2: hashed + attempt lockout + biometric.
 - No network; no external auth.
@@ -302,7 +302,7 @@ Phase 2: PIN hashing + lockout, multilanguage, encryption, audit trail expansion
 ## 18. Risks & Mitigations
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Plain PIN storage | Unauthorized edits | Phase 2 hashing/biometric |
+| Unsalted hash (no salt/KDF) | PIN brute-force (device access) | Phase 2: salt + PBKDF2/BCrypt/Scrypt + biometric |
 | Device clock drift | Wrong day grouping | Offer manual reassign or re-compute tool Phase 2 |
 | Large data growth | Performance degrade | Indexing + pruning (Phase 2) |
 | Accidental deletion | Data loss | Soft deletes Phase 2 |
