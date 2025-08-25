@@ -239,5 +239,6 @@ class AdminActionsViewModel @Inject constructor(
     practiceSessionDao.deleteAllSessions()
     scanEventDao.deleteAllEvents()
         checkInDao.deleteAll()
+    memberDao.deleteAll()
     }
 }

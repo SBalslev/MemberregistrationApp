@@ -21,6 +21,9 @@ interface MemberDao {
 
     @Query("SELECT * FROM Member")
     suspend fun allMembers(): List<Member>
+
+    @Query("DELETE FROM Member")
+    suspend fun deleteAll()
 }
 
 @Dao
