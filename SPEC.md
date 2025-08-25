@@ -72,13 +72,12 @@ Mine resultater (bottom sheet):
 ### 3.10 Admin Menu (Flattened, Kiosk-Friendly)
 - Single page with large buttons; no subpages.
 - Actions:
-  - Import / eksport (CSV)
+  - Import / eksport (CSV) (includes Generér demodata + Ryd data actions inside that submenu)
   - Resultatliste
   - Manuel scanning
-  - Generér demodata
   - Skift PIN (change 4-digit admin PIN; validates current PIN and 2x new PIN match)
-  - Ryd data (destructive; confirm dialog)
   - Log ud (locks and returns to Ready; the sole exit from Admin)
+  - Om (About) shown as a text button at bottom (out of primary action grid)
 - There is no separate back button on the Admin screen when unlocked; use "Log ud" to leave.
 
 ### 3.11 Attendant Auto Unlock (Special Badge)

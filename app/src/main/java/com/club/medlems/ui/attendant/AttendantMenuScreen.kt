@@ -69,7 +69,6 @@ fun AttendantMenuScreen(
         }
     }
     var showManual by remember { mutableStateOf(false) }
-    var showClearConfirm by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var manualId by remember { mutableStateOf("") }
@@ -180,24 +179,6 @@ fun AttendantMenuScreen(
                             Spacer(Modifier.width(8.dp))
                             Text("Manuel scanning")
                         }
-                        Button(onClick = {
-                            scope.launch {
-                                attendant.registerInteraction()
-                                adminVm.generateDemoData()
-                                snack.showSnackbar("Demodata genereret")
-                            }
-                        }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                            Icon(Icons.Default.Info, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                Text("Generér demodata")
-                        }
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { attendant.registerInteraction(); showAbout = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                            Icon(Icons.Default.Info, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Om")
-                        }
                         Button(onClick = { attendant.registerInteraction(); showChangePin = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
                             Icon(Icons.Default.Lock, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -249,17 +230,13 @@ fun AttendantMenuScreen(
                         )
                     }
                     HorizontalDivider()
-                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { showClearConfirm = true; attendant.registerInteraction() }, modifier = Modifier.fillMaxWidth().height(btnHeight), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                            Icon(Icons.Default.Delete, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Ryd data")
-                        }
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { attendant.registerInteraction(); attendant.lock(); onBack() }, modifier = Modifier.fillMaxWidth().height(btnHeight)) {
                             Icon(Icons.Default.Lock, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text("Log ud")
                         }
+                        TextButton(onClick = { attendant.registerInteraction(); showAbout = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Om") }
                     }
                 }
             }
@@ -356,24 +333,7 @@ fun AttendantMenuScreen(
                 text = { Text("Vil du tilføje en skydning nu, eller blot registrere check-in?") }
             )
         }
-        if (showClearConfirm) {
-            AlertDialog(
-                onDismissRequest = { showClearConfirm = false },
-                confirmButton = {
-                    TextButton(onClick = {
-                        scope.launch {
-                            attendant.registerInteraction()
-                            adminVm.clearAllData()
-                            showClearConfirm = false
-                            snack.showSnackbar("Alle data er ryddet")
-                        }
-                    }) { Text("Ryd") }
-                },
-                dismissButton = { TextButton(onClick = { showClearConfirm = false }) { Text("Annuller") } },
-                title = { Text("Bekræft rydning") },
-                text = { Text("Dette vil slette alle check-ins, skydninger og scanningshændelser. Fortsæt?") }
-            )
-        }
+    // Clear data dialog moved to ImportExport screen
     if (showAbout) {
             AlertDialog(
                 onDismissRequest = { showAbout = false },
