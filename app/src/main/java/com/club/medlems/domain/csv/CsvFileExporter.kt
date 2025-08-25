@@ -26,8 +26,8 @@ class CsvFileExporter(private val context: Context) {
 
     private fun exportsDir(): File = File(context.getExternalFilesDir(null), "exports").apply { mkdirs() }
 
-    private suspend fun saveBytesToDownloads(displayName: String, mimeType: String, bytes: ByteArray) = withContext(Dispatchers.IO) {
-        try {
+    private suspend fun saveBytesToDownloads(displayName: String, mimeType: String, bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        return@withContext try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
                 val values = ContentValues().apply {
@@ -37,64 +37,34 @@ class CsvFileExporter(private val context: Context) {
                     put(MediaStore.Downloads.IS_PENDING, 1)
                 }
                 val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                val uri = resolver.insert(collection, values) ?: return@withContext
+                val uri = resolver.insert(collection, values) ?: return@withContext false
                 resolver.openOutputStream(uri)?.use { it.write(bytes) }
-                // Mark as complete
                 values.clear()
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
+                true
             } else {
-                // Best-effort fallback for older devices (may require WRITE_EXTERNAL_STORAGE at runtime)
                 val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Medlemscheckin")
                 if (!dir.exists()) dir.mkdirs()
                 val outFile = File(dir, displayName)
                 FileOutputStream(outFile).use { it.write(bytes) }
+                true
             }
         } catch (_: Throwable) {
-            // Ignore copy failures to Downloads to avoid breaking the export flow
+            false
         }
     }
-        }
-        private suspend fun saveBytesToDownloads(displayName: String, mimeType: String, bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
-            return@withContext try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val resolver = context.contentResolver
-                    val values = ContentValues().apply {
-                        put(MediaStore.Downloads.DISPLAY_NAME, displayName)
-                        put(MediaStore.Downloads.MIME_TYPE, mimeType)
-                        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Medlemscheckin")
-                        put(MediaStore.Downloads.IS_PENDING, 1)
-                    }
-                    val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                    val uri = resolver.insert(collection, values) ?: return@withContext false
-                    resolver.openOutputStream(uri)?.use { it.write(bytes) }
-                    values.clear()
-                    values.put(MediaStore.Downloads.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                    true
-                } else {
-                    val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Medlemscheckin")
-                    if (!dir.exists()) dir.mkdirs()
-                    val outFile = File(dir, displayName)
-                    FileOutputStream(outFile).use { it.write(bytes) }
-                    true
-                }
-            } catch (_: Throwable) {
-                false
-            }
-        }
 
-        data class CsvExport(val file: File, val publicPath: String?)
-    suspend fun saveCsv(basename: String, content: String): File = withContext(Dispatchers.IO) {
+    data class CsvExport(val file: File, val publicPath: String?)
+
+    suspend fun saveCsv(basename: String, content: String): CsvExport = withContext(Dispatchers.IO) {
         val ts = timestamp()
         val display = "${basename}_${ts}.csv"
         val file = File(exportsDir(), display)
         file.writeText(content)
-        // Also place a copy into the public Downloads folder
-            val ok = saveBytesToDownloads(display, "text/csv", content.toByteArray())
-            val publicPath = if (ok) "Downloads/Medlemscheckin/$display" else null
-            CsvExport(file, publicPath)
-        }
+        val ok = saveBytesToDownloads(display, "text/csv", content.toByteArray())
+        val publicPath = if (ok) "Downloads/Medlemscheckin/$display" else null
+        CsvExport(file, publicPath)
     }
 
     fun shareIntent(file: File): Intent {
@@ -106,7 +76,7 @@ class CsvFileExporter(private val context: Context) {
         }
     }
 
-    suspend fun saveZip(entries: List<Pair<String, String>>): File = withContext(Dispatchers.IO) {
+    suspend fun saveZip(entries: List<Pair<String, String>>): CsvExport = withContext(Dispatchers.IO) {
         val ts = timestamp()
         val display = "export_bundle_${ts}.zip"
         val file = File(exportsDir(), display)
@@ -117,7 +87,6 @@ class CsvFileExporter(private val context: Context) {
                 zos.write(content.toByteArray())
                 zos.closeEntry()
             }
-            // manifest with metadata
             val manifestLines = buildString {
                 appendLine("generated_at=$ts")
                 entries.forEach { (name, content) ->
@@ -130,7 +99,6 @@ class CsvFileExporter(private val context: Context) {
             zos.write(manifestLines.toByteArray())
             zos.closeEntry()
         }
-        // Copy into the public Downloads folder
         val ok = runCatching { saveBytesToDownloads(display, "application/zip", file.readBytes()) }.getOrDefault(false)
         val publicPath = if (ok) "Downloads/Medlemscheckin/$display" else null
         CsvExport(file, publicPath)

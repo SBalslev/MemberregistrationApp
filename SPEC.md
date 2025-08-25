@@ -1,6 +1,6 @@
 # ISS Skydning Registrering – Functional & Technical Specification (MVP)
 
-Version: 1.3.8 (Changeable PIN, export previews, direct Downloads saving)
+Version: 1.3.9 (Maintenance actions relocated to Import/Export)
 Last Updated: 2025-08-25
 
 ## 1. Value Proposition
@@ -72,7 +72,7 @@ Mine resultater (bottom sheet):
 ### 3.10 Admin Menu (Flattened, Kiosk-Friendly)
 - Single page with large buttons; no subpages.
 - Actions:
-  - Import / eksport (CSV) (includes Generér demodata + Ryd data actions inside that submenu)
+  - Import / eksport (CSV) (now also contains a Maintenance card with Generér demodata + Ryd data)
   - Resultatliste
   - Manuel scanning
   - Skift PIN (change 4-digit admin PIN; validates current PIN and 2x new PIN match)
@@ -99,6 +99,7 @@ Mine resultater (bottom sheet):
 - Each CSV includes column `FORMAT_VERSION` (value `1`).
 - All timestamps UTC ISO 8601 (`...Z`). Additional `local_date` column where relevant.
 - Save location: file is written to app-private `externalFilesDir/exports` AND copied to public `Downloads/Medlemscheckin/` (shown in Toast). If public copy fails, internal path still usable for sharing.
+  - Maintenance actions (Generate demo data / Clear data) were moved from Admin root into Import/Eksport screen in v1.3.9.
   - Android 10+ (Q): via MediaStore Downloads relative path.
   - Android 9 and below: direct write to public `Downloads/Medlemscheckin` (permission present for ≤28).
 - UI now offers per-CSV preview (expand/collapse) with first rows and row count (excluding header) plus clear button.

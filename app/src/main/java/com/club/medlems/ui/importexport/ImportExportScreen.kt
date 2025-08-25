@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Archive
+import com.club.medlems.ui.attendant.AdminActionsViewModel
 
 @Composable
 fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewModel<ImportExportViewModel>().csvService) {
@@ -96,6 +97,7 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
                     }
                 }
                 // Previews
+                @Composable
                 fun PreviewBlock(label: String, content: String?) {
                     if (content == null) return
                     val lines = content.lineSequence().toList()
@@ -190,7 +192,7 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
 
         Spacer(Modifier.height(12.dp))
 
-        ElevatedCard(Modifier.fillMaxWidth()) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Importer medlems-CSV", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -205,8 +207,59 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
             }
         }
 
+        Spacer(Modifier.height(12.dp))
+
+        // Maintenance section: demo data generation & clear data (moved from admin menu)
+        val adminVm: AdminActionsViewModel = hiltViewModel()
+        var generatingDemo by remember { mutableStateOf(false) }
+        var clearingData by remember { mutableStateOf(false) }
+        var showClearConfirm by remember { mutableStateOf(false) }
+        ElevatedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Vedligeholdelse", style = MaterialTheme.typography.titleMedium)
+                Text("Værktøjer til test og oprydning.", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(enabled = !generatingDemo && !clearingData, onClick = {
+                        scope.launch {
+                            generatingDemo = true
+                            runCatching { adminVm.generateDemoData() }
+                                .onSuccess { Toast.makeText(context, "Demodata oprettet", Toast.LENGTH_SHORT).show() }
+                                .onFailure { Toast.makeText(context, "Fejl: ${it.message}", Toast.LENGTH_SHORT).show() }
+                            generatingDemo = false
+                        }
+                    }) { if (generatingDemo) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Icon(Icons.Default.FileDownload, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Generér demodata") }
+                    Button(enabled = !clearingData && !generatingDemo, onClick = { showClearConfirm = true }) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Ryd data")
+                    }
+                }
+            }
+        }
+
+        if (showClearConfirm) {
+            AlertDialog(
+                onDismissRequest = { if (!clearingData) showClearConfirm = false },
+                confirmButton = {
+                    TextButton(enabled = !clearingData, onClick = {
+                        scope.launch {
+                            clearingData = true
+                            runCatching { adminVm.clearAllData() }
+                                .onSuccess { Toast.makeText(context, "Data ryddet", Toast.LENGTH_SHORT).show() }
+                                .onFailure { Toast.makeText(context, "Fejl: ${it.message}", Toast.LENGTH_SHORT).show() }
+                            clearingData = false
+                            showClearConfirm = false
+                        }
+                    }) { Text(if (clearingData) "Rydder..." else "Ryd") }
+                },
+                dismissButton = { TextButton(enabled = !clearingData, onClick = { showClearConfirm = false }) { Text("Annuller") } },
+                title = { Text("Bekræft rydning") },
+                text = { Text("Dette sletter alle sessions, scanninger og check-ins. Fortsæt?") }
+            )
+        }
+
         Spacer(Modifier.height(16.dp))
-    OutlinedButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Tilbage") }
+        OutlinedButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Tilbage") }
     }
 }
 
