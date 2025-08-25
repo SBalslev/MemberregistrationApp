@@ -1,7 +1,7 @@
 # ISS Skydning Registrering – Functional & Technical Specification (MVP)
 
-Version: 1.3.7 (Practice UI refresh, history across classifications, Danish dates)
-Last Updated: 2025-08-19
+Version: 1.3.8 (Changeable PIN, export previews, direct Downloads saving)
+Last Updated: 2025-08-25
 
 ## 1. Value Proposition
 Self‑service kiosk Android app for a shooting club that lets members instantly check in by scanning a QR code on their membership card and record multiple practice scoring sessions (rifle/pistol variants) during the same day—fully offline with simple CSV import/export.
@@ -76,6 +76,7 @@ Mine resultater (bottom sheet):
   - Resultatliste
   - Manuel scanning
   - Generér demodata
+  - Skift PIN (change 4-digit admin PIN; validates current PIN and 2x new PIN match)
   - Ryd data (destructive; confirm dialog)
   - Log ud (locks and returns to Ready; the sole exit from Admin)
 - There is no separate back button on the Admin screen when unlocked; use "Log ud" to leave.
@@ -95,12 +96,14 @@ Mine resultater (bottom sheet):
 
 ### 3.6 CSV Export
 - Members, PracticeSessions, CheckIns, ScanEvents.
-- File naming: `<type>_export_YYYYMMDD_HHmmss.csv`.
+- File naming: `<type>_YYYYMMDD_HHmmss.csv` (removed `_export_` prefix for brevity in UI preview buttons).
 - Each CSV includes column `FORMAT_VERSION` (value `1`).
 - All timestamps UTC ISO 8601 (`...Z`). Additional `local_date` column where relevant.
-- Save location: app writes files to app-private external storage and copies them to the system Downloads/Medlemscheckin folder for easy access.
-  - Android 10+ (Q): via MediaStore Downloads with relative path `Downloads/Medlemscheckin`.
-  - Android 9 and below: direct write to public `Downloads/Medlemscheckin` (manifest includes `WRITE_EXTERNAL_STORAGE` with `maxSdkVersion=28`).
+- Save location: file is written to app-private `externalFilesDir/exports` AND copied to public `Downloads/Medlemscheckin/` (shown in Toast). If public copy fails, internal path still usable for sharing.
+  - Android 10+ (Q): via MediaStore Downloads relative path.
+  - Android 9 and below: direct write to public `Downloads/Medlemscheckin` (permission present for ≤28).
+- UI now offers per-CSV preview (expand/collapse) with first rows and row count (excluding header) plus clear button.
+- Batch ZIP export: `export_bundle_YYYYMMDD_HHmmss.zip` with individual CSVs + `manifest.txt` (rows per file) saved both internally and to public Downloads.
 
 ### 3.7 Attendant CRUD
 - Edit or delete (soft-delete recommended future; MVP may perform hard delete) Members, PracticeSessions, CheckIns, ScanEvents.
@@ -175,7 +178,7 @@ Mine resultater (bottom sheet):
 | Leaderboard | None (empty states) | Display friendly empty state text |
 
 ## 7. Security (MVP)
-- 4-digit PIN stored hashed (SHA-256, unsalted MVP) in SharedPreferences; default seeded to 3715 on first launch. Auto re-lock after 60s inactivity in attendant UI.
+- 4-digit PIN stored hashed (SHA-256, unsalted MVP) in SharedPreferences; default seeded to 3715 on first launch. PIN can be changed in Admin menu (requires current PIN + 2x new match). Auto re-lock after 60s inactivity in attendant UI.
 - Programmatic unlock path: scanning special attendant badge `99000009` triggers an immediate unlock (no PIN) and navigates to Admin. This does not write any data.
 - Unlimited attempts (flagged risk). Phase 2: hashed + attempt lockout + biometric.
 - No network; no external auth.
