@@ -142,21 +142,22 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
                     Button(onClick = {
                         scope.launch {
                             val result = exporter.saveCsv("members", csvService.exportMembers())
-                            Toast.makeText(context, "Gemt ${result.publicPath ?: result.file.name}", Toast.LENGTH_SHORT).show()
+                            val pathLabel = result.absolutePublicPath ?: result.publicPath ?: result.file.absolutePath
+                            Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show()
                         }
                     }) { Text("Medlemmer") }
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("members", csvService.exportMembers()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { scope.launch { val r = exporter.saveCsv("sessions", csvService.exportSessions()); Toast.makeText(context, "Gemt ${r.publicPath ?: r.file.name}", Toast.LENGTH_SHORT).show() } }) { Text("Skydninger") }
+                    Button(onClick = { scope.launch { val r = exporter.saveCsv("sessions", csvService.exportSessions()); val pathLabel = r.absolutePublicPath ?: r.publicPath ?: r.file.absolutePath; Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show() } }) { Text("Skydninger") }
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("sessions", csvService.exportSessions()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { scope.launch { val r = exporter.saveCsv("checkins", csvService.exportCheckIns()); Toast.makeText(context, "Gemt ${r.publicPath ?: r.file.name}", Toast.LENGTH_SHORT).show() } }) { Text("Check-ins") }
+                    Button(onClick = { scope.launch { val r = exporter.saveCsv("checkins", csvService.exportCheckIns()); val pathLabel = r.absolutePublicPath ?: r.publicPath ?: r.file.absolutePath; Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show() } }) { Text("Check-ins") }
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("checkins", csvService.exportCheckIns()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { scope.launch { val r = exporter.saveCsv("scanevents", csvService.exportScanEvents()); Toast.makeText(context, "Gemt ${r.publicPath ?: r.file.name}", Toast.LENGTH_SHORT).show() } }) { Text("Scanninger") }
+                    Button(onClick = { scope.launch { val r = exporter.saveCsv("scanevents", csvService.exportScanEvents()); val pathLabel = r.absolutePublicPath ?: r.publicPath ?: r.file.absolutePath; Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show() } }) { Text("Scanninger") }
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("scanevents", csvService.exportScanEvents()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
             }
@@ -177,7 +178,8 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
                                 "scanevents" to csvService.exportScanEvents()
                             )
                             val zip = exporter.saveZip(bundle)
-                            Toast.makeText(context, "Gemt ${zip.publicPath ?: zip.file.name}", Toast.LENGTH_SHORT).show()
+                            val pathLabel = zip.absolutePublicPath ?: zip.publicPath ?: zip.file.absolutePath
+                            Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show()
                         }
                     }) { Icon(Icons.Default.Archive, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Gem ZIP") }
                     Button(onClick = {

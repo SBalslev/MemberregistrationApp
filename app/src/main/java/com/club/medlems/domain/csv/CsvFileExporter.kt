@@ -55,7 +55,13 @@ class CsvFileExporter(private val context: Context) {
         }
     }
 
-    data class CsvExport(val file: File, val publicPath: String?)
+    data class CsvExport(
+        val file: File,
+        // Relative (user-friendly) path like Downloads/Medlemscheckin/xxx.csv
+        val publicPath: String?,
+        // Absolute filesystem path if determinable (may be null on failure)
+        val absolutePublicPath: String?
+    )
 
     suspend fun saveCsv(basename: String, content: String): CsvExport = withContext(Dispatchers.IO) {
         val ts = timestamp()
@@ -63,8 +69,14 @@ class CsvFileExporter(private val context: Context) {
         val file = File(exportsDir(), display)
         file.writeText(content)
         val ok = saveBytesToDownloads(display, "text/csv", content.toByteArray())
-        val publicPath = if (ok) "Downloads/Medlemscheckin/$display" else null
-        CsvExport(file, publicPath)
+        val relative = if (ok) "Download/Medlemscheckin/$display" else null
+        val absolute = if (ok) {
+            try {
+                val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                File(base, "Medlemscheckin/$display").absolutePath
+            } catch (_: Throwable) { null }
+        } else null
+        CsvExport(file, relative, absolute)
     }
 
     fun shareIntent(file: File): Intent {
@@ -100,8 +112,14 @@ class CsvFileExporter(private val context: Context) {
             zos.closeEntry()
         }
         val ok = runCatching { saveBytesToDownloads(display, "application/zip", file.readBytes()) }.getOrDefault(false)
-        val publicPath = if (ok) "Downloads/Medlemscheckin/$display" else null
-        CsvExport(file, publicPath)
+        val relative = if (ok) "Download/Medlemscheckin/$display" else null
+        val absolute = if (ok) {
+            try {
+                val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                File(base, "Medlemscheckin/$display").absolutePath
+            } catch (_: Throwable) { null }
+        } else null
+        CsvExport(file, relative, absolute)
     }
 
     fun shareZipIntent(file: File): Intent {
