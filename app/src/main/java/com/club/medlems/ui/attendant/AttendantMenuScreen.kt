@@ -252,27 +252,33 @@ fun AttendantMenuScreen(
                             val res = adminVm.manualScan(manualId.ifBlank { query })
                             showManual = false
                             when (res) {
-                                is ScanOutcome.First -> {
-                                    snack.showSnackbar("Check-in oprettet for ${res.membershipId}")
-                                    if (res.birthday) {
+                                is ScanOutcome.First, is ScanOutcome.Repeat -> {
+                                    val memberId = when (res) {
+                                        is ScanOutcome.First -> res.membershipId
+                                        is ScanOutcome.Repeat -> res.membershipId
+                                        else -> ""
+                                    }
+                                    val scanEventId = when (res) {
+                                        is ScanOutcome.First -> res.scanEventId
+                                        is ScanOutcome.Repeat -> res.scanEventId
+                                        else -> ""
+                                    }
+                                    val birthday = when (res) {
+                                        is ScanOutcome.First -> res.birthday
+                                        is ScanOutcome.Repeat -> res.birthday
+                                        else -> false
+                                    }
+                                    val msg = if (res is ScanOutcome.First) "Check-in oprettet for $memberId" else "Gentag-scanning for $memberId"
+                                    snack.showSnackbar(msg)
+                                    if (birthday) {
                                         runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
                                         snack.showSnackbar("Tillykke med fødselsdagen!")
                                     }
-                                    postScan = PostScan(res.membershipId, res.scanEventId, res.birthday)
-                                }
-                                is ScanOutcome.Repeat -> {
-                                    snack.showSnackbar("Gentag-scanning for ${res.membershipId}")
-                                    if (res.birthday) {
-                                        runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
-                                        snack.showSnackbar("Tillykke med fødselsdagen!")
-                                    }
-                                    postScan = PostScan(res.membershipId, res.scanEventId, res.birthday)
+                                    // Directly open practice session screen (skip choice dialog)
+                                    openPracticeSession(memberId, scanEventId)
                                 }
                                 is ScanOutcome.Error -> snack.showSnackbar(res.message)
-                                is ScanOutcome.AttendantUnlocked -> {
-                                    // Not expected from manualScan(), but handle to keep when exhaustive
-                                    snack.showSnackbar("Admin låst op")
-                                }
+                                is ScanOutcome.AttendantUnlocked -> snack.showSnackbar("Admin låst op")
                             }
                         }
                     }) { Text("OK") }
@@ -313,26 +319,7 @@ fun AttendantMenuScreen(
                 }
             )
         }
-        // Offer choice to add a practice session after manual scan
-        postScan?.let { ps ->
-            AlertDialog(
-                onDismissRequest = { postScan = null },
-                confirmButton = {
-                    TextButton(onClick = {
-                        attendant.registerInteraction()
-                        val m = ps.memberId
-                        val se = ps.scanEventId
-                        postScan = null
-                        openPracticeSession(m, se)
-                    }) { Text("Tilføj skydning") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { postScan = null }) { Text("Færdig") }
-                },
-                title = { Text("Handling efter scanning") },
-                text = { Text("Vil du tilføje en skydning nu, eller blot registrere check-in?") }
-            )
-        }
+    // Manual scan now opens practice session directly, skipping choice dialog
     // Clear data dialog moved to ImportExport screen
     if (showAbout) {
             AlertDialog(
