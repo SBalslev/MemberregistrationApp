@@ -25,6 +25,9 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.club.medlems.ui.attendant.AdminActionsViewModel
 
 @Composable
@@ -116,10 +119,17 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
                                 TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Skjul" else "Vis") }
                             }
                             if (expanded) {
-                                val preview = if (lines.size <= 21) lines else lines.take(20) + listOf("…(${lines.size - 20} flere)")
-                                Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)) {
-                                    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        preview.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                                val listLines = lines
+                                val listState = rememberLazyListState()
+                                Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().height(240.dp)) {
+                                    LazyColumn(
+                                        state = listState,
+                                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        items(listLines) { line ->
+                                            Text(line, style = MaterialTheme.typography.bodySmall)
+                                        }
                                     }
                                 }
                             }
