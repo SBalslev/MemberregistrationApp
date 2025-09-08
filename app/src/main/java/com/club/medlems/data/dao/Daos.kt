@@ -45,6 +45,9 @@ interface CheckInDao {
 
     @Query("SELECT * FROM CheckIn")
     suspend fun allCheckIns(): List<CheckIn>
+
+    @Query("SELECT * FROM CheckIn WHERE localDate = :date")
+    suspend fun allCheckInsForDate(date: LocalDate): List<CheckIn>
 }
 
 @Dao
@@ -98,6 +101,9 @@ interface PracticeSessionDao {
 
     @Query("SELECT * FROM PracticeSession")
     suspend fun allSessions(): List<PracticeSession>
+
+    @Query("SELECT * FROM PracticeSession WHERE localDate = :date")
+    suspend fun allSessionsForDate(date: LocalDate): List<PracticeSession>
 
         @Query("DELETE FROM PracticeSession")
         suspend fun deleteAllSessions()

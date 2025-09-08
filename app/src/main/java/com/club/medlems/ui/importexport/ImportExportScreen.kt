@@ -163,8 +163,16 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("sessions", csvService.exportSessions()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { scope.launch { val r = exporter.saveCsv("sessions_today", csvService.exportTodaySessions()); val pathLabel = r.absolutePublicPath ?: r.publicPath ?: r.file.absolutePath; Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show() } }) { Text("Dagens skydninger") }
+                    Button(onClick = { scope.launch { val r = exporter.saveCsv("sessions_today", csvService.exportTodaySessions()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("checkins", csvService.exportCheckIns()); val pathLabel = r.absolutePublicPath ?: r.publicPath ?: r.file.absolutePath; Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show() } }) { Text("Check-ins") }
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("checkins", csvService.exportCheckIns()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { scope.launch { val r = exporter.saveCsv("checkins_today", csvService.exportTodayCheckIns()); val pathLabel = r.absolutePublicPath ?: r.publicPath ?: r.file.absolutePath; Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show() } }) { Text("Dagens check-ins") }
+                    Button(onClick = { scope.launch { val r = exporter.saveCsv("checkins_today", csvService.exportTodayCheckIns()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("scanevents", csvService.exportScanEvents()); val pathLabel = r.absolutePublicPath ?: r.publicPath ?: r.file.absolutePath; Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show() } }) { Text("Scanninger") }

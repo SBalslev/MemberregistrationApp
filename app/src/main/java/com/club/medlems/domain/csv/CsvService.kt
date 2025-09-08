@@ -8,6 +8,8 @@ import com.github.doyaaaaaken.kotlincsv.dsl.csvReader
 import com.github.doyaaaaaken.kotlincsv.dsl.csvWriter
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -73,8 +75,43 @@ class CsvService @Inject constructor(
         }
     }
 
+    suspend fun exportTodaySessions(): String = withContext(Dispatchers.IO) {
+        val today = kotlinx.datetime.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
+        val sessions = sessionDao.allSessionsForDate(today)
+        val header = listOf("FORMAT_VERSION","session_id","membership_id","created_at_utc","local_date","practice_type","points","krydser","classification","source")
+        buildString {
+            appendLine(header.joinToString(","))
+            sessions.forEach { s ->
+                appendLine(listOf(
+                    version,
+                    s.id,
+                    s.membershipId,
+                    s.createdAtUtc.toString(),
+                    s.localDate.toString(),
+                    s.practiceType.name,
+                    s.points.toString(),
+                    s.krydser?.toString() ?: "",
+                    s.classification.orEmpty(),
+                    s.source.name
+                ).joinToString(","))
+            }
+        }
+    }
+
     suspend fun exportCheckIns(): String = withContext(Dispatchers.IO) {
         val list = checkInDao.allCheckIns()
+        val header = listOf("FORMAT_VERSION","checkin_id","membership_id","created_at_utc","local_date")
+        buildString {
+            appendLine(header.joinToString(","))
+            list.forEach { c ->
+                appendLine(listOf(version,c.id,c.membershipId,c.createdAtUtc.toString(),c.localDate.toString()).joinToString(","))
+            }
+        }
+    }
+
+    suspend fun exportTodayCheckIns(): String = withContext(Dispatchers.IO) {
+        val today = kotlinx.datetime.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
+        val list = checkInDao.allCheckInsForDate(today)
         val header = listOf("FORMAT_VERSION","checkin_id","membership_id","created_at_utc","local_date")
         buildString {
             appendLine(header.joinToString(","))
