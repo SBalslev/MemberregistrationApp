@@ -11,14 +11,15 @@ android {
 
     defaultConfig {
         applicationId = "com.club.medlems"
-        minSdk = 24
+        minSdk = 23
         targetSdk = 34
     // Auto-incrementing versionCode: use epoch seconds so each build is higher
     versionCode = (System.currentTimeMillis() / 1000L).toInt()
-        versionName = "0.1.0"
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        setProperty("archivesBaseName", "ISS-Skydning-Registrering-v${versionName}")
     }
 
     buildTypes {
@@ -38,6 +39,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions {
         jvmTarget = "17"
@@ -79,7 +81,7 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.3.2")
     implementation("androidx.camera:camera-lifecycle:1.3.2")
     implementation("androidx.camera:camera-view:1.3.2")
-    implementation("com.google.mlkit:barcode-scanning:17.2.0")
+    implementation("com.google.zxing:core:3.5.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.3")
 
     // Room
@@ -101,6 +103,9 @@ dependencies {
 
     // Date/time
     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.0")
+
+    // Core library desugaring for API < 26
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     // CSV
     implementation("com.github.doyaaaaaken:kotlin-csv-jvm:1.9.3")

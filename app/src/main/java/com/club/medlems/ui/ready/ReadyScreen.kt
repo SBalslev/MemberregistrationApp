@@ -35,9 +35,12 @@ import com.club.medlems.ui.leaderboard.LeaderboardRange
 import com.club.medlems.ui.leaderboard.LeaderboardViewModel
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.BarcodeFormat
+import java.nio.ByteBuffer
 import kotlinx.coroutines.flow.collectLatest
 import java.util.concurrent.Executors
 import android.widget.FrameLayout
@@ -175,39 +178,60 @@ fun ReadyScreen(
                         val pv = previewView ?: return@LaunchedEffect
                         val cameraProvider = ProcessCameraProvider.getInstance(ctx).get()
                         val preview = androidx.camera.core.Preview.Builder().build()
-                        val scanner = BarcodeScanning.getClient()
+                        val reader = MultiFormatReader().apply {
+                            setHints(mapOf(com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)))
+                        }
                         val analysis = ImageAnalysis.Builder()
-                            .setTargetAspectRatio(AspectRatio.RATIO_16_9)
+                            .setTargetResolution(Size(640, 480))
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
                         analysis.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy: ImageProxy ->
-                            val mediaImage = imageProxy.image
-                            if (mediaImage != null) {
-                                val now = System.currentTimeMillis()
-                                if (now - lastProcessed > 1200) {
-                                    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                                    scanner.process(image)
-                                        .addOnSuccessListener { barcodes ->
-                                            barcodes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue?.let { raw ->
-                                                lastProcessed = now
-                                                vm.onRawQr(raw)
-                                            }
-                                        }
-                                        .addOnCompleteListener { imageProxy.close() }
-                                } else {
-                                    imageProxy.close()
+                            try {
+                                val buffer = imageProxy.planes[0].buffer
+                                val data = ByteArray(buffer.remaining())
+                                buffer.get(data)
+                                val source = PlanarYUVLuminanceSource(
+                                    data,
+                                    imageProxy.width,
+                                    imageProxy.height,
+                                    0, 0,
+                                    imageProxy.width,
+                                    imageProxy.height,
+                                    false
+                                )
+                                val bitmap = BinaryBitmap(HybridBinarizer(source))
+                                val result = reader.decodeWithState(bitmap)
+                                result?.text?.let { raw ->
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastProcessed > 2000) {
+                                        lastProcessed = now
+                                        vm.onRawQr(raw)
+                                    }
                                 }
-                            } else imageProxy.close()
+                            } catch (_: Exception) {
+                                // No QR code found, ignore
+                            } finally {
+                                reader.reset()
+                                imageProxy.close()
+                            }
                         }
                         try {
                             cameraProvider.unbindAll()
-                            preview.setSurfaceProvider(previewView?.surfaceProvider)
+                            preview.setSurfaceProvider(pv.surfaceProvider)
                             val camera = cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
                                 lensSelector,
                                 preview,
                                 analysis
                             )
+                            // Enable tap-to-focus
+                            pv.setOnTouchListener { _, _ ->
+                                val factory = pv.meteringPointFactory
+                                val point = factory.createPoint(pv.width / 2f, pv.height / 2f)
+                                val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
+                                camera.cameraControl.startFocusAndMetering(action)
+                                true
+                            }
                         } catch (_: Exception) { /* ignore for MVP */ }
                     }
                 }
