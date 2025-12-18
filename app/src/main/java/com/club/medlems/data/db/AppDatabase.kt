@@ -8,7 +8,7 @@ import com.club.medlems.data.entity.*
 
 @Database(
     entities = [Member::class, CheckIn::class, PracticeSession::class, ScanEvent::class],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(AppConverters::class)

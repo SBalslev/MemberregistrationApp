@@ -1,7 +1,7 @@
 # ISS Skydning Registrering – Functional & Technical Specification (MVP)
 
-Version: 1.3.9 (Maintenance actions relocated to Import/Export)
-Last Updated: 2025-08-25
+Version: 1.4.0 (Performance optimizations + QR diagnostics)
+Last Updated: 2025-12-18
 
 ## 1. Value Proposition
 Self‑service kiosk Android app for a shooting club that lets members instantly check in by scanning a QR code on their membership card and record multiple practice scoring sessions (rifle/pistol variants) during the same day—fully offline with simple CSV import/export.
@@ -57,7 +57,22 @@ Mine resultater (bottom sheet):
 - Compact leaderboard displays multiple disciplines simultaneously in a two-column grid. Under each discipline card, entries are grouped by Classification and show up to 3 most recent sessions per classification (defaults to Today range). Empty classification groups are hidden; disciplines with no visible entries are hidden. Legacy/null classifications appear as “Uklassificeret”.
 - A quick front/rear camera toggle is available from the bottom bar (buttons labeled “Front” and “Bagside”). Default lens at startup is the front-facing camera.
 - Between camera and leaderboard, show an instruction banner: “Hold dit medlemskort foran kameraet for at scanne”.
-
+### 3.12 QR Scanner Diagnostics (v1.4.0)
+- Diagnostic mode can be toggled on/off in the Admin menu (disabled by default for clean kiosk UI).
+- When enabled, a bug icon (🐞) overlay appears on the camera preview for troubleshooting scanning issues.
+- Tapping the icon opens a diagnostic panel showing:
+  - Camera initialization status and any errors
+  - Frame processing statistics (frames processed, scan attempts, successful scans)
+  - Current camera selection (Front/Back)
+  - Resolution information
+  - Last scan details (text preview, timestamp)
+  - Pipeline stage tracking (camera lifecycle)
+  - Android version
+  - Embedded troubleshooting tips based on current state
+- The panel can be dismissed with a close button (X icon) in the top-right.
+- A reset button clears diagnostic history counters.
+- Diagnostic updates are throttled (every 30 frames) to minimize performance impact.
+- The diagnostic toggle preference persists across app restarts.
 ### 3.9 Manual Scan (Attendant)
 1. Open "Manuel scanning" from Admin.
 2. Search for a member by name/ID or enter an explicit membership ID.
@@ -76,6 +91,7 @@ Mine resultater (bottom sheet):
   - Resultatliste
   - Manuel scanning
   - Skift PIN (change 4-digit admin PIN; validates current PIN and 2x new PIN match)
+  - Vis diagnostik (toggle QR scanner diagnostics icon on/off; default off for clean kiosk UI)
   - Log ud (locks and returns to Ready; the sole exit from Admin)
   - Om (About) shown as a text button at bottom (out of primary action grid)
 - There is no separate back button on the Admin screen when unlocked; use "Log ud" to leave.
@@ -154,11 +170,13 @@ Mine resultater (bottom sheet):
 - deviceId
 - auditUser (attendant actions)
 
-### 4.6 Indexing Plan
-- PracticeSession: index (practiceType, localDate), (membershipId, localDate), (points DESC) for leaderboard.
-- CheckIn: index (membershipId, localDate) unique.
-- Member: index (status), (lastName, firstName).
-- ScanEvent: index (membershipId, createdAtUtc).
+### 4.6 Indexing Plan (Implemented in v1.4.0)
+- Member: index (status), index (membershipId)
+- CheckIn: composite index (membershipId, localDate)
+- PracticeSession: index (membershipId), index (localDate), composite index (practiceType, localDate), composite index (membershipId, practiceType, classification)
+- ScanEvent: composite index (membershipId, createdAtUtc)
+
+These indices dramatically improve query performance for leaderboards, member lookups, and historical data retrieval. The composite indices are particularly effective for filtered queries combining multiple fields.
 
 ## 5. Business Rules
 - Only one CheckIn per member per localDate; attempts to create second should be prevented (Repeat path uses Sessions only).
@@ -245,9 +263,9 @@ Null Handling: Optional fields blank (empty string). All timestamps UTC ISO 8601
 ## 13. Architecture (MVP)
   - UI: Jetpack Compose.
   - Navigation: Single-Activity (Navigation Compose) with screens: Ready, Confirmation, PracticeSessionForm, Leaderboard, ImportExport, AttendantMenu.
-  - Camera & QR: CameraX + ML Kit Barcode Scanning (offline decode).
-- State: ViewModel per screen, unidirectional data flow.
-- Persistence: Room DB, DAOs for each entity.
+  - Camera & QR: ZXing DecoratedBarcodeView with native barcode scanning (offline decode). Front camera is the default at startup.
+- State: ViewModel per screen, unidirectional data flow. Uses `derivedStateOf` for computed values to prevent unnecessary recompositions.
+- Persistence: Room DB, DAOs for each entity with strategic indices for performance.
 - DI: Hilt.
 - Concurrency: Kotlin Coroutines + Flows.
   - Time: kotlinx-datetime for dates/times; `Instant.now()` with device zone for `localDate` derivation.
@@ -255,16 +273,16 @@ Null Handling: Optional fields blank (empty string). All timestamps UTC ISO 8601
 ## 14. Key Components
 | Layer | Component | Responsibility |
 |-------|-----------|----------------|
-| UI | ReadyScreen | Camera preview + scan callback + compact multi-discipline leaderboard + camera toggle |
+| UI | ReadyScreen | ZXing camera preview + scan callback + compact multi-discipline leaderboard + camera toggle + diagnostics overlay |
 | UI | ConfirmationScreen | Show first scan success + options |
-| UI | PracticeSessionForm | Capture scoring inputs |
-| UI | LeaderboardScreen | Display top scores |
-| UI | ImportExportScreen | CSV import/export actions (attendant) |
-| Data | MemberDao | CRUD + search (id, name, email, phone) |
+| UI | PracticeSessionForm | Capture scoring inputs + personal history bottom sheet |
+| UI | LeaderboardScreen | Display top scores grouped by discipline and classification |
+| UI | ImportExportScreen | CSV import/export actions (attendant) + maintenance tools |
+| Data | MemberDao | CRUD + search (id, name, email, phone) + bulk name loading |
 | Data | CheckInDao | Enforce one per day per member |
-| Data | PracticeSessionDao | Insert, query by date/type, leaderboard aggregates |
+| Data | PracticeSessionDao | Insert, query by date/type, leaderboard aggregates with indices |
 | Data | ScanEventDao | Insert & update (canceledFlag, linkedSessionId) |
-| Domain | LeaderboardRepository | Aggregate best per member |
+| Domain | LeaderboardRepository | Aggregate best per member with optimized queries |
 | Domain | ScanProcessor | Parse QR, orchestrate flow (first vs repeat) |
 | Domain | CsvFileExporter / CsvImporter | Export/import CSVs and ZIP with manifest |
 
@@ -300,7 +318,8 @@ Null Handling: Optional fields blank (empty string). All timestamps UTC ISO 8601
 
 ## 17. Roadmap (Accepted)
 MVP: Implemented (sections 3–16).  
-Phase 2: PIN hashing + lockout, multilanguage, encryption, audit trail expansion, advanced reporting, retention policies, kiosk hardening, dynamic practiceType management, additional time ranges, WindowInsetsController & FlowRow migration.
+v1.3.x-1.4.0: Performance optimizations, diagnostics, CI/CD, database indices, classification system, personal history, last 12 months range.  
+Phase 2: PIN hardening (salt + KDF + lockout + biometric), multilanguage, encryption, audit trail expansion, advanced reporting, retention policies, kiosk hardening, dynamic practiceType management.
 
 ## 18. Risks & Mitigations
 | Risk | Impact | Mitigation |
@@ -311,11 +330,13 @@ Phase 2: PIN hashing + lockout, multilanguage, encryption, audit trail expansion
 | Accidental deletion | Data loss | Soft deletes Phase 2 |
 
 ## 19. Open (Deferred) Items
-- PIN security hardening (Phase 2) – hash & lockout.
+- PIN security hardening (Phase 2) – add salt + KDF (PBKDF2/BCrypt) + attempt lockout + biometric.
 - Soft delete & full audit log.
 - Data retention / purge rules.
 - Import log persistence.
 - Multi-language expansion.
+
+Note: Basic PIN hashing (SHA-256) and changeability is now implemented (v1.3.9). Full hardening deferred to Phase 2.
 
 ## 20. Acceptance Criteria (MVP Excerpts)
 1. First scan displays confirmation within 1s and auto returns to Ready after 5s if untouched.
@@ -423,7 +444,14 @@ This specification reflects the implemented MVP and captures Phase 2 enhancement
 - Practice Session screen modernized: segmented selector for discipline, carded layout, and top app bar shows `membershipId – Name` and idle countdown.
 - “Mine resultater” shows last 12 months across all classifications for the selected discipline, segmented by classification (with “Uklassificeret” group), and highlights top 3 best overall.
 - Dates displayed in UI follow Danish format dd-MM-yyyy via a shared formatter.
-
+### v1.4.0 (Performance optimizations + QR diagnostics + CI/CD)
+- **Performance Optimizations**: Composables use `derivedStateOf` for computed values to prevent unnecessary recompositions. Camera diagnostics update every 30 frames instead of every frame. Filtered member lists optimized. CompactLeaderboardGrid calculations cached.
+- **Database Performance**: Strategic indices added on frequently queried columns (Member: status, membershipId; CheckIn: composite on membershipId+localDate; PracticeSession: membershipId, localDate, and composite indices; ScanEvent: composite on membershipId+createdAtUtc). Bulk member name loading in single query instead of N+1 pattern.
+- **QR Scanner Diagnostics**: Comprehensive troubleshooting overlay accessible via bug icon (🐞) on camera preview with real-time status, frame rate, resolution monitoring, scan statistics, and embedded troubleshooting tips.
+- **Enhanced Logging**: Detailed logcat output with `ReadyScreen` tag for debugging.
+- **Improved Manual Scan**: Enhanced dialog with contextual help when QR scanning fails.
+- **CI/CD**: GitHub Actions for build, lint, and unit tests on PRs and pushes to main. Dependabot for Gradle and GitHub Actions dependencies.
+- **Governance**: PR template requires README, SPEC, and CHANGELOG updates for behavior changes.
 ## 26. Classification Glossary (UI Options)
 Classification is required for each Practice Session and is selected from discipline-specific options. The exported CSV includes the selected text value. Values are case-sensitive as shown.
 

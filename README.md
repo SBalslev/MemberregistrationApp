@@ -42,12 +42,80 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`
 - Admin Mode (Attendant): 4-cifret PIN (standard 3715, kan ændres i admin-menuen) med automatisk relock efter inaktivitet.
 	- Shortcut: scanning membership ID 99000009 on the Ready screen auto-unlocks Admin and opens the Admin menu.
 
+## Troubleshooting QR Scanning
+
+If QR scanning is not working correctly, the app includes comprehensive diagnostics and mitigation options:
+
+### Built-in Diagnostics
+1. **Diagnostic Overlay**: Tap the bug icon (🐞) in the top-right corner of the camera preview to open detailed diagnostics
+   - Camera initialization status
+   - Current camera (front/back) and resolution
+   - Frame processing rate and statistics
+   - Scan attempts and success rate
+   - Last successful scan and errors
+   - Real-time troubleshooting tips
+
+2. **Manual Scan Fallback**: If QR scanning fails completely
+   - Tap "Admin" → Enter PIN (default: 3715)
+   - Select "Manuel scanning"
+   - Search for the member by name or manually enter their membership ID
+   - This performs the same check-in logic without requiring camera
+
+### Common Issues and Solutions
+
+#### Camera Not Initializing
+- **Symptom**: Blank camera preview or "Kamera fejl" message
+- **Solutions**:
+  - Check camera permissions in Android Settings → Apps → ISS Skydning Registrering → Permissions
+  - Restart the app
+  - Restart the device if problem persists
+  - Check diagnostics for specific error messages
+
+#### QR Code Not Detected
+- **Symptom**: Camera shows preview but doesn't scan QR codes
+- **Solutions**:
+  - Switch between front and back camera using the "Front" / "Bagside" buttons
+  - Ensure good lighting conditions (avoid backlighting and glare)
+  - Hold the QR code steady and at a comfortable distance (15-30 cm)
+  - Tap on the camera preview to manually focus
+  - Check diagnostics: if "Frames Behandlet" is 0, camera isn't streaming
+  - Verify QR code format contains `id=<number>` parameter
+
+#### Slow or Inconsistent Scanning
+- **Symptom**: QR codes take multiple attempts to scan
+- **Solutions**:
+  - Clean the camera lens
+  - Improve lighting (avoid direct sunlight or very dim conditions)
+  - Hold the card more steadily
+  - Try the alternate camera (front vs back)
+  - Check frame rate in diagnostics (should be >5 fps)
+
+#### Wrong Data After Scan
+- **Symptom**: QR code scans but shows wrong member or error
+- **Solutions**:
+  - Verify the QR code format contains `id=<membershipId>`
+  - Check that the member exists in the database (Admin → Import/Export)
+  - View the "Sidste Scan" text in diagnostics to verify what was read
+
+### Technical Details
+- **QR Parser**: Extracts membership ID from URL pattern `id=<digits>`
+- **Camera Library**: CameraX with ZXing barcode scanner
+- **Supported Format**: QR codes only
+- **Debouncing**: 1.5-second delay prevents duplicate scans
+- **Resolution**: Targets 800×600 for optimal performance
+
+### Logging
+For detailed troubleshooting, connect via ADB and view logcat with tag filter:
+```
+adb logcat | grep "ReadyScreen"
+```
+
 ## Notes
 - Some deprecated APIs are used for immersive mode and Accompanist FlowRow; acceptable for Android 9 target. Migrate to WindowInsetsController and Compose Foundation FlowRow later.
 - App theme is Material3; adaptive launcher icons included.
 
 ### Localization
-- UI language: Danish. Key labels mapping: “Resultatliste” = Leaderboard, “Admin” = Attendant. Camera toggle buttons: “Front” / “Bagside”.
+- UI language: Danish. Key labels mapping: "Resultatliste" = Leaderboard, "Admin" = Attendant. Camera toggle buttons: "Front" / "Bagside".
 - Dates in UI use Danish format dd-MM-yyyy via a shared formatter; storage remains UTC timestamps + LocalDate.
 
 ## Changelog

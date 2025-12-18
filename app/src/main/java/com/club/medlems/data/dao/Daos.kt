@@ -22,8 +22,19 @@ interface MemberDao {
     @Query("SELECT * FROM Member")
     suspend fun allMembers(): List<Member>
 
+    @Query("SELECT membershipId, firstName, lastName FROM Member WHERE membershipId IN (:ids)")
+    suspend fun getMemberNames(ids: List<String>): List<MemberNameProjection>
+
     @Query("DELETE FROM Member")
     suspend fun deleteAll()
+}
+
+data class MemberNameProjection(
+    val membershipId: String,
+    val firstName: String,
+    val lastName: String
+) {
+    val displayName: String get() = listOfNotNull(firstName, lastName).joinToString(" ").trim()
 }
 
 @Dao

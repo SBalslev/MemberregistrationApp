@@ -3,6 +3,7 @@ package com.club.medlems.ui.ready
 import android.Manifest
 import android.content.pm.PackageManager
 import android.util.Size
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -11,6 +12,11 @@ import androidx.camera.core.AspectRatio
 import androidx.camera.core.ImageProxy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import com.journeyapps.barcodescanner.BarcodeCallback
+import com.journeyapps.barcodescanner.BarcodeResult
+import com.journeyapps.barcodescanner.DecoratedBarcodeView
+import com.journeyapps.barcodescanner.DefaultDecoderFactory
+import com.google.zxing.ResultPoint
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -19,6 +25,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -35,6 +42,8 @@ import com.club.medlems.ui.leaderboard.LeaderboardRange
 import com.club.medlems.ui.leaderboard.LeaderboardViewModel
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Close
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
@@ -53,7 +62,37 @@ import androidx.compose.ui.res.painterResource
 import android.media.ToneGenerator
 import android.media.AudioManager
 import androidx.compose.runtime.rememberCoroutineScope
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.launch
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.font.FontWeight
+
+private const val TAG = "ReadyScreen"
+private val cameraExecutor by lazy { Executors.newSingleThreadExecutor() }
+
+data class ScanDiagnostics(
+    var cameraInitialized: Boolean = false,
+    var cameraError: String? = null,
+    var analyzerActive: Boolean = false,
+    var framesProcessed: Long = 0,
+    var lastFrameTime: Long = 0,
+    var scanAttempts: Long = 0,
+    var successfulScans: Long = 0,
+    var lastError: String? = null,
+    var lastScanText: String? = null,
+    var lastScanTime: Long = 0,
+    var resolutionWidth: Int = 0,
+    var resolutionHeight: Int = 0,
+    var currentCamera: String = "Front",
+    var pipelineStage: String = "Not started",
+    var analysisBuilt: Boolean = false,
+    var analyzerSet: Boolean = false,
+    var analysisBound: Boolean = false,
+    var androidVersion: String = "Unknown"
+)
 
 @Composable
 fun ReadyScreen(
@@ -65,6 +104,8 @@ fun ReadyScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val diagnosticsEnabled by vm.diagnosticPrefs.diagnosticsEnabled.collectAsState()
+    var showDiagnosticPanel by remember { mutableStateOf(false) }
     var hasCameraPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCameraPermission = granted
@@ -79,6 +120,18 @@ fun ReadyScreen(
     val lbVm: LeaderboardViewModel = hiltViewModel()
     val lbState by lbVm.state.collectAsState()
     LaunchedEffect(Unit) { lbVm.setRange(LeaderboardRange.TODAY) }
+    
+    // Diagnostics state - minimized updates to reduce recompositions
+    var diagnostics by remember { 
+        mutableStateOf(ScanDiagnostics(
+            androidVersion = "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})"
+        )) 
+    }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    
+    LaunchedEffect(useBackCamera) {
+        diagnostics = diagnostics.copy(currentCamera = if (useBackCamera) "Back" else "Front")
+    }
 
     LaunchedEffect(Unit) {
         vm.events.collectLatest { outcome ->
@@ -151,88 +204,117 @@ fun ReadyScreen(
                         .weight(1f)
                         .background(MaterialTheme.colorScheme.surface)
                 ) {
-                    var previewView by remember { mutableStateOf<PreviewView?>(null) }
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize().clipToBounds(),
-                        factory = { ctx ->
-                            FrameLayout(ctx).apply {
-                                clipToPadding = true
-                                clipChildren = true
-                                val pv = PreviewView(ctx).apply {
-                                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                                    scaleType = PreviewView.ScaleType.FIT_CENTER
-                                    layoutParams = FrameLayout.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        ViewGroup.LayoutParams.MATCH_PARENT
-                                    )
+                    var barcodeView by remember { mutableStateOf<DecoratedBarcodeView?>(null) }
+                    
+                    // Recreate the view when camera selection changes
+                    key(useBackCamera) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                Log.i(TAG, "Creating DecoratedBarcodeView (ZXing native) - ${if (useBackCamera) "back" else "front"} camera")
+                                mainHandler.post {
+                                    diagnostics = diagnostics.copy(pipelineStage = "Creating ZXing BarcodeView")
                                 }
-                                addView(pv)
-                                previewView = pv
-                            }
-                        }
-                    )
-
-                    // Bind camera when previewView or lens changes
-                    val ctx = LocalContext.current
-                    LaunchedEffect(previewView, lensSelector) {
-                        val pv = previewView ?: return@LaunchedEffect
-                        val cameraProvider = ProcessCameraProvider.getInstance(ctx).get()
-                        val preview = androidx.camera.core.Preview.Builder().build()
-                        val reader = MultiFormatReader().apply {
-                            setHints(mapOf(com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)))
-                        }
-                        val analysis = ImageAnalysis.Builder()
-                            .setTargetResolution(Size(640, 480))
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .build()
-                        analysis.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy: ImageProxy ->
-                            try {
-                                val buffer = imageProxy.planes[0].buffer
-                                val data = ByteArray(buffer.remaining())
-                                buffer.get(data)
-                                val source = PlanarYUVLuminanceSource(
-                                    data,
-                                    imageProxy.width,
-                                    imageProxy.height,
-                                    0, 0,
-                                    imageProxy.width,
-                                    imageProxy.height,
-                                    false
-                                )
-                                val bitmap = BinaryBitmap(HybridBinarizer(source))
-                                val result = reader.decodeWithState(bitmap)
-                                result?.text?.let { raw ->
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastProcessed > 2000) {
-                                        lastProcessed = now
-                                        vm.onRawQr(raw)
+                                
+                                DecoratedBarcodeView(ctx).apply {
+                                // Only scan QR codes
+                                val formats = listOf(BarcodeFormat.QR_CODE)
+                                barcodeView = this
+                                decoderFactory = DefaultDecoderFactory(formats)
+                                
+                                // Configure camera settings
+                                val settings = barcodeView?.cameraSettings
+                                settings?.requestedCameraId = if (useBackCamera) 0 else 1 // 0=back, 1=front
+                                settings?.isAutoFocusEnabled = true
+                                settings?.isContinuousFocusEnabled = true
+                                settings?.isAutoTorchEnabled = false
+                                barcodeView?.cameraSettings = settings
+                                
+                                val callback = object : BarcodeCallback {
+                                    override fun barcodeResult(result: BarcodeResult?) {
+                                        result?.text?.let { raw ->
+                                            Log.i(TAG, "QR detected via ZXing: $raw")
+                                            val now = System.currentTimeMillis()
+                                            mainHandler.post {
+                                                diagnostics = diagnostics.copy(
+                                                    analyzerActive = true,
+                                                    framesProcessed = diagnostics.framesProcessed + 1,
+                                                    scanAttempts = diagnostics.scanAttempts + 1,
+                                                    successfulScans = diagnostics.successfulScans + 1,
+                                                    lastScanText = raw.take(50),
+                                                    lastScanTime = now,
+                                                    lastFrameTime = now,
+                                                    lastError = null
+                                                )
+                                            }
+                                            if (now - lastProcessed > 1500) {
+                                                lastProcessed = now
+                                                vm.onRawQr(raw)
+                                            }
+                                        }
+                                    }
+                                    
+                                    override fun possibleResultPoints(resultPoints: MutableList<ResultPoint>?) {
+                                        // Frames are being processed
+                                        val now = System.currentTimeMillis()
+                                        val newCount = diagnostics.framesProcessed + 1
+                                        if (newCount == 1L) {
+                                            mainHandler.post {
+                                                diagnostics = diagnostics.copy(analyzerActive = true, framesProcessed = 1)
+                                            }
+                                        } else if (newCount % 30L == 0L) {
+                                            mainHandler.post {
+                                                diagnostics = diagnostics.copy(
+                                                    framesProcessed = newCount,
+                                                    lastFrameTime = now,
+                                                    scanAttempts = diagnostics.scanAttempts + 1
+                                                )
+                                            }
+                                        }
                                     }
                                 }
-                            } catch (_: Exception) {
-                                // No QR code found, ignore
-                            } finally {
-                                reader.reset()
-                                imageProxy.close()
+                                
+                                decodeContinuous(callback)
+                                
+                                mainHandler.post {
+                                    diagnostics = diagnostics.copy(
+                                        analysisBuilt = true,
+                                        analyzerSet = true,
+                                        analysisBound = true,
+                                        cameraInitialized = true,
+                                        pipelineStage = "ZXing scanner ready"
+                                    )
+                                }
+                                Log.i(TAG, "ZXing BarcodeView initialized")
+                                }
+                            }
+                        )
+                        
+                        // Start/stop scanning based on lifecycle
+                        DisposableEffect(Unit) {
+                            Log.i(TAG, "Starting camera: ${if (useBackCamera) "back" else "front"}")
+                            barcodeView?.resume()
+                            onDispose {
+                                Log.i(TAG, "Stopping camera")
+                                barcodeView?.pause()
                             }
                         }
-                        try {
-                            cameraProvider.unbindAll()
-                            preview.setSurfaceProvider(pv.surfaceProvider)
-                            val camera = cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                lensSelector,
-                                preview,
-                                analysis
+                    }
+                    
+                    // Diagnostic button overlay (top-right) - only visible when enabled
+                    if (diagnosticsEnabled) {
+                        IconButton(
+                            onClick = { showDiagnosticPanel = true },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.BugReport,
+                                contentDescription = "Diagnostik",
+                                tint = MaterialTheme.colorScheme.primary
                             )
-                            // Enable tap-to-focus
-                            pv.setOnTouchListener { _, _ ->
-                                val factory = pv.meteringPointFactory
-                                val point = factory.createPoint(pv.width / 2f, pv.height / 2f)
-                                val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
-                                camera.cameraControl.startFocusAndMetering(action)
-                                true
-                            }
-                        } catch (_: Exception) { /* ignore for MVP */ }
+                        }
                     }
                 }
                 // Instruction banner between camera and leaderboard
@@ -280,15 +362,119 @@ fun ReadyScreen(
                 }
             }
         }
+        
+        // Diagnostic panel dialog
+        if (showDiagnosticPanel) {
+            AlertDialog(
+                onDismissRequest = { showDiagnosticPanel = false },
+                confirmButton = {
+                    TextButton(onClick = { 
+                        diagnostics = diagnostics.copy(
+                            framesProcessed = 0,
+                            scanAttempts = 0,
+                            successfulScans = 0,
+                            lastError = null,
+                            lastScanText = null
+                        )
+                    }) {
+                        Text("Nulstil")
+                    }
+                },
+                dismissButton = {
+                    IconButton(onClick = { showDiagnosticPanel = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Luk")
+                    }
+                },
+                title = { Text("QR Scanner Diagnostik") },
+                text = {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        DiagnosticRow("Kamera initialiseret", if (diagnostics.cameraInitialized) "Ja" else "Nej", diagnostics.cameraInitialized)
+                        DiagnosticRow("Analysator aktiv", if (diagnostics.analyzerActive) "Ja" else "Nej", diagnostics.analyzerActive)
+                        DiagnosticRow("Frames behandlet", diagnostics.framesProcessed.toString(), diagnostics.framesProcessed > 0)
+                        DiagnosticRow("Scanforsøg", diagnostics.scanAttempts.toString(), true)
+                        DiagnosticRow("Vellykkede scans", diagnostics.successfulScans.toString(), diagnostics.successfulScans > 0)
+                        DiagnosticRow("Opløsning", "${diagnostics.resolutionWidth}x${diagnostics.resolutionHeight}", diagnostics.resolutionWidth > 0)
+                        DiagnosticRow("Aktuel kamera", diagnostics.currentCamera, true)
+                        DiagnosticRow("Pipeline stadie", diagnostics.pipelineStage, diagnostics.cameraInitialized)
+                        DiagnosticRow("Android version", diagnostics.androidVersion, true)
+                        
+                        if (diagnostics.lastScanText != null) {
+                            HorizontalDivider()
+                            Text("Sidste scan:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                            Text(diagnostics.lastScanText ?: "N/A", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+                            Text("Tid: ${if (diagnostics.lastScanTime > 0) java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(diagnostics.lastScanTime)) else "N/A"}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        
+                        if (diagnostics.lastError != null) {
+                            HorizontalDivider()
+                            TroubleshootingTip(diagnostics.lastError ?: "", isError = true)
+                        }
+                        
+                        HorizontalDivider()
+                        Text("Fejlfinding:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        if (!diagnostics.cameraInitialized) {
+                            TroubleshootingTip("• Kameraet kunne ikke initialiseres. Tjek tilladelser.", isError = true)
+                        }
+                        if (diagnostics.framesProcessed == 0L && diagnostics.cameraInitialized) {
+                            TroubleshootingTip("• Ingen frames modtaget. Prøv at skifte kamera.", isError = true)
+                        }
+                        if (diagnostics.scanAttempts > 50 && diagnostics.successfulScans == 0L) {
+                            TroubleshootingTip("• Mange forsøg uden succes. Tjek QR-kode kvalitet og lys.", isError = true)
+                        }
+                        if (diagnostics.successfulScans > 0) {
+                            TroubleshootingTip("• Scanner fungerer korrekt.")
+                        }
+                    }
+                }
+            )
+        }
     }
 }
 
 @Composable
+private fun DiagnosticRow(label: String, value: String, isGood: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+            color = if (isGood) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun TroubleshootingTip(text: String, isError: Boolean = false) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(vertical = 2.dp)
+    )
+}
+
+@Composable
 private fun CompactLeaderboardGrid(groupedRecent: Map<PracticeType, Map<String, List<LeaderboardEntry>>>) {
-    val types = PracticeType.values().toList()
+    val types = remember { PracticeType.values().toList() }
     // Two-column grid of discipline cards
-        val typesToRender = types.filter { t -> groupedRecent[t]?.any { (_, list) -> list.isNotEmpty() } == true }
-        LazyVerticalGrid(
+    val typesToRender by remember(groupedRecent) {
+        derivedStateOf {
+            types.filter { t -> groupedRecent[t]?.any { (_, list) -> list.isNotEmpty() } == true }
+        }
+    }
+    LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = Modifier.fillMaxSize().padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),

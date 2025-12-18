@@ -133,7 +133,11 @@ class CsvService @Inject constructor(
     }
 
     suspend fun importMembers(csvContent: String): ImportResult = withContext(Dispatchers.IO) {
-        val lines = csvReader().readAll(csvContent)
+        // Auto-detect delimiter: check if first line contains semicolons or commas
+        val firstLine = csvContent.lines().firstOrNull() ?: ""
+        val delimiter = if (';' in firstLine) ';' else ','
+        
+        val lines = csvReader { this.delimiter = delimiter }.readAll(csvContent)
         if (lines.isEmpty()) return@withContext ImportResult(0,0,0,listOf("Empty file"))
         val header = lines.first()
     val required = setOf("FORMAT_VERSION","membership_id","first_name","last_name","status")

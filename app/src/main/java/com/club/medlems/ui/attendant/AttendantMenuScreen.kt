@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +39,8 @@ import androidx.compose.material3.SnackbarHostState
 import com.club.medlems.ui.ready.ScanOutcome
 import android.media.ToneGenerator
 import android.media.AudioManager
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Delete
 // Single-page admin menu (flattened for kiosk)
 
@@ -74,12 +77,14 @@ fun AttendantMenuScreen(
     var manualId by remember { mutableStateOf("") }
     var showChangePin by remember { mutableStateOf(false) }
     val activeMembers by adminVm.activeMembers.collectAsState(initial = emptyList())
-    val filtered = remember(query, activeMembers) {
-        if (query.isBlank()) activeMembers else activeMembers.filter {
-            it.membershipId.contains(query, ignoreCase = true) ||
-            it.firstName.contains(query, ignoreCase = true) ||
-            it.lastName.contains(query, ignoreCase = true)
-        }.take(50)
+    val filtered by remember {
+        derivedStateOf {
+            if (query.isBlank()) activeMembers else activeMembers.filter {
+                it.membershipId.contains(query, ignoreCase = true) ||
+                it.firstName.contains(query, ignoreCase = true) ||
+                it.lastName.contains(query, ignoreCase = true)
+            }.take(50)
+        }
     }
     // Hold last manual scan result to offer add-session option
     data class PostScan(val memberId: String, val scanEventId: String, val birthday: Boolean)
@@ -184,6 +189,21 @@ fun AttendantMenuScreen(
                             Spacer(Modifier.width(8.dp))
                             Text("Skift PIN")
                         }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val diagnosticPrefs: com.club.medlems.domain.prefs.DiagnosticPreferences = hiltViewModel<AttendantViewModel>().diagnosticPrefs
+                        val diagnosticsEnabled by diagnosticPrefs.diagnosticsEnabled.collectAsState()
+                        Button(
+                            onClick = { 
+                                attendant.registerInteraction()
+                                diagnosticPrefs.setDiagnosticsEnabled(!diagnosticsEnabled)
+                            }, 
+                            modifier = Modifier.weight(1f).height(btnHeight)
+                        ) {
+                            Icon(Icons.Default.BugReport, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (diagnosticsEnabled) "Skjul diagnostik" else "Vis diagnostik")
+                        }
                         Spacer(Modifier.weight(1f))
                     }
                     var showEditPicker by remember { mutableStateOf(false) }
@@ -286,22 +306,39 @@ fun AttendantMenuScreen(
                 dismissButton = { TextButton(onClick = { showManual = false }) { Text("Annuller") } },
                 title = { Text("Manuel scanning") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Brug denne funktion når QR scanning ikke virker korrekt.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        
                         OutlinedTextField(
                             value = query,
                             onValueChange = { query = it },
                             label = { Text("Søg (navn eller ID)") },
-                            singleLine = true
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
                             value = manualId,
                             onValueChange = { manualId = it },
                             label = { Text("Medlems-ID (valgfri)") },
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth()
                         )
+                        
                         val itemsList = filtered
                         if (itemsList.isNotEmpty()) {
+                            Text(
+                                "Matchende medlemmer:",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
                             LazyColumn(Modifier.heightIn(max = 240.dp)) {
                                 items(itemsList) { m ->
                                     ListItem(
@@ -312,6 +349,34 @@ fun AttendantMenuScreen(
                                         }
                                     )
                                     HorizontalDivider()
+                                }
+                            }
+                        } else if (query.isNotBlank()) {
+                            Text(
+                                "Ingen medlemmer fundet",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                        
+                        if (query.isBlank() && manualId.isBlank()) {
+                            ElevatedCard(
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                colors = CardDefaults.elevatedCardColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                )
+                            ) {
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        "Tip til QR scanning problemer:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text("• Tryk på fejlfindingsknappen (🐞) på skærmen", style = MaterialTheme.typography.bodySmall)
+                                    Text("• Skift mellem front/bag kamera", style = MaterialTheme.typography.bodySmall)
+                                    Text("• Sørg for god belysning", style = MaterialTheme.typography.bodySmall)
+                                    Text("• Hold kortet stabilt i fokus", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }
@@ -372,4 +437,7 @@ fun AttendantMenuScreen(
 }
 
 @dagger.hilt.android.lifecycle.HiltViewModel
-class AttendantViewModel @javax.inject.Inject constructor(val attendant: AttendantModeManager): androidx.lifecycle.ViewModel()
+class AttendantViewModel @javax.inject.Inject constructor(
+    val attendant: AttendantModeManager,
+    val diagnosticPrefs: com.club.medlems.domain.prefs.DiagnosticPreferences
+): androidx.lifecycle.ViewModel()

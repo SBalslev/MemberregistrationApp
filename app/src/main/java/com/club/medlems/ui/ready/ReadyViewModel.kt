@@ -36,7 +36,8 @@ class ReadyViewModel @Inject constructor(
     private val checkInDao: CheckInDao,
     private val practiceSessionDao: PracticeSessionDao,
     private val scanEventDao: ScanEventDao,
-    private val attendant: AttendantModeManager
+    private val attendant: AttendantModeManager,
+    val diagnosticPrefs: com.club.medlems.domain.prefs.DiagnosticPreferences
 ): ViewModel() {
 
     private val _events = Channel<ScanOutcome>(Channel.BUFFERED)

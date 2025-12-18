@@ -110,13 +110,17 @@ class LeaderboardViewModel @Inject constructor(
                     }
             }
 
-            // Enrich names for all involved membershipIds
+            // Enrich names for all involved membershipIds - optimized with single query
             val ids = buildSet {
                 flatBest.forEach { add(it.membershipId) }
                 recentMap.values.forEach { byCls -> byCls.values.forEach { list -> list.forEach { add(it.membershipId) } } }
             }
-            val members = memberDao.allMembers().filter { ids.contains(it.membershipId) }
-            val nameById = members.associate { m ->
+            val memberNames = if (ids.isNotEmpty()) {
+                memberDao.getMemberNames(ids.toList())
+            } else {
+                emptyList()
+            }
+            val nameById = memberNames.associate { m ->
                 val li = m.lastName.trim().firstOrNull()?.let { "$it." } ?: ""
                 val short = (m.firstName.trim() + if (li.isNotEmpty()) " $li" else "").trim()
                 m.membershipId to short.ifBlank { null }

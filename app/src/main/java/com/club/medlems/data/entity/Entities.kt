@@ -10,7 +10,7 @@ enum class PracticeType { Riffel, Pistol, LuftRiffel, LuftPistol, Andet }
 enum class ScanEventType { FIRST_SCAN, REPEAT_SCAN }
 enum class SessionSource { kiosk, attendant }
 
-@Entity
+@Entity(indices = [androidx.room.Index(value = ["status"]), androidx.room.Index(value = ["membershipId"])])
 data class Member(
     @PrimaryKey val membershipId: String,
     val firstName: String,
@@ -23,7 +23,7 @@ data class Member(
     val updatedAtUtc: Instant = Instant.DISTANT_PAST
 )
 
-@Entity
+@Entity(indices = [androidx.room.Index(value = ["membershipId", "localDate"])])
 data class CheckIn(
     @PrimaryKey val id: String,
     val membershipId: String,

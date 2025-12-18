@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.kapt")
+    id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
 }
 
@@ -15,7 +15,7 @@ android {
         targetSdk = 34
     // Auto-incrementing versionCode: use epoch seconds so each build is higher
     versionCode = (System.currentTimeMillis() / 1000L).toInt()
-        versionName = "0.2.0"
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -33,6 +33,10 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+        }
+        // Use debug signing for release builds (temporary - create proper keystore later)
+        release {
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -82,16 +86,17 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.2")
     implementation("androidx.camera:camera-view:1.3.2")
     implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.3")
 
     // Room
     implementation("androidx.room:room-runtime:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
 
     // Hilt
     implementation("com.google.dagger:hilt-android:2.49")
-    kapt("com.google.dagger:hilt-android-compiler:2.49")
+    ksp("com.google.dagger:hilt-android-compiler:2.49")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     implementation("com.google.accompanist:accompanist-flowlayout:0.34.0")
 
