@@ -140,3 +140,21 @@ interface ScanEventDao {
         @Query("DELETE FROM ScanEvent")
         suspend fun deleteAllEvents()
 }
+
+@Dao
+interface NewMemberRegistrationDao {
+    @Insert
+    suspend fun insert(registration: NewMemberRegistration)
+    
+    @Query("SELECT * FROM NewMemberRegistration ORDER BY createdAtUtc DESC")
+    suspend fun allRegistrations(): List<NewMemberRegistration>
+    
+    @Query("SELECT * FROM NewMemberRegistration WHERE id = :id")
+    suspend fun get(id: String): NewMemberRegistration?
+    
+    @Delete
+    suspend fun delete(registration: NewMemberRegistration)
+    
+    @Query("DELETE FROM NewMemberRegistration")
+    suspend fun deleteAll()
+}

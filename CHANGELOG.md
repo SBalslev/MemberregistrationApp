@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 ### Added
+- **Member Registration Feature**: New screen for registering new members with photo capture
+  - Front-facing camera for taking member photos
+  - Photos saved to SD card in "Nyt medlem" folder with timestamp
+  - Optional guardian information fields for child registrations
+  - Guardian info saved alongside photo as text file (_vaerge.txt)
+  - Temporary ID generation (NYT-{timestamp}) for unassigned members
+  - Database entity to track registrations with photo path and guardian details
+  - All UI elements in Danish language
+  - Access via Admin menu "Tilmeld nyt medlem" button
 - **Database Performance Indices**: Added strategic indices on frequently queried columns for faster database operations
   - Member table: status, membershipId
   - CheckIn table: composite index on (membershipId, localDate)
@@ -42,6 +51,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
   - Camera diagnostics update only every 30 frames instead of every frame, reducing UI overhead
   - Filtered member lists in admin screens optimized with derivedStateOf
   - CompactLeaderboardGrid calculations cached and only recompute when data changes
+- Database schema version updated to v5 with migration for NewMemberRegistration table
 - QR scanning now uses optimized ZXing decoder with improved error handling
 - Camera analyzer tracks frame processing statistics for performance monitoring
 - Manual scan workflow provides better guidance for users when camera scanning is problematic

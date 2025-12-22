@@ -55,3 +55,14 @@ data class ScanEvent(
     val linkedSessionId: String? = null,
     val canceledFlag: Boolean = false
 )
+
+@Entity
+data class NewMemberRegistration(
+    @PrimaryKey val id: String,
+    val temporaryId: String,
+    val createdAtUtc: Instant,
+    val photoPath: String,
+    val guardianName: String? = null,
+    val guardianPhone: String? = null,
+    val guardianEmail: String? = null
+)

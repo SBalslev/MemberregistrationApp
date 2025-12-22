@@ -47,13 +47,30 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Add NewMemberRegistration table
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS NewMemberRegistration (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    temporaryId TEXT NOT NULL,
+                    createdAtUtc INTEGER NOT NULL,
+                    photoPath TEXT NOT NULL,
+                    guardianName TEXT,
+                    guardianPhone TEXT,
+                    guardianEmail TEXT
+                )
+            """.trimIndent())
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).fallbackToDestructiveMigration().build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).fallbackToDestructiveMigration().build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()
@@ -63,6 +80,8 @@ object DatabaseModule {
     fun practiceSessionDao(db: AppDatabase) = db.practiceSessionDao()
     @Provides
     fun scanEventDao(db: AppDatabase) = db.scanEventDao()
+    @Provides
+    fun newMemberRegistrationDao(db: AppDatabase) = db.newMemberRegistrationDao()
 
     @Provides
     @Singleton

@@ -42,6 +42,21 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`
 - Admin Mode (Attendant): 4-cifret PIN (standard 3715, kan ændres i admin-menuen) med automatisk relock efter inaktivitet.
 	- Shortcut: scanning membership ID 99000009 on the Ready screen auto-unlocks Admin and opens the Admin menu.
 
+### Member Registration (New)
+The app now supports registering new members directly on the device via Admin menu:
+- **Access**: Admin → Tilmeld nyt medlem
+- **Photo Capture**: Uses front-facing camera to take member photo
+- **Storage**: Photos saved to SD card (DCIM/Nyt medlem) with timestamp: NYT_YYYYMMDD_HHmmss.jpg
+- **Temporary ID**: Auto-generated as NYT-{timestamp} until membership ID is assigned
+- **Guardian Information** (optional for children):
+  - Værge navn (Guardian name)
+  - Værge telefon (Guardian phone)
+  - Værge e-mail (Guardian email)
+  - Saved as text file alongside photo: {filename}_vaerge.txt
+- **Language**: All UI elements in Danish
+- **Privacy**: No audit trail; public-facing feature
+- **Database**: Registrations tracked in NewMemberRegistration table
+
 ## Troubleshooting QR Scanning
 
 If QR scanning is not working correctly, the app includes comprehensive diagnostics and mitigation options:

@@ -71,6 +71,7 @@ sealed class NavRoute(val route: String) {
     data object EditSessions: NavRoute("editSessions/{membershipId}") {
         fun build(membershipId: String) = "editSessions/$membershipId"
     }
+    data object Registration: NavRoute("registration")
 }
 
 @Composable
@@ -121,12 +122,16 @@ fun AppRoot(
                         navController.navigate(NavRoute.PracticeSession.build(memberId, scanEventId))
                     },
                     openEditSessions = { memberId -> navController.navigate(NavRoute.EditSessions.build(memberId)) },
+                    openRegistration = { navController.navigate(NavRoute.Registration.route) },
                     onBack = { navController.popBackStack() }
                 )
             }
             composable(NavRoute.EditSessions.route) { backStackEntry ->
                 val memberId = backStackEntry.arguments?.getString("membershipId") ?: "?"
                 com.club.medlems.ui.attendant.EditSessionsScreen(memberId = memberId, onBack = { navController.popBackStack() })
+            }
+            composable(NavRoute.Registration.route) {
+                com.club.medlems.ui.attendant.RegistrationScreen(onBack = { navController.popBackStack() })
             }
         }
     }

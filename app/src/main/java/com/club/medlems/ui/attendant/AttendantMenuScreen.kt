@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.text.input.KeyboardType
@@ -50,9 +52,10 @@ fun AttendantMenuScreen(
     openLeaderboard: () -> Unit,
     openPracticeSession: (memberId: String, scanEventId: String) -> Unit,
     openEditSessions: (memberId: String) -> Unit,
+    openRegistration: () -> Unit,
     onBack: () -> Unit,
     attendant: AttendantModeManager = androidx.hilt.navigation.compose.hiltViewModel<AttendantViewModel>().attendant
-) {
+){
     val context = LocalContext.current
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -178,19 +181,24 @@ fun AttendantMenuScreen(
                             Text("Resultatliste")
                         }
                     }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Button(onClick = { attendant.registerInteraction(); showManual = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
                             Icon(Icons.Default.QrCode, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text("Manuel scanning")
                         }
+                        Button(onClick = { attendant.registerInteraction(); openRegistration() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                            Icon(Icons.Default.PersonAdd, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Tilmeld nyt medlem")
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Button(onClick = { attendant.registerInteraction(); showChangePin = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
                             Icon(Icons.Default.Lock, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text("Skift PIN")
                         }
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
                         val diagnosticPrefs: com.club.medlems.domain.prefs.DiagnosticPreferences = hiltViewModel<AttendantViewModel>().diagnosticPrefs
                         val diagnosticsEnabled by diagnosticPrefs.diagnosticsEnabled.collectAsState()
                         Button(
@@ -204,7 +212,6 @@ fun AttendantMenuScreen(
                             Spacer(Modifier.width(8.dp))
                             Text(if (diagnosticsEnabled) "Skjul diagnostik" else "Vis diagnostik")
                         }
-                        Spacer(Modifier.weight(1f))
                     }
                     var showEditPicker by remember { mutableStateOf(false) }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {

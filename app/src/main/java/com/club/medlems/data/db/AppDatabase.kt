@@ -7,8 +7,8 @@ import com.club.medlems.data.dao.*
 import com.club.medlems.data.entity.*
 
 @Database(
-    entities = [Member::class, CheckIn::class, PracticeSession::class, ScanEvent::class],
-    version = 4,
+    entities = [Member::class, CheckIn::class, PracticeSession::class, ScanEvent::class, NewMemberRegistration::class],
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(AppConverters::class)
@@ -17,4 +17,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun checkInDao(): CheckInDao
     abstract fun practiceSessionDao(): PracticeSessionDao
     abstract fun scanEventDao(): ScanEventDao
+    abstract fun newMemberRegistrationDao(): NewMemberRegistrationDao
 }
