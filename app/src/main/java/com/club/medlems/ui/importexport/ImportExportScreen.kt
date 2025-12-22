@@ -31,7 +31,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import com.club.medlems.ui.attendant.AdminActionsViewModel
 
 @Composable
-fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewModel<ImportExportViewModel>().csvService) {
+fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hiltViewModel()) {
+    val csvService = viewModel.csvService
+    val sdCardSyncManager = viewModel.sdCardSyncManager
+    val sdCardSyncPreferences = viewModel.sdCardSyncPreferences
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val exporter = remember { CsvFileExporter(context) }
@@ -41,6 +44,9 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
     var scanEventsCsv by remember { mutableStateOf<String?>(null) }
     var importResult by remember { mutableStateOf<String?>(null) }
     var importing by remember { mutableStateOf(false) }
+    var sdSyncEnabled by remember { mutableStateOf(sdCardSyncPreferences.isAutoSyncEnabled()) }
+    var sdSyncResult by remember { mutableStateOf<String?>(null) }
+    var sdSyncing by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
@@ -65,6 +71,71 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
         horizontalAlignment = Alignment.Start
     ) {
         Text("CSV import / eksport", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(12.dp))
+
+        // SD Card Auto-Sync Section
+        ElevatedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("SD-kort automatisk synkronisering", style = MaterialTheme.typography.titleMedium)
+                Text("Automatisk import af medlemsopdateringer og eksport af backups til SD-kort.", 
+                     style = MaterialTheme.typography.bodySmall)
+                
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Switch(
+                        checked = sdSyncEnabled,
+                        onCheckedChange = { enabled ->
+                            sdSyncEnabled = enabled
+                            sdCardSyncPreferences.setAutoSyncEnabled(enabled)
+                            if (enabled) {
+                                sdCardSyncManager.startAutoSync()
+                                Toast.makeText(context, "Auto-synkronisering aktiveret", Toast.LENGTH_SHORT).show()
+                            } else {
+                                sdCardSyncManager.stopAutoSync()
+                                Toast.makeText(context, "Auto-synkronisering deaktiveret", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (sdSyncEnabled) "Aktiveret (hver time)" else "Deaktiveret")
+                }
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        enabled = !sdSyncing,
+                        onClick = {
+                            scope.launch {
+                                sdSyncing = true
+                                sdSyncResult = null
+                                try {
+                                    val result = sdCardSyncManager.performSync()
+                                    sdSyncResult = result.message
+                                    Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                } catch (e: Exception) {
+                                    sdSyncResult = "Fejl: ${e.message}"
+                                    Toast.makeText(context, "Fejl: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
+                                sdSyncing = false
+                            }
+                        }
+                    ) {
+                        if (sdSyncing) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.FileDownload, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (sdSyncing) "Synkroniserer..." else "Synkroniser nu")
+                    }
+                }
+                
+                if (sdSyncResult != null) {
+                    Text(sdSyncResult!!, style = MaterialTheme.typography.bodySmall)
+                }
+                
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                Text("Placering: SD-kort/Medlemscheckin/", style = MaterialTheme.typography.bodySmall)
+                Text("• Import: members_import.csv", style = MaterialTheme.typography.bodySmall)
+                Text("• Export: checkins_backup.csv, sessions_backup.csv", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
         Spacer(Modifier.height(12.dp))
 
         ElevatedCard(Modifier.fillMaxWidth()) {
@@ -290,4 +361,8 @@ fun ImportExportScreen(onBack: () -> Unit, csvService: CsvService = hiltViewMode
 }
 
 @dagger.hilt.android.lifecycle.HiltViewModel
-class ImportExportViewModel @javax.inject.Inject constructor(val csvService: CsvService): androidx.lifecycle.ViewModel()
+class ImportExportViewModel @javax.inject.Inject constructor(
+    val csvService: CsvService,
+    val sdCardSyncManager: com.club.medlems.domain.csv.SdCardSyncManager,
+    val sdCardSyncPreferences: com.club.medlems.domain.prefs.SdCardSyncPreferences
+): androidx.lifecycle.ViewModel()
