@@ -98,7 +98,7 @@ dependencies {
     implementation("com.google.dagger:hilt-android:2.49")
     ksp("com.google.dagger:hilt-android-compiler:2.49")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
-    implementation("com.google.accompanist:accompanist-flowlayout:0.34.0")
+    implementation("com.google.accompanist:accompanist-flowlayout:0.36.0")
 
     // (removed) explicit javapoet override; rely on transitive versions from processors
 
