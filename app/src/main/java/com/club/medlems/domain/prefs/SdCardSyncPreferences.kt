@@ -2,11 +2,12 @@ package com.club.medlems.domain.prefs
 
 import android.content.Context
 import android.content.SharedPreferences
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class SdCardSyncPreferences @Inject constructor(context: Context) {
+class SdCardSyncPreferences @Inject constructor(@ApplicationContext context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("sdcard_sync", Context.MODE_PRIVATE)
     
     companion object {

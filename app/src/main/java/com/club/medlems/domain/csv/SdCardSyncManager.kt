@@ -3,6 +3,7 @@ package com.club.medlems.domain.csv
 import android.content.Context
 import android.os.Environment
 import com.club.medlems.domain.prefs.SdCardSyncPreferences
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.datetime.Clock
 import java.io.File
@@ -12,7 +13,7 @@ import android.util.Log
 
 @Singleton
 class SdCardSyncManager @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
     private val csvService: CsvService,
     private val syncPrefs: SdCardSyncPreferences
 ) {
@@ -131,11 +132,11 @@ class SdCardSyncManager @Inject constructor(
             
             if (sdCard != null) {
                 // Navigate up to root of SD card from app-specific directory
-                var current = sdCard
-                while (current.parentFile != null && current.parentFile?.name != "Android") {
-                    current = current.parentFile!!
+                var current: File? = sdCard
+                while (current?.parentFile != null && current.parentFile?.name != "Android") {
+                    current = current.parentFile
                 }
-                current.parentFile?.parentFile?.absolutePath
+                current?.parentFile?.parentFile?.absolutePath
             } else {
                 // Fallback to primary external storage for testing
                 val primary = externalDirs.firstOrNull()
