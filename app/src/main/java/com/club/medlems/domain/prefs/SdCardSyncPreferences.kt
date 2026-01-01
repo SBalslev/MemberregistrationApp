@@ -14,6 +14,7 @@ class SdCardSyncPreferences @Inject constructor(@ApplicationContext context: Con
         private const val KEY_LAST_IMPORT = "last_import_timestamp"
         private const val KEY_LAST_EXPORT = "last_export_timestamp"
         private const val KEY_AUTO_SYNC_ENABLED = "auto_sync_enabled"
+        private const val KEY_LAST_SUCCESSFUL_SYNC = "last_successful_sync"
     }
     
     fun getLastImportTimestamp(): Long = prefs.getLong(KEY_LAST_IMPORT, 0L)
@@ -32,5 +33,11 @@ class SdCardSyncPreferences @Inject constructor(@ApplicationContext context: Con
     
     fun setAutoSyncEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTO_SYNC_ENABLED, enabled).apply()
+    }
+    
+    fun getLastSuccessfulSync(): Long = prefs.getLong(KEY_LAST_SUCCESSFUL_SYNC, 0L)
+    
+    fun setLastSuccessfulSync(timestamp: Long) {
+        prefs.edit().putLong(KEY_LAST_SUCCESSFUL_SYNC, timestamp).apply()
     }
 }

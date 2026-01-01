@@ -129,6 +129,21 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                     Text(sdSyncResult!!, style = MaterialTheme.typography.bodySmall)
                 }
                 
+                // Display last successful sync timestamp
+                val lastSync = sdCardSyncPreferences.getLastSuccessfulSync()
+                if (lastSync > 0) {
+                    val lastSyncTime = kotlinx.datetime.Instant.fromEpochMilliseconds(lastSync)
+                    val formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+                    val dateTime = java.time.Instant.ofEpochMilli(lastSync)
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .format(formatter)
+                    Text(
+                        "Sidste sync: $dateTime",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 Text("Placering: SD-kort/Medlemscheckin/", style = MaterialTheme.typography.bodySmall)
                 Text("• Import: members_import.csv", style = MaterialTheme.typography.bodySmall)

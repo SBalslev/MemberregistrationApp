@@ -2,23 +2,30 @@ package com.club.medlems.domain.csv
 
 import android.content.Context
 import android.os.Environment
+import android.util.Log
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.club.medlems.domain.prefs.SdCardSyncPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import java.io.File
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-import android.util.Log
 
 @Singleton
 class SdCardSyncManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val csvService: CsvService,
-    private val syncPrefs: SdCardSyncPreferences
+    private val syncPrefs: SdCardSyncPreferences,
+    private val checkInDao: com.club.medlems.data.dao.CheckInDao,
+    private val sessionDao: com.club.medlems.data.dao.PracticeSessionDao
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var syncJob: Job? = null
+    private val workManager = WorkManager.getInstance(context)
     private val TAG = "SdCardSync"
     
     companion object {
@@ -30,24 +37,32 @@ class SdCardSyncManager @Inject constructor(
     }
     
     fun startAutoSync() {
-        syncJob?.cancel()
-        syncJob = scope.launch {
-            while (isActive) {
-                try {
-                    performSync()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Sync error: ${e.message}", e)
-                }
-                delay(SYNC_INTERVAL_MS)
-            }
-        }
-        Log.d(TAG, "Auto-sync started")
+        // Create periodic work request that runs every 1 hour
+        val syncWorkRequest = PeriodicWorkRequestBuilder<SdCardSyncWorker>(
+            1, TimeUnit.HOURS,  // Repeat interval
+            15, TimeUnit.MINUTES // Flex interval - can run up to 15 min earlier/later
+        )
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiresBatteryNotLow(false) // Don't wait for battery
+                    .setRequiresStorageNotLow(true)  // Need storage for SD card operations
+                    .build()
+            )
+            .build()
+
+        // Use KEEP policy to avoid resetting the schedule if already running
+        workManager.enqueueUniquePeriodicWork(
+            SdCardSyncWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            syncWorkRequest
+        )
+        
+        Log.d(TAG, "WorkManager auto-sync started (every 1 hour)")
     }
     
     fun stopAutoSync() {
-        syncJob?.cancel()
-        syncJob = null
-        Log.d(TAG, "Auto-sync stopped")
+        workManager.cancelUniqueWork(SdCardSyncWorker.WORK_NAME)
+        Log.d(TAG, "WorkManager auto-sync stopped")
     }
     
     suspend fun performSync(): SyncResult = withContext(Dispatchers.IO) {
@@ -75,11 +90,22 @@ class SdCardSyncManager @Inject constructor(
             if (lastModified > lastImportTime) {
                 try {
                     val content = importFile.readText()
-                    val result = csvService.importMembers(content)
-                    syncPrefs.setLastImportTimestamp(lastModified)
-                    imported = true
-                    message += "Imported: ${result.imported} members, ${result.skippedDuplicates} duplicates. "
-                    Log.i(TAG, "Import successful: $message")
+                    if (content.isBlank()) {
+                        Log.w(TAG, "Import file is empty")
+                        message += "Import file is empty. "
+                    } else {
+                        val result = csvService.importMembers(content)
+                        if (result.errors.isEmpty()) {
+                            syncPrefs.setLastImportTimestamp(lastModified)
+                            syncPrefs.setLastSuccessfulSync(Clock.System.now().toEpochMilliseconds())
+                            imported = true
+                            message += "Imported: ${result.imported} members, ${result.skippedDuplicates} duplicates. "
+                            Log.i(TAG, "Import successful: $message")
+                        } else {
+                            message += "Import partially failed: ${result.errors.joinToString(", ")}. "
+                            Log.w(TAG, "Import had errors: ${result.errors}")
+                        }
+                    }
                 } catch (e: Exception) {
                     message += "Import error: ${e.message}. "
                     Log.e(TAG, "Import failed", e)
@@ -91,24 +117,65 @@ class SdCardSyncManager @Inject constructor(
         
         // Export check-ins and sessions only if there are new ones
         val lastExportTime = syncPrefs.getLastExportTimestamp()
-        val hasNewData = hasDataSinceTimestamp(lastExportTime)
+        val lastExportInstant = if (lastExportTime == 0L) {
+            Instant.DISTANT_PAST
+        } else {
+            Instant.fromEpochMilliseconds(lastExportTime)
+        }
+        
+        val hasNewData = hasDataSinceTimestamp(lastExportInstant)
         
         if (hasNewData) {
             try {
-                // Export check-ins
-                val checkInsContent = csvService.exportCheckIns()
+                val exportStartTime = Clock.System.now()
+                
+                // Export only new check-ins (incremental)
+                val checkInsContent = csvService.exportCheckInsSince(lastExportInstant)
                 val checkInsFile = File(syncFolder, EXPORT_CHECKINS_FILE)
-                checkInsFile.writeText(checkInsContent)
                 
-                // Export sessions
-                val sessionsContent = csvService.exportSessions()
+                // Append to existing file or create new one (using atomic writes)
+                if (lastExportTime == 0L || !checkInsFile.exists()) {
+                    // First export - include header
+                    atomicWriteFile(checkInsFile, checkInsContent)
+                } else {
+                    // Subsequent export - append without header
+                    val lines = checkInsContent.lines()
+                    if (lines.size > 1) { // Has more than just header
+                        val dataOnly = lines.drop(1).joinToString("\n")
+                        if (dataOnly.isNotBlank()) {
+                            atomicAppendFile(checkInsFile, "\n" + dataOnly)
+                        }
+                    }
+                }
+                
+                // Export only new sessions (incremental)
+                val sessionsContent = csvService.exportSessionsSince(lastExportInstant)
                 val sessionsFile = File(syncFolder, EXPORT_SESSIONS_FILE)
-                sessionsFile.writeText(sessionsContent)
                 
-                syncPrefs.setLastExportTimestamp(Clock.System.now().toEpochMilliseconds())
+                // Append to existing file or create new one (using atomic writes)
+                if (lastExportTime == 0L || !sessionsFile.exists()) {
+                    // First export - include header
+                    atomicWriteFile(sessionsFile, sessionsContent)
+                } else {
+                    // Subsequent export - append without header
+                    val lines = sessionsContent.lines()
+                    if (lines.size > 1) { // Has more than just header
+                        val dataOnly = lines.drop(1).joinToString("\n")
+                        if (dataOnly.isNotBlank()) {
+                            atomicAppendFile(sessionsFile, "\n" + dataOnly)
+                        }
+                    }
+                }
+                
+                syncPrefs.setLastExportTimestamp(exportStartTime.toEpochMilliseconds())
+                syncPrefs.setLastSuccessfulSync(Clock.System.now().toEpochMilliseconds())
                 exported = true
-                message += "Exported check-ins and sessions. "
-                Log.i(TAG, "Export successful")
+                
+                // Count actual exported records for better feedback
+                val checkInLines = checkInsContent.lines().size - 1
+                val sessionLines = sessionsContent.lines().size - 1
+                message += "Exported: $checkInLines check-ins, $sessionLines sessions. "
+                Log.i(TAG, "Export successful: $message")
             } catch (e: Exception) {
                 message += "Export error: ${e.message}. "
                 Log.e(TAG, "Export failed", e)
@@ -148,10 +215,59 @@ class SdCardSyncManager @Inject constructor(
         }
     }
     
-    private suspend fun hasDataSinceTimestamp(timestamp: Long): Boolean {
-        // Simple check: if timestamp is 0, always export on first run
-        // Otherwise, export every time since we don't track creation time for all entities
-        return timestamp == 0L || Clock.System.now().toEpochMilliseconds() - timestamp > SYNC_INTERVAL_MS
+    private suspend fun hasDataSinceTimestamp(sinceInstant: Instant): Boolean = withContext(Dispatchers.IO) {
+        // Query database to check if there are any new check-ins or sessions
+        // created after the given timestamp
+        try {
+            val newCheckIns = checkInDao.countCheckInsCreatedAfter(sinceInstant)
+            val newSessions = sessionDao.countSessionsCreatedAfter(sinceInstant)
+            val hasNew = newCheckIns > 0 || newSessions > 0
+            Log.d(TAG, "Checking for new data since $sinceInstant: $newCheckIns check-ins, $newSessions sessions")
+            hasNew
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for new data", e)
+            // On error, assume there might be new data
+            true
+        }
+    }
+    
+    /**
+     * Atomically writes content to a file using a temporary file to prevent corruption.
+     * Writes to .tmp file first, then renames on success.
+     */
+    private fun atomicWriteFile(file: File, content: String) {
+        val tempFile = File(file.parentFile, "${file.name}.tmp")
+        try {
+            tempFile.writeText(content)
+            // Atomic rename (on most filesystems)
+            if (file.exists()) {
+                file.delete()
+            }
+            tempFile.renameTo(file)
+        } catch (e: Exception) {
+            tempFile.delete()
+            throw e
+        }
+    }
+    
+    /**
+     * Atomically appends content to a file using a temporary file.
+     */
+    private fun atomicAppendFile(file: File, content: String) {
+        val tempFile = File(file.parentFile, "${file.name}.tmp")
+        try {
+            // Copy existing content + new content to temp file
+            val existingContent = if (file.exists()) file.readText() else ""
+            tempFile.writeText(existingContent + content)
+            // Atomic rename
+            if (file.exists()) {
+                file.delete()
+            }
+            tempFile.renameTo(file)
+        } catch (e: Exception) {
+            tempFile.delete()
+            throw e
+        }
     }
 }
 

@@ -75,6 +75,28 @@ class CsvService @Inject constructor(
         }
     }
 
+    suspend fun exportSessionsSince(sinceTimestamp: Instant): String = withContext(Dispatchers.IO) {
+        val sessions = sessionDao.sessionsCreatedAfter(sinceTimestamp)
+        val header = listOf("FORMAT_VERSION","session_id","membership_id","created_at_utc","local_date","practice_type","points","krydser","classification","source")
+        buildString {
+            appendLine(header.joinToString(","))
+            sessions.forEach { s ->
+                appendLine(listOf(
+                    version,
+                    s.id,
+                    s.membershipId,
+                    s.createdAtUtc.toString(),
+                    s.localDate.toString(),
+                    s.practiceType.name,
+                    s.points.toString(),
+                    s.krydser?.toString() ?: "",
+                    s.classification.orEmpty(),
+                    s.source.name
+                ).joinToString(","))
+            }
+        }
+    }
+
     suspend fun exportTodaySessions(): String = withContext(Dispatchers.IO) {
         val today = kotlinx.datetime.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
         val sessions = sessionDao.allSessionsForDate(today)
@@ -100,6 +122,17 @@ class CsvService @Inject constructor(
 
     suspend fun exportCheckIns(): String = withContext(Dispatchers.IO) {
         val list = checkInDao.allCheckIns()
+        val header = listOf("FORMAT_VERSION","checkin_id","membership_id","created_at_utc","local_date")
+        buildString {
+            appendLine(header.joinToString(","))
+            list.forEach { c ->
+                appendLine(listOf(version,c.id,c.membershipId,c.createdAtUtc.toString(),c.localDate.toString()).joinToString(","))
+            }
+        }
+    }
+
+    suspend fun exportCheckInsSince(sinceTimestamp: Instant): String = withContext(Dispatchers.IO) {
+        val list = checkInDao.checkInsCreatedAfter(sinceTimestamp)
         val header = listOf("FORMAT_VERSION","checkin_id","membership_id","created_at_utc","local_date")
         buildString {
             appendLine(header.joinToString(","))
