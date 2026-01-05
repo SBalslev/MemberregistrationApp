@@ -62,6 +62,11 @@ data class NewMemberRegistration(
     val temporaryId: String,
     val createdAtUtc: Instant,
     val photoPath: String,
+    val firstName: String,
+    val lastName: String,
+    val email: String? = null,
+    val phone: String? = null,
+    val birthDate: String? = null,
     val guardianName: String? = null,
     val guardianPhone: String? = null,
     val guardianEmail: String? = null

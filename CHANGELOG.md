@@ -6,6 +6,39 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-01-05
+### Added
+- **Enhanced Member Registration Form**: Extended new member registration to collect comprehensive member data
+  - Email field with email keyboard type
+  - Phone number field with numeric phone keyboard
+  - Birth date field with date format hint (dd-mm-åååå)
+  - All member data saved to database (NewMemberRegistration entity)
+  - Member information included in info text file alongside photo
+- **Photo Sync to SD Card**: Automatic synchronization of registration photos
+  - Photos automatically copied to SD card at `SD:/Medlemscheckin/member_photos/`
+  - Both photo files (.jpg) and info files (_info.txt) synced
+  - Incremental sync - only new photos since last sync
+  - 30-day retention policy for local copies after successful sync to SD card
+  - Photo sync integrated with existing hourly SD card auto-sync
+  - Sync count displayed in status messages
+- **Database Migration**: v5 → v6 to add firstName, lastName, email, phone, birthDate columns to NewMemberRegistration table
+
+### Changed
+- Camera photo storage moved from external DCIM to app's private directory for better compatibility
+- Added visual feedback when taking photo (loading indicator with "Tager billede..." message)
+- Camera button disabled during photo capture to prevent double-clicks
+
+### Fixed
+- Missing `background` import in RegistrationScreen causing compilation error
+- Guardian fields now single-line only (were allowing multiline input)
+- All phone fields now show numeric keyboard
+- Email fields now show email keyboard
+- Added better error handling and logging for camera operations
+
+## [1.3.1] - 2026-01-01
+### Fixed
+- Updated app launcher icons for all density levels (mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi)
+
 ## [1.3.0] - 2025-12-22
 ### Added
 - **Member Registration Feature**: New screen for registering new members with photo capture

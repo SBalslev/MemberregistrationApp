@@ -3,6 +3,7 @@ package com.club.medlems.data.dao
 import androidx.room.*
 import com.club.medlems.data.entity.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 
 @Dao
@@ -163,6 +164,12 @@ interface NewMemberRegistrationDao {
     
     @Query("SELECT * FROM NewMemberRegistration WHERE id = :id")
     suspend fun get(id: String): NewMemberRegistration?
+    
+    @Query("SELECT * FROM NewMemberRegistration WHERE createdAtUtc > :sinceInstant ORDER BY createdAtUtc ASC")
+    suspend fun registrationsCreatedAfter(sinceInstant: Instant): List<NewMemberRegistration>
+    
+    @Query("SELECT COUNT(*) FROM NewMemberRegistration WHERE createdAtUtc > :sinceInstant")
+    suspend fun countRegistrationsCreatedAfter(sinceInstant: Instant): Int
     
     @Delete
     suspend fun delete(registration: NewMemberRegistration)

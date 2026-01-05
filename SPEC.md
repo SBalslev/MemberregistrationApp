@@ -1,7 +1,7 @@
 # ISS Skydning Registrering – Functional & Technical Specification (MVP)
 
-Version: 1.4.0 (Performance optimizations + QR diagnostics)
-Last Updated: 2025-12-18
+Version: 1.5.0 (Enhanced member registration + Photo sync)
+Last Updated: 2026-01-05
 
 ## 1. Value Proposition
 Self‑service kiosk Android app for a shooting club that lets members instantly check in by scanning a QR code on their membership card and record multiple practice scoring sessions (rifle/pistol variants) during the same day—fully offline with simple CSV import/export.
@@ -90,6 +90,7 @@ Mine resultater (bottom sheet):
   - Import / eksport (CSV) (now also contains a Maintenance card with Generér demodata + Ryd data)
   - Resultatliste
   - Manuel scanning
+  - Tilmeld nyt medlem (New member registration - see §3.13)
   - Skift PIN (change 4-digit admin PIN; validates current PIN and 2x new PIN match)
   - Vis diagnostik (toggle QR scanner diagnostics icon on/off; default off for clean kiosk UI)
   - Log ud (locks and returns to Ready; the sole exit from Admin)
@@ -101,6 +102,42 @@ Mine resultater (bottom sheet):
 - No CheckIn or ScanEvent is created for this scan; it is purely a control action to ease kiosk operations for staff.
 - The standard 60s inactivity auto-lock still applies while in Admin.
 - This feature is offline-only and relies on the local kiosk configuration; the special ID can be changed in code in a future release if needed.
+
+### 3.13 New Member Registration (v1.3.0+)
+3-step wizard accessible from Admin menu "Tilmeld nyt medlem":
+
+**Step 1: Member Details**
+- Required fields: First name, Last name
+- Optional fields: Email (email keyboard), Phone (numeric keyboard), Birth date (dd-mm-yyyy format hint)
+- Validation: Cannot proceed without first and last name
+- All fields are single-line input
+
+**Step 2: Photo Capture**
+- Front-facing camera preview
+- Single capture button (disabled during photo taking)
+- Visual feedback during capture (loading indicator + "Tager billede..." message)
+- Photos saved to app's private directory: `{externalFilesDir}/Pictures/Nyt medlem/NYT_{timestamp}.jpg`
+- Error messages displayed if camera fails or photo cannot be saved
+- Back button to return to Step 1
+- Automatic advance to Step 3 on successful capture
+
+**Step 3: Guardian Info & Save**
+- Displays "Billede taget!" confirmation
+- Optional checkbox: "Dette er en barnetilmelding (tilføj værge)"
+- When checked, shows guardian fields (all optional, single-line):
+  - Værge navn
+  - Værge telefon (numeric keyboard)
+  - Værge e-mail (email keyboard)
+- Buttons: "Tag nyt billede" (returns to Step 2) | "Gem" (saves registration)
+- On save:
+  - Creates NewMemberRegistration record in database
+  - Generates temporary ID: `NYT-{timestamp}`
+  - Saves info text file alongside photo with all collected data
+  - Shows success message for 2 seconds
+  - Returns to Admin menu
+- Photo Sync: Photos automatically synced to SD card during hourly auto-sync or manual sync
+  - Copied to `SD:/Medlemscheckin/member_photos/` with temporary ID prefix
+  - Local copies deleted after 30 days post-sync (retention policy)
 
 ### 3.5 CSV Import (Members)
 1. Attendant chooses CSV file.
@@ -164,17 +201,34 @@ Mine resultater (bottom sheet):
 - linkedSessionId (UUID?)
 - canceledFlag (Boolean, default false)
 
-### 4.5 Potential Future Fields (Phase 2)
+### 4.5 NewMemberRegistration (v1.3.0+)
+- id (UUID, PK)
+- temporaryId (String) – Format: `NYT-{timestamp}` for tracking before assignment
+- createdAtUtc (Instant)
+- photoPath (String) – Path to member photo on device
+- firstName (String) – Required
+- lastName (String) – Required
+- email (String?) – Optional
+- phone (String?) – Optional
+- birthDate (String?) – Optional, format: dd-mm-yyyy
+- guardianName (String?) – Optional, for child registrations
+- guardianPhone (String?) – Optional
+- guardianEmail (String?) – Optional
+
+Purpose: Tracks new member registrations awaiting processing. Photos and info files automatically synced to SD card. Local photo copies deleted after 30 days post-sync.
+
+### 4.6 Potential Future Fields (Phase 2)
 - deletedAtUtc, deletedBy
 - notes (PracticeSession)
 - deviceId
 - auditUser (attendant actions)
 
-### 4.6 Indexing Plan (Implemented in v1.4.0)
+### 4.7 Indexing Plan (Implemented in v1.4.0)
 - Member: index (status), index (membershipId)
 - CheckIn: composite index (membershipId, localDate)
 - PracticeSession: index (membershipId), index (localDate), composite index (practiceType, localDate), composite index (membershipId, practiceType, classification)
 - ScanEvent: composite index (membershipId, createdAtUtc)
+- NewMemberRegistration: index (createdAtUtc) for incremental sync queries
 
 These indices dramatically improve query performance for leaderboards, member lookups, and historical data retrieval. The composite indices are particularly effective for filtered queries combining multiple fields.
 

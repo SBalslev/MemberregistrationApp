@@ -23,7 +23,16 @@ This implementation provides robust automatic import/export functionality for me
 - First export includes CSV header, subsequent exports append data only
 - Displays exact count of exported records in UI
 
-### 3. **Reliable Background Sync**
+### 3. **New Member Registration Photo Sync**
+- Automatically copies new member registration photos to `SD:/Medlemscheckin/member_photos/`
+- Copies both photo files (.jpg) and info files (_info.txt)
+- Photos named with temporary ID prefix (e.g., `NYT-1234567890_NYT_20260105_143022.jpg`)
+- Only syncs photos created since last sync (incremental)
+- **Retention Policy**: Local photo copies are automatically deleted after 30 days once synced to SD card
+- Reduces local storage usage while preserving photos on SD card
+- Photo sync count displayed in sync status messages
+
+### 4. **Reliable Background Sync**
 - **WorkManager** integration for production-grade reliability
 - Survives app kill and device reboot
 - System-aware scheduling with automatic retries
@@ -146,6 +155,8 @@ catch { tempFile.delete() }
 Efficient queries to detect new data:
 - `SELECT COUNT(*) FROM CheckIn WHERE createdAtUtc > :since`
 - `SELECT COUNT(*) FROM PracticeSession WHERE createdAtUtc > :since`
+- `SELECT COUNT(*) FROM NewMemberRegistration WHERE createdAtUtc > :since` (v1.3.2+)
+- `SELECT * FROM NewMemberRegistration WHERE createdAtUtc > :since` for photo sync
 - Only performs export when actual new data exists
 
 ## Usage
@@ -156,6 +167,8 @@ Efficient queries to detect new data:
 3. App will automatically:
    - Import new/updated members hourly
    - Export new check-ins and sessions incrementally
+   - Sync new member registration photos to `member_photos/` folder
+   - Apply 30-day retention policy to local photo copies
    - Display last sync time and status
 
 ### File Format:

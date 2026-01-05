@@ -64,13 +64,24 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Add firstName, lastName, email, phone, and birthDate to NewMemberRegistration
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN firstName TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN lastName TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN email TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN phone TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN birthDate TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).fallbackToDestructiveMigration().build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).fallbackToDestructiveMigration().build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()

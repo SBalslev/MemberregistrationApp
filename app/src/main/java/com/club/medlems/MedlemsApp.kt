@@ -14,10 +14,11 @@ class MedlemsApp : Application(), Configuration.Provider {
     @Inject lateinit var sdCardSyncPreferences: SdCardSyncPreferences
     @Inject lateinit var workerFactory: HiltWorkerFactory
     
-    override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
+    override val workManagerConfiguration: Configuration by lazy {
+        Configuration.Builder()
             .setWorkerFactory(workerFactory)
             .build()
+    }
     
     override fun onCreate() {
         super.onCreate()

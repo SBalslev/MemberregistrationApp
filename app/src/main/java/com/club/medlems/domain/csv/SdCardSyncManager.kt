@@ -23,9 +23,10 @@ class SdCardSyncManager @Inject constructor(
     private val csvService: CsvService,
     private val syncPrefs: SdCardSyncPreferences,
     private val checkInDao: com.club.medlems.data.dao.CheckInDao,
-    private val sessionDao: com.club.medlems.data.dao.PracticeSessionDao
+    private val sessionDao: com.club.medlems.data.dao.PracticeSessionDao,
+    private val registrationDao: com.club.medlems.data.dao.NewMemberRegistrationDao
 ) {
-    private val workManager = WorkManager.getInstance(context)
+    private val workManager by lazy { WorkManager.getInstance(context) }
     private val TAG = "SdCardSync"
     
     companion object {
@@ -34,6 +35,8 @@ class SdCardSyncManager @Inject constructor(
         private const val IMPORT_FILE = "members_import.csv"
         private const val EXPORT_CHECKINS_FILE = "checkins_backup.csv"
         private const val EXPORT_SESSIONS_FILE = "sessions_backup.csv"
+        private const val PHOTOS_FOLDER = "member_photos"
+        private const val PHOTO_RETENTION_DAYS = 30 // Keep local copies for 30 days after sync
     }
     
     fun startAutoSync() {
@@ -176,6 +179,19 @@ class SdCardSyncManager @Inject constructor(
                 val sessionLines = sessionsContent.lines().size - 1
                 message += "Exported: $checkInLines check-ins, $sessionLines sessions. "
                 Log.i(TAG, "Export successful: $message")
+                
+                // Sync new member registration photos
+                val photosSynced = syncPhotos(syncFolder, lastExportInstant)
+                if (photosSynced > 0) {
+                    message += "Synced $photosSynced photos. "
+                    Log.i(TAG, "Synced $photosSynced member registration photos")
+                }
+                
+                // Clean up old local photos (retention policy)
+                val photosDeleted = cleanupOldLocalPhotos()
+                if (photosDeleted > 0) {
+                    Log.i(TAG, "Cleaned up $photosDeleted old local photos")
+                }
             } catch (e: Exception) {
                 message += "Export error: ${e.message}. "
                 Log.e(TAG, "Export failed", e)
@@ -192,22 +208,20 @@ class SdCardSyncManager @Inject constructor(
             // Check for removable storage
             val externalDirs = context.getExternalFilesDirs(null)
             
-            // Find removable storage (SD card)
+            // Find removable storage (SD card) and return app-specific directory
             val sdCard = externalDirs.firstOrNull { dir ->
                 dir != null && Environment.isExternalStorageRemovable(dir)
             }
             
             if (sdCard != null) {
-                // Navigate up to root of SD card from app-specific directory
-                var current: File? = sdCard
-                while (current?.parentFile != null && current.parentFile?.name != "Android") {
-                    current = current.parentFile
-                }
-                current?.parentFile?.parentFile?.absolutePath
+                // Use app-specific directory on SD card (has write permissions)
+                Log.d(TAG, "Using SD card app directory: ${sdCard.absolutePath}")
+                sdCard.absolutePath
             } else {
-                // Fallback to primary external storage for testing
+                // Fallback to primary external storage
                 val primary = externalDirs.firstOrNull()
-                primary?.parentFile?.parentFile?.parentFile?.parentFile?.absolutePath
+                Log.d(TAG, "Using primary storage app directory: ${primary?.absolutePath}")
+                primary?.absolutePath
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error finding SD card", e)
@@ -215,14 +229,108 @@ class SdCardSyncManager @Inject constructor(
         }
     }
     
+    /**
+     * Syncs new member registration photos to SD card.
+     * Returns count of photos synced.
+     */
+    private suspend fun syncPhotos(syncFolder: File, sinceInstant: Instant): Int = withContext(Dispatchers.IO) {
+        try {
+            val newRegistrations = registrationDao.registrationsCreatedAfter(sinceInstant)
+            if (newRegistrations.isEmpty()) {
+                return@withContext 0
+            }
+            
+            val photosFolder = File(syncFolder, PHOTOS_FOLDER)
+            photosFolder.mkdirs()
+            
+            var syncedCount = 0
+            
+            for (registration in newRegistrations) {
+                try {
+                    val sourcePhotoFile = File(registration.photoPath)
+                    if (!sourcePhotoFile.exists()) {
+                        Log.w(TAG, "Photo file not found: ${registration.photoPath}")
+                        continue
+                    }
+                    
+                    // Copy photo to SD card with timestamp and temp ID in filename
+                    val destFileName = "${registration.temporaryId}_${sourcePhotoFile.name}"
+                    val destPhotoFile = File(photosFolder, destFileName)
+                    
+                    // Copy the photo file
+                    sourcePhotoFile.copyTo(destPhotoFile, overwrite = true)
+                    
+                    // Also copy the info text file if it exists
+                    val sourceInfoFile = File(sourcePhotoFile.parent, "${sourcePhotoFile.nameWithoutExtension}_info.txt")
+                    if (sourceInfoFile.exists()) {
+                        val destInfoFile = File(photosFolder, "${registration.temporaryId}_${sourceInfoFile.name}")
+                        sourceInfoFile.copyTo(destInfoFile, overwrite = true)
+                    }
+                    
+                    syncedCount++
+                    Log.d(TAG, "Synced photo: ${registration.temporaryId}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to sync photo for ${registration.temporaryId}", e)
+                }
+            }
+            
+            syncedCount
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing photos", e)
+            0
+        }
+    }
+    
+    /**
+     * Cleans up local photo copies that are older than PHOTO_RETENTION_DAYS
+     * and have been successfully synced to SD card.
+     * Returns count of photos deleted.
+     */
+    private suspend fun cleanupOldLocalPhotos(): Int = withContext(Dispatchers.IO) {
+        try {
+            val allRegistrations = registrationDao.allRegistrations()
+            val retentionCutoff = Clock.System.now().toEpochMilliseconds() - (PHOTO_RETENTION_DAYS * 24 * 60 * 60 * 1000L)
+            
+            var deletedCount = 0
+            
+            for (registration in allRegistrations) {
+                // Only delete if older than retention period
+                if (registration.createdAtUtc.toEpochMilliseconds() < retentionCutoff) {
+                    try {
+                        val photoFile = File(registration.photoPath)
+                        if (photoFile.exists()) {
+                            photoFile.delete()
+                            deletedCount++
+                            Log.d(TAG, "Deleted old local photo: ${registration.temporaryId}")
+                        }
+                        
+                        // Also delete info file
+                        val infoFile = File(photoFile.parent, "${photoFile.nameWithoutExtension}_info.txt")
+                        if (infoFile.exists()) {
+                            infoFile.delete()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to delete old photo for ${registration.temporaryId}", e)
+                    }
+                }
+            }
+            
+            deletedCount
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning up old photos", e)
+            0
+        }
+    }
+    
     private suspend fun hasDataSinceTimestamp(sinceInstant: Instant): Boolean = withContext(Dispatchers.IO) {
-        // Query database to check if there are any new check-ins or sessions
+        // Query database to check if there are any new check-ins, sessions, or registrations
         // created after the given timestamp
         try {
             val newCheckIns = checkInDao.countCheckInsCreatedAfter(sinceInstant)
             val newSessions = sessionDao.countSessionsCreatedAfter(sinceInstant)
-            val hasNew = newCheckIns > 0 || newSessions > 0
-            Log.d(TAG, "Checking for new data since $sinceInstant: $newCheckIns check-ins, $newSessions sessions")
+            val newRegistrations = registrationDao.countRegistrationsCreatedAfter(sinceInstant)
+            val hasNew = newCheckIns > 0 || newSessions > 0 || newRegistrations > 0
+            Log.d(TAG, "Checking for new data since $sinceInstant: $newCheckIns check-ins, $newSessions sessions, $newRegistrations registrations")
             hasNew
         } catch (e: Exception) {
             Log.e(TAG, "Error checking for new data", e)
@@ -236,6 +344,9 @@ class SdCardSyncManager @Inject constructor(
      * Writes to .tmp file first, then renames on success.
      */
     private fun atomicWriteFile(file: File, content: String) {
+        // Ensure parent directory exists
+        file.parentFile?.mkdirs()
+        
         val tempFile = File(file.parentFile, "${file.name}.tmp")
         try {
             tempFile.writeText(content)
@@ -254,6 +365,9 @@ class SdCardSyncManager @Inject constructor(
      * Atomically appends content to a file using a temporary file.
      */
     private fun atomicAppendFile(file: File, content: String) {
+        // Ensure parent directory exists
+        file.parentFile?.mkdirs()
+        
         val tempFile = File(file.parentFile, "${file.name}.tmp")
         try {
             // Copy existing content + new content to temp file
