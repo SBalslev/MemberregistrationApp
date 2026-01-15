@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Admin Tablet specific overrides -->
+    <string name="app_name">ISS Skydning Admin</string>
+    <string name="device_role_display">Admin Tablet</string>
+    <bool name="equipment_enabled">true</bool>
+</resources>

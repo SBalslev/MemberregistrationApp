@@ -28,6 +28,28 @@ interface MemberDao {
 
     @Query("DELETE FROM Member")
     suspend fun deleteAll()
+    
+    // Sync-related queries
+    @Query("SELECT * FROM Member WHERE updatedAtUtc > :since ORDER BY updatedAtUtc ASC")
+    suspend fun getModifiedSince(since: Instant): List<Member>
+    
+    @Query("UPDATE Member SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE membershipId = :id")
+    suspend fun markSynced(id: String, syncedAt: Instant)
+    
+    @Query("SELECT * FROM Member WHERE syncedAtUtc IS NULL OR syncedAtUtc < updatedAtUtc")
+    suspend fun getUnsynced(): List<Member>
+    
+    // Search queries for equipment checkout
+    @Query("""
+        SELECT * FROM Member 
+        WHERE status = 'ACTIVE' 
+        AND (firstName LIKE '%' || :query || '%' 
+             OR lastName LIKE '%' || :query || '%'
+             OR membershipId LIKE '%' || :query || '%')
+        ORDER BY lastName, firstName
+        LIMIT 20
+    """)
+    suspend fun searchByNameOrId(query: String): List<Member>
 }
 
 data class MemberNameProjection(
@@ -66,6 +88,13 @@ interface CheckInDao {
 
     @Query("SELECT COUNT(*) FROM CheckIn WHERE createdAtUtc > :since")
     suspend fun countCheckInsCreatedAfter(since: Instant): Int
+    
+    // Sync-related queries
+    @Query("UPDATE CheckIn SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
+    suspend fun markSynced(id: String, syncedAt: Instant)
+    
+    @Query("SELECT * FROM CheckIn WHERE syncedAtUtc IS NULL")
+    suspend fun getUnsynced(): List<CheckIn>
 }
 
 @Dao
@@ -131,6 +160,13 @@ interface PracticeSessionDao {
 
         @Query("DELETE FROM PracticeSession")
         suspend fun deleteAllSessions()
+    
+    // Sync-related queries
+    @Query("UPDATE PracticeSession SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
+    suspend fun markSynced(id: String, syncedAt: Instant)
+    
+    @Query("SELECT * FROM PracticeSession WHERE syncedAtUtc IS NULL")
+    suspend fun getUnsynced(): List<PracticeSession>
 }
 
 @Dao
@@ -152,6 +188,13 @@ interface ScanEventDao {
 
         @Query("DELETE FROM ScanEvent")
         suspend fun deleteAllEvents()
+    
+    // Sync-related queries
+    @Query("UPDATE ScanEvent SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
+    suspend fun markSynced(id: String, syncedAt: Instant)
+    
+    @Query("SELECT * FROM ScanEvent WHERE syncedAtUtc IS NULL")
+    suspend fun getUnsynced(): List<ScanEvent>
 }
 
 @Dao
@@ -176,4 +219,154 @@ interface NewMemberRegistrationDao {
     
     @Query("DELETE FROM NewMemberRegistration")
     suspend fun deleteAll()
+    
+    // Approval workflow queries
+    @Query("SELECT * FROM NewMemberRegistration WHERE approvalStatus = 'PENDING' ORDER BY createdAtUtc ASC")
+    suspend fun getPendingRegistrations(): List<NewMemberRegistration>
+    
+    @Query("UPDATE NewMemberRegistration SET approvalStatus = :status, approvedAtUtc = :approvedAt WHERE id = :id")
+    suspend fun approve(id: String, status: String = "APPROVED", approvedAt: Instant)
+    
+    @Query("UPDATE NewMemberRegistration SET approvalStatus = :status, rejectedAtUtc = :rejectedAt, rejectionReason = :reason WHERE id = :id")
+    suspend fun reject(id: String, status: String = "REJECTED", rejectedAt: Instant, reason: String?)
+    
+    @Query("UPDATE NewMemberRegistration SET createdMemberId = :memberId WHERE id = :id")
+    suspend fun linkCreatedMember(id: String, memberId: String)
+    
+    // Sync-related queries
+    @Query("UPDATE NewMemberRegistration SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
+    suspend fun markSynced(id: String, syncedAt: Instant)
+    
+    @Query("SELECT * FROM NewMemberRegistration WHERE syncedAtUtc IS NULL")
+    suspend fun getUnsynced(): List<NewMemberRegistration>
+}
+
+// ===== Equipment Management DAOs (Phase 3 - Admin Tablet) =====
+
+/**
+ * DAO for EquipmentItem entity.
+ * 
+ * @see [design.md FR-8.2] - EquipmentItem schema
+ */
+@Dao
+interface EquipmentItemDao {
+    @Insert
+    suspend fun insert(item: EquipmentItem)
+    
+    @Update
+    suspend fun update(item: EquipmentItem)
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: EquipmentItem)
+    
+    @Query("SELECT * FROM EquipmentItem WHERE id = :id")
+    suspend fun get(id: String): EquipmentItem?
+    
+    @Query("SELECT * FROM EquipmentItem WHERE serialNumber = :serialNumber")
+    suspend fun getBySerialNumber(serialNumber: String): EquipmentItem?
+    
+    @Query("SELECT * FROM EquipmentItem ORDER BY serialNumber ASC")
+    suspend fun allItems(): List<EquipmentItem>
+    
+    @Query("SELECT * FROM EquipmentItem ORDER BY serialNumber ASC")
+    fun allItemsFlow(): Flow<List<EquipmentItem>>
+    
+    @Query("SELECT * FROM EquipmentItem WHERE status = :status ORDER BY serialNumber ASC")
+    suspend fun itemsByStatus(status: EquipmentStatus): List<EquipmentItem>
+    
+    @Query("SELECT * FROM EquipmentItem WHERE status = :status ORDER BY serialNumber ASC")
+    fun itemsByStatusFlow(status: EquipmentStatus): Flow<List<EquipmentItem>>
+    
+    @Query("UPDATE EquipmentItem SET status = :status, modifiedAtUtc = :modifiedAt WHERE id = :id")
+    suspend fun updateStatus(id: String, status: EquipmentStatus, modifiedAt: Instant)
+    
+    @Delete
+    suspend fun delete(item: EquipmentItem)
+    
+    @Query("DELETE FROM EquipmentItem")
+    suspend fun deleteAll()
+    
+    // Sync-related queries
+    @Query("UPDATE EquipmentItem SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
+    suspend fun markSynced(id: String, syncedAt: Instant)
+    
+    @Query("SELECT * FROM EquipmentItem WHERE syncedAtUtc IS NULL")
+    suspend fun getUnsynced(): List<EquipmentItem>
+}
+
+/**
+ * DAO for EquipmentCheckout entity.
+ * 
+ * @see [design.md FR-8.3] - EquipmentCheckout schema
+ */
+@Dao
+interface EquipmentCheckoutDao {
+    @Insert
+    suspend fun insert(checkout: EquipmentCheckout)
+    
+    @Update
+    suspend fun update(checkout: EquipmentCheckout)
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(checkout: EquipmentCheckout)
+    
+    @Query("SELECT * FROM EquipmentCheckout WHERE id = :id")
+    suspend fun get(id: String): EquipmentCheckout?
+    
+    /** Get active checkout for an equipment item (not yet returned) */
+    @Query("SELECT * FROM EquipmentCheckout WHERE equipmentId = :equipmentId AND checkedInAtUtc IS NULL LIMIT 1")
+    suspend fun getActiveCheckoutForEquipment(equipmentId: String): EquipmentCheckout?
+    
+    /** Get active checkout for a member (not yet returned) */
+    @Query("SELECT * FROM EquipmentCheckout WHERE membershipId = :membershipId AND checkedInAtUtc IS NULL LIMIT 1")
+    suspend fun getActiveCheckoutForMember(membershipId: String): EquipmentCheckout?
+    
+    /** Get all active (non-returned) checkouts */
+    @Query("SELECT * FROM EquipmentCheckout WHERE checkedInAtUtc IS NULL ORDER BY checkedOutAtUtc DESC")
+    suspend fun allActiveCheckouts(): List<EquipmentCheckout>
+    
+    /** Get all active checkouts as Flow for real-time updates */
+    @Query("SELECT * FROM EquipmentCheckout WHERE checkedInAtUtc IS NULL ORDER BY checkedOutAtUtc DESC")
+    fun allActiveCheckoutsFlow(): Flow<List<EquipmentCheckout>>
+    
+    /** Get checkout history for an equipment item */
+    @Query("SELECT * FROM EquipmentCheckout WHERE equipmentId = :equipmentId ORDER BY checkedOutAtUtc DESC")
+    suspend fun checkoutHistoryForEquipment(equipmentId: String): List<EquipmentCheckout>
+    
+    /** Get checkout history for a member */
+    @Query("SELECT * FROM EquipmentCheckout WHERE membershipId = :membershipId ORDER BY checkedOutAtUtc DESC")
+    suspend fun checkoutHistoryForMember(membershipId: String): List<EquipmentCheckout>
+    
+    /** Check in equipment (record return) */
+    @Query("UPDATE EquipmentCheckout SET checkedInAtUtc = :checkedInAt, checkedInByDeviceId = :deviceId, checkinNotes = :notes, modifiedAtUtc = :modifiedAt WHERE id = :id")
+    suspend fun checkIn(id: String, checkedInAt: Instant, deviceId: String, notes: String?, modifiedAt: Instant)
+    
+    /** Get checkouts with conflicts */
+    @Query("SELECT * FROM EquipmentCheckout WHERE conflictStatus = :status ORDER BY checkedOutAtUtc DESC")
+    suspend fun checkoutsWithConflictStatus(status: ConflictStatus): List<EquipmentCheckout>
+    
+    /** Get all pending conflict checkouts */
+    @Query("SELECT * FROM EquipmentCheckout WHERE conflictStatus = 'Pending' ORDER BY checkedOutAtUtc DESC")
+    suspend fun getPendingConflicts(): List<EquipmentCheckout>
+    
+    /** Get all pending conflicts as Flow */
+    @Query("SELECT * FROM EquipmentCheckout WHERE conflictStatus = 'Pending' ORDER BY checkedOutAtUtc DESC")
+    fun getPendingConflictsFlow(): Flow<List<EquipmentCheckout>>
+    
+    /** Resolve a conflict */
+    @Query("UPDATE EquipmentCheckout SET conflictStatus = :status, conflictResolutionNotes = :notes, modifiedAtUtc = :modifiedAt WHERE id = :id")
+    suspend fun resolveConflict(id: String, status: ConflictStatus, notes: String?, modifiedAt: Instant)
+    
+    @Delete
+    suspend fun delete(checkout: EquipmentCheckout)
+    
+    @Query("DELETE FROM EquipmentCheckout")
+    suspend fun deleteAll()
+    
+    // Sync-related queries
+    @Query("UPDATE EquipmentCheckout SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
+    suspend fun markSynced(id: String, syncedAt: Instant)
+    
+    @Query("SELECT * FROM EquipmentCheckout WHERE syncedAtUtc IS NULL")
+    suspend fun getUnsynced(): List<EquipmentCheckout>
 }

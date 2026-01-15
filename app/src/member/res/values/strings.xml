@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Member Tablet specific settings -->
+    <string name="device_role_display">Member Tablet</string>
+    <bool name="equipment_enabled">false</bool>
+</resources>

@@ -55,6 +55,10 @@ data class RegistrationState(
     val email: String = "",
     val phone: String = "",
     val birthDate: String = "",
+    val gender: String = "",
+    val address: String = "",
+    val zipCode: String = "",
+    val city: String = "",
     val photoPath: String? = null,
     val guardianName: String = "",
     val guardianPhone: String = "",
@@ -93,6 +97,22 @@ class RegistrationViewModel @Inject constructor(
     
     fun updateBirthDate(date: String) {
         _state.value = _state.value.copy(birthDate = date)
+    }
+    
+    fun updateGender(gender: String) {
+        _state.value = _state.value.copy(gender = gender)
+    }
+    
+    fun updateAddress(address: String) {
+        _state.value = _state.value.copy(address = address)
+    }
+    
+    fun updateZipCode(zipCode: String) {
+        _state.value = _state.value.copy(zipCode = zipCode)
+    }
+    
+    fun updateCity(city: String) {
+        _state.value = _state.value.copy(city = city)
     }
     
     fun nextStep() {
@@ -173,6 +193,10 @@ class RegistrationViewModel @Inject constructor(
                     email = _state.value.email.takeIf { it.isNotBlank() },
                     phone = _state.value.phone.takeIf { it.isNotBlank() },
                     birthDate = _state.value.birthDate.takeIf { it.isNotBlank() },
+                    gender = _state.value.gender.takeIf { it.isNotBlank() },
+                    address = _state.value.address.takeIf { it.isNotBlank() },
+                    zipCode = _state.value.zipCode.takeIf { it.isNotBlank() },
+                    city = _state.value.city.takeIf { it.isNotBlank() },
                     guardianName = _state.value.guardianName.takeIf { it.isNotBlank() },
                     guardianPhone = _state.value.guardianPhone.takeIf { it.isNotBlank() },
                     guardianEmail = _state.value.guardianEmail.takeIf { it.isNotBlank() }
@@ -311,6 +335,10 @@ fun RegistrationScreen(
                         onEmailChange = viewModel::updateEmail,
                         onPhoneChange = viewModel::updatePhone,
                         onBirthDateChange = viewModel::updateBirthDate,
+                        onGenderChange = viewModel::updateGender,
+                        onAddressChange = viewModel::updateAddress,
+                        onZipCodeChange = viewModel::updateZipCode,
+                        onCityChange = viewModel::updateCity,
                         onNext = viewModel::nextStep,
                         modifier = Modifier
                             .weight(1f)
@@ -347,6 +375,7 @@ fun RegistrationScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemberDetailsForm(
     state: RegistrationState,
@@ -355,6 +384,10 @@ fun MemberDetailsForm(
     onEmailChange: (String) -> Unit,
     onPhoneChange: (String) -> Unit,
     onBirthDateChange: (String) -> Unit,
+    onGenderChange: (String) -> Unit,
+    onAddressChange: (String) -> Unit,
+    onZipCodeChange: (String) -> Unit,
+    onCityChange: (String) -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -431,6 +464,71 @@ fun MemberDetailsForm(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
+        
+        // Gender dropdown
+        var genderExpanded by remember { mutableStateOf(false) }
+        val genderOptions = listOf("" to "Vælg køn", "MALE" to "Mand", "FEMALE" to "Kvinde", "OTHER" to "Andet")
+        
+        ExposedDropdownMenuBox(
+            expanded = genderExpanded,
+            onExpandedChange = { genderExpanded = !genderExpanded }
+        ) {
+            OutlinedTextField(
+                value = genderOptions.find { it.first == state.gender }?.second ?: "Vælg køn",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Køn") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = genderExpanded) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor()
+            )
+            ExposedDropdownMenu(
+                expanded = genderExpanded,
+                onDismissRequest = { genderExpanded = false }
+            ) {
+                genderOptions.forEach { (value, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = {
+                            onGenderChange(value)
+                            genderExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+        
+        OutlinedTextField(
+            value = state.address,
+            onValueChange = onAddressChange,
+            label = { Text("Adresse") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = state.zipCode,
+                onValueChange = onZipCodeChange,
+                label = { Text("Postnr.") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                )
+            )
+            OutlinedTextField(
+                value = state.city,
+                onValueChange = onCityChange,
+                label = { Text("By") },
+                modifier = Modifier.weight(2f),
+                singleLine = true
+            )
+        }
         
         Text(
             text = "* Påkrævet",

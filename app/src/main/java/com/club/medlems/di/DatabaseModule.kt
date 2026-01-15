@@ -75,13 +75,139 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Add sync_conflicts table for tracking equipment checkout conflicts
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS sync_conflicts (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    conflictType TEXT NOT NULL,
+                    entityType TEXT NOT NULL,
+                    entityId TEXT NOT NULL,
+                    conflictingEntityId TEXT,
+                    localDeviceId TEXT NOT NULL,
+                    localDeviceName TEXT,
+                    localTimestamp TEXT NOT NULL,
+                    localSyncVersion INTEGER NOT NULL,
+                    remoteDeviceId TEXT NOT NULL,
+                    remoteDeviceName TEXT,
+                    remoteTimestamp TEXT NOT NULL,
+                    remoteSyncVersion INTEGER NOT NULL,
+                    context TEXT,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    resolution TEXT,
+                    resolvedByDeviceId TEXT,
+                    detectedAtUtc TEXT NOT NULL,
+                    resolvedAtUtc TEXT
+                )
+            """.trimIndent())
+        }
+    }
+
+    private val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Add sync metadata fields to Member
+            db.execSQL("ALTER TABLE Member ADD COLUMN deviceId TEXT")
+            db.execSQL("ALTER TABLE Member ADD COLUMN syncVersion INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE Member ADD COLUMN syncedAtUtc TEXT")
+            
+            // Add sync metadata fields to CheckIn
+            db.execSQL("ALTER TABLE CheckIn ADD COLUMN deviceId TEXT")
+            db.execSQL("ALTER TABLE CheckIn ADD COLUMN syncVersion INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE CheckIn ADD COLUMN syncedAtUtc TEXT")
+            
+            // Add sync metadata fields to PracticeSession
+            db.execSQL("ALTER TABLE PracticeSession ADD COLUMN deviceId TEXT")
+            db.execSQL("ALTER TABLE PracticeSession ADD COLUMN syncVersion INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE PracticeSession ADD COLUMN syncedAtUtc TEXT")
+            
+            // Add sync metadata fields to ScanEvent
+            db.execSQL("ALTER TABLE ScanEvent ADD COLUMN deviceId TEXT")
+            db.execSQL("ALTER TABLE ScanEvent ADD COLUMN syncVersion INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE ScanEvent ADD COLUMN syncedAtUtc TEXT")
+            
+            // Add approval workflow and sync metadata to NewMemberRegistration
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN approvalStatus TEXT NOT NULL DEFAULT 'PENDING'")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN approvedAtUtc TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN rejectedAtUtc TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN rejectionReason TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN createdMemberId TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN deviceId TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN syncVersion INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN syncedAtUtc TEXT")
+        }
+    }
+
+    private val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Create EquipmentItem table
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS EquipmentItem (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    serialNumber TEXT NOT NULL,
+                    type TEXT NOT NULL DEFAULT 'TrainingMaterial',
+                    description TEXT,
+                    status TEXT NOT NULL DEFAULT 'Available',
+                    createdByDeviceId TEXT NOT NULL,
+                    createdAtUtc TEXT NOT NULL,
+                    modifiedAtUtc TEXT NOT NULL,
+                    deviceId TEXT,
+                    syncVersion INTEGER NOT NULL DEFAULT 0,
+                    syncedAtUtc TEXT
+                )
+            """.trimIndent())
+            
+            // Create indices for EquipmentItem
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_EquipmentItem_serialNumber ON EquipmentItem(serialNumber)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_EquipmentItem_status ON EquipmentItem(status)")
+            
+            // Create EquipmentCheckout table
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS EquipmentCheckout (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    equipmentId TEXT NOT NULL,
+                    membershipId TEXT NOT NULL,
+                    checkedOutAtUtc TEXT NOT NULL,
+                    checkedInAtUtc TEXT,
+                    checkedOutByDeviceId TEXT NOT NULL,
+                    checkedInByDeviceId TEXT,
+                    checkoutNotes TEXT,
+                    checkinNotes TEXT,
+                    conflictStatus TEXT,
+                    conflictResolutionNotes TEXT,
+                    createdAtUtc TEXT NOT NULL,
+                    modifiedAtUtc TEXT NOT NULL,
+                    deviceId TEXT,
+                    syncVersion INTEGER NOT NULL DEFAULT 0,
+                    syncedAtUtc TEXT
+                )
+            """.trimIndent())
+            
+            // Create indices for EquipmentCheckout
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_EquipmentCheckout_equipmentId ON EquipmentCheckout(equipmentId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_EquipmentCheckout_membershipId ON EquipmentCheckout(membershipId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_EquipmentCheckout_checkedInAtUtc ON EquipmentCheckout(checkedInAtUtc)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_EquipmentCheckout_conflictStatus ON EquipmentCheckout(conflictStatus)")
+        }
+    }
+
+    private val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Add enhanced member registration fields for Phase 3
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN gender TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN address TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN zipCode TEXT")
+            db.execSQL("ALTER TABLE NewMemberRegistration ADD COLUMN city TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).fallbackToDestructiveMigration().build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).fallbackToDestructiveMigration().build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()
@@ -93,6 +219,12 @@ object DatabaseModule {
     fun scanEventDao(db: AppDatabase) = db.scanEventDao()
     @Provides
     fun newMemberRegistrationDao(db: AppDatabase) = db.newMemberRegistrationDao()
+    @Provides
+    fun syncConflictDao(db: AppDatabase) = db.syncConflictDao()
+    @Provides
+    fun equipmentItemDao(db: AppDatabase) = db.equipmentItemDao()
+    @Provides
+    fun equipmentCheckoutDao(db: AppDatabase) = db.equipmentCheckoutDao()
 
     @Provides
     @Singleton

@@ -100,7 +100,8 @@ fun ReadyScreen(
     onRepeatScan: (String, String) -> Unit,
     openAttendant: () -> Unit,
     openLeaderboard: () -> Unit,
-    vm: ReadyViewModel = hiltViewModel()
+    vm: ReadyViewModel = hiltViewModel(),
+    deviceConfig: com.club.medlems.domain.prefs.DeviceConfigPreferences = hiltViewModel<ReadyViewModel>().deviceConfig
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -313,6 +314,25 @@ fun ReadyScreen(
                                 Icons.Default.BugReport,
                                 contentDescription = "Diagnostik",
                                 tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    
+                    // Admin mode indicator (top-left) - visible on admin build flavor
+                    if (deviceConfig.isAdminBuild) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(8.dp),
+                            color = MaterialTheme.colorScheme.tertiary,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                "ADMIN MODE",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                color = MaterialTheme.colorScheme.onTertiary,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }

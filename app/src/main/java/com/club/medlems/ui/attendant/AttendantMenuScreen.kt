@@ -44,6 +44,11 @@ import android.media.AudioManager
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.PersonSearch
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Wifi
 // Single-page admin menu (flattened for kiosk)
 
 @Composable
@@ -53,14 +58,22 @@ fun AttendantMenuScreen(
     openPracticeSession: (memberId: String, scanEventId: String) -> Unit,
     openEditSessions: (memberId: String) -> Unit,
     openRegistration: () -> Unit,
+    openEquipmentList: () -> Unit = {},
+    openCurrentCheckouts: () -> Unit = {},
+    openMemberLookup: () -> Unit = {},
+    openConflictResolution: () -> Unit = {},
+    openDevicePairing: () -> Unit = {},
     onBack: () -> Unit,
-    attendant: AttendantModeManager = androidx.hilt.navigation.compose.hiltViewModel<AttendantViewModel>().attendant
+    attendant: AttendantModeManager = androidx.hilt.navigation.compose.hiltViewModel<AttendantViewModel>().attendant,
+    deviceConfig: com.club.medlems.domain.prefs.DeviceConfigPreferences = androidx.hilt.navigation.compose.hiltViewModel<AttendantViewModel>().deviceConfig
 ){
     val context = LocalContext.current
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val adminVm: AdminActionsViewModel = hiltViewModel()
     val state by attendant.state.collectAsState()
+    // Equipment is available if enabled by build flavor OR if device is configured as admin
+    val canManageEquipment = deviceConfig.equipmentEnabled || deviceConfig.canManageEquipment()
     var pinInput by remember { mutableStateOf("") }
     val pinFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -219,6 +232,52 @@ fun AttendantMenuScreen(
                             Icon(Icons.Default.VerifiedUser, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text("Redigér skydninger")
+                        }
+                        Spacer(Modifier.weight(1f))
+                    }
+                    // Member lookup (only for Admin Tablet and Laptop)
+                    if (canManageEquipment) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Button(onClick = { attendant.registerInteraction(); openMemberLookup() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.PersonSearch, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Medlemssøgning")
+                            }
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                    // Equipment management row (only for Admin Tablet and Laptop)
+                    if (canManageEquipment) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Button(onClick = { attendant.registerInteraction(); openEquipmentList() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.Build, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Udstyr")
+                            }
+                            Button(onClick = { attendant.registerInteraction(); openCurrentCheckouts() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.Inventory, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Udlån")
+                            }
+                        }
+                    }
+                    // Conflict resolution (only for Admin Tablet)
+                    if (canManageEquipment) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Button(onClick = { attendant.registerInteraction(); openConflictResolution() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.Sync, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Konflikter")
+                            }
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                    // Device pairing - available on all devices
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = { attendant.registerInteraction(); openDevicePairing() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                            Icon(Icons.Default.Wifi, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Enheder")
                         }
                         Spacer(Modifier.weight(1f))
                     }
@@ -446,5 +505,6 @@ fun AttendantMenuScreen(
 @dagger.hilt.android.lifecycle.HiltViewModel
 class AttendantViewModel @javax.inject.Inject constructor(
     val attendant: AttendantModeManager,
-    val diagnosticPrefs: com.club.medlems.domain.prefs.DiagnosticPreferences
+    val diagnosticPrefs: com.club.medlems.domain.prefs.DiagnosticPreferences,
+    val deviceConfig: com.club.medlems.domain.prefs.DeviceConfigPreferences
 ): androidx.lifecycle.ViewModel()
