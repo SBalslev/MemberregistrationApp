@@ -18,6 +18,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -69,16 +70,26 @@ class SyncClient @Inject constructor(
      * @return SyncStatusResponse or null if request fails
      */
     suspend fun checkStatus(baseUrl: String): SyncStatusResponse? {
+        val fullUrl = "$baseUrl/api/sync/status"
+        Log.d(TAG, "checkStatus: Requesting $fullUrl")
         return try {
-            val response = client.get("$baseUrl/api/sync/status")
+            val response = client.get(fullUrl)
+            Log.d(TAG, "checkStatus: Response status = ${response.status}")
             if (response.status.isSuccess()) {
-                response.body<SyncStatusResponse>()
+                val bodyText = response.bodyAsText()
+                Log.d(TAG, "checkStatus: Response body = $bodyText")
+                try {
+                    SyncJson.json.decodeFromString<SyncStatusResponse>(bodyText)
+                } catch (parseEx: Exception) {
+                    Log.e(TAG, "checkStatus: Failed to parse response: ${parseEx.message}", parseEx)
+                    null
+                }
             } else {
                 Log.w(TAG, "Status check failed: ${response.status}")
                 null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking status at $baseUrl", e)
+            Log.e(TAG, "checkStatus: Error at $fullUrl - ${e::class.simpleName}: ${e.message}", e)
             null
         }
     }
@@ -95,14 +106,14 @@ class SyncClient @Inject constructor(
         baseUrl: String,
         since: Instant
     ): SyncResponse {
-        val authToken = trustManager.getPersistentToken()
-        if (authToken == null) {
-            return SyncResponse(
-                status = SyncResponseStatus.UNAUTHORIZED,
-                timestamp = Clock.System.now(),
-                errorMessage = "Not authenticated - no persistent token"
-            )
-        }
+        // Use persistent token if available, otherwise generate a device token for local network sync
+        val authToken = trustManager.getPersistentToken() 
+            ?: trustManager.generateDeviceToken(trustManager.getThisDeviceInfo() 
+                ?: return SyncResponse(
+                    status = SyncResponseStatus.UNAUTHORIZED,
+                    timestamp = Clock.System.now(),
+                    errorMessage = "Device not configured"
+                ))
         
         return withRetry(MAX_RETRIES) {
             val request = SyncPullRequest(
@@ -146,14 +157,14 @@ class SyncClient @Inject constructor(
         baseUrl: String,
         entities: SyncEntities
     ): SyncResponse {
-        val authToken = trustManager.getPersistentToken()
-        if (authToken == null) {
-            return SyncResponse(
-                status = SyncResponseStatus.UNAUTHORIZED,
-                timestamp = Clock.System.now(),
-                errorMessage = "Not authenticated - no persistent token"
-            )
-        }
+        // Use persistent token if available, otherwise generate a device token for local network sync
+        val authToken = trustManager.getPersistentToken() 
+            ?: trustManager.generateDeviceToken(trustManager.getThisDeviceInfo() 
+                ?: return SyncResponse(
+                    status = SyncResponseStatus.UNAUTHORIZED,
+                    timestamp = Clock.System.now(),
+                    errorMessage = "Device not configured"
+                ))
         
         return withRetry(MAX_RETRIES) {
             val payload = SyncPayload(

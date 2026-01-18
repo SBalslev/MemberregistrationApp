@@ -66,12 +66,12 @@ data class RecentSessionInfo(
 /**
  * ViewModel for member lookup and assisted check-in.
  * 
- * Allows admin tablet users to:
+ * Allows trainer tablet users to:
  * - Search for members by name or membership ID
  * - View member details and recent activity
  * - Perform check-ins on behalf of members
  * 
- * @see [design.md FR-10] - Admin Tablet Member Lookup
+ * @see [design.md FR-10] - Trainer Tablet Member Lookup
  */
 @HiltViewModel
 class MemberLookupViewModel @Inject constructor(

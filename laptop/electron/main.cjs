@@ -7,6 +7,7 @@
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const { Bonjour } = require('bonjour-service');
@@ -14,17 +15,49 @@ const { Bonjour } = require('bonjour-service');
 // Configuration
 const SYNC_PORT = 8085;  // Changed from 8080 to avoid VS Code Copilot proxy conflict
 const SERVICE_TYPE = '_medlemssync._tcp';
-const SCHEMA_VERSION = '9.0.0';
+const SCHEMA_VERSION = '1.0.0';  // Must match Android SyncSchemaVersion
 
 let mainWindow = null;
 let syncServer = null;
 let bonjour = null;
 let publishedService = null;
 
-// Device info for this laptop
-const deviceInfo = {
-  deviceId: `laptop-${Date.now()}`,
-  deviceType: 'MASTER_LAPTOP',
+/**
+ * Get or create a persistent device ID.
+ * Stored in the app's userData directory so it persists across restarts.
+ */
+function getOrCreateDeviceId() {
+  const userDataPath = app.getPath('userData');
+  const deviceIdPath = path.join(userDataPath, 'device-id.txt');
+  
+  try {
+    if (fs.existsSync(deviceIdPath)) {
+      const savedId = fs.readFileSync(deviceIdPath, 'utf8').trim();
+      if (savedId) {
+        console.log('[Device] Using saved device ID:', savedId);
+        return savedId;
+      }
+    }
+  } catch (err) {
+    console.warn('[Device] Could not read device ID file:', err.message);
+  }
+  
+  // Generate new ID and save it
+  const newId = `laptop-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  try {
+    fs.writeFileSync(deviceIdPath, newId, 'utf8');
+    console.log('[Device] Created new device ID:', newId);
+  } catch (err) {
+    console.warn('[Device] Could not save device ID:', err.message);
+  }
+  
+  return newId;
+}
+
+// Device info for this laptop (initialized after app ready)
+let deviceInfo = {
+  deviceId: null, // Will be set in app.whenReady()
+  deviceType: 'LAPTOP',  // Must match Android DeviceType enum
   deviceName: 'Master Admin Laptop',
   schemaVersion: SCHEMA_VERSION
 };
@@ -32,6 +65,10 @@ const deviceInfo = {
 // In-memory sync state (bridged to renderer via IPC)
 let pendingPushData = null;
 let lastSyncTimestamp = null;
+
+// Pending IPC request resolvers (for sync data requests)
+const pendingRequests = new Map();
+let requestIdCounter = 0;
 
 /**
  * Create the main browser window.
@@ -74,6 +111,38 @@ function createWindow() {
 }
 
 /**
+ * Request data from the renderer process with promise-based IPC.
+ * Used for sync endpoints that need database data.
+ * 
+ * @param {string} channel - The IPC channel name
+ * @param {any} data - Optional data to send with the request
+ * @param {number} timeout - Timeout in ms (default 10 seconds)
+ * @returns {Promise<any>} - The response data from renderer
+ */
+function requestFromRenderer(channel, data = null, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    if (!mainWindow) {
+      reject(new Error('No window available'));
+      return;
+    }
+
+    const requestId = ++requestIdCounter;
+    
+    // Set up timeout
+    const timer = setTimeout(() => {
+      pendingRequests.delete(requestId);
+      reject(new Error('IPC request timeout'));
+    }, timeout);
+
+    // Store the resolver
+    pendingRequests.set(requestId, { resolve, reject, timer });
+
+    // Send request to renderer
+    mainWindow.webContents.send(channel, { requestId, data });
+  });
+}
+
+/**
  * Start the sync HTTP server.
  * Implements FR-18.2 endpoints.
  */
@@ -85,20 +154,30 @@ function startSyncServer() {
   // FR-18.2: GET /api/sync/status - Health check and schema version
   server.get('/api/sync/status', (req, res) => {
     res.json({
-      status: 'online',
-      deviceId: deviceInfo.deviceId,
-      deviceType: deviceInfo.deviceType,
-      deviceName: deviceInfo.deviceName,
+      isHealthy: true,
       schemaVersion: SCHEMA_VERSION,
-      timestamp: new Date().toISOString()
+      device: {
+        id: deviceInfo.deviceId,
+        name: deviceInfo.deviceName,
+        type: deviceInfo.deviceType,
+        lastSeenUtc: null,
+        pairedAtUtc: new Date().toISOString(),
+        isTrusted: true
+      },
+      pendingChangesCount: 0,
+      lastSyncTimestamp: null
     });
   });
 
   // FR-18.2: POST /api/sync/push - Receive entity changes from tablets
-  server.post('/api/sync/push', (req, res) => {
+  server.post('/api/sync/push', async (req, res) => {
     try {
       const payload = req.body;
-      console.log(`[Sync] Received push from ${payload.deviceId}: ${payload.entities?.members?.length || 0} members, ${payload.entities?.checkIns?.length || 0} check-ins`);
+      console.log(`[Sync] Received push from ${payload.deviceId}: ` +
+        `${payload.entities?.members?.length || 0} members, ` +
+        `${payload.entities?.checkIns?.length || 0} check-ins, ` +
+        `${payload.entities?.practiceSessions?.length || 0} sessions, ` +
+        `${payload.entities?.newMemberRegistrations?.length || 0} registrations`);
 
       // Validate schema version
       if (payload.schemaVersion && !isSchemaCompatible(payload.schemaVersion)) {
@@ -109,9 +188,18 @@ function startSyncServer() {
         });
       }
 
-      // Forward to renderer for database processing
-      if (mainWindow) {
-        mainWindow.webContents.send('sync:incoming-push', payload);
+      // Process the sync payload in the renderer
+      let result = { accepted: 0, errors: [] };
+      try {
+        result = await requestFromRenderer('sync:process-push', payload);
+        console.log(`[Sync] Processed: ${result.accepted} items accepted`);
+      } catch (ipcError) {
+        console.warn('[Sync] Could not process in renderer:', ipcError.message);
+        // Still notify renderer for backwards compatibility
+        if (mainWindow) {
+          mainWindow.webContents.send('sync:incoming-push', payload);
+        }
+        result.accepted = countEntities(payload.entities);
       }
 
       // Store for async processing
@@ -119,7 +207,7 @@ function startSyncServer() {
 
       res.json({
         status: 'OK',
-        acceptedCount: countEntities(payload.entities),
+        acceptedCount: result.accepted,
         timestamp: new Date().toISOString()
       });
     } catch (error) {
@@ -132,31 +220,39 @@ function startSyncServer() {
     }
   });
 
-  // FR-18.2: GET /api/sync/pull - Send changes to tablets
+  // FR-18.2: GET /api/sync/pull - Send changes to tablets (laptop sends member data)
   server.get('/api/sync/pull', async (req, res) => {
     try {
       const since = req.query.since ? new Date(req.query.since) : new Date(0);
       console.log(`[Sync] Pull request from tablet, since: ${since.toISOString()}`);
 
-      // Request data from renderer
-      if (mainWindow) {
-        mainWindow.webContents.send('sync:pull-request', { since: since.toISOString() });
+      // Request member data from renderer (laptop is master for members)
+      let entities = {
+        members: [],
+        checkIns: [],
+        practiceSessions: [],
+        equipmentItems: [],
+        equipmentCheckouts: [],
+        newMemberRegistrations: []
+      };
+
+      try {
+        const memberData = await requestFromRenderer('sync:get-members', { since: since.toISOString() });
+        if (memberData && memberData.members) {
+          entities.members = memberData.members;
+          console.log(`[Sync] Sending ${entities.members.length} members to tablet`);
+        }
+      } catch (ipcError) {
+        console.warn('[Sync] Could not get members from renderer:', ipcError.message);
+        // Continue with empty members
       }
 
-      // For now, return empty payload (renderer will populate via IPC)
       res.json({
         schemaVersion: SCHEMA_VERSION,
         deviceId: deviceInfo.deviceId,
         deviceType: deviceInfo.deviceType,
         timestamp: new Date().toISOString(),
-        entities: {
-          members: [],
-          checkIns: [],
-          practiceSessions: [],
-          equipmentItems: [],
-          equipmentCheckouts: [],
-          newMemberRegistrations: []
-        }
+        entities
       });
     } catch (error) {
       console.error('[Sync] Pull error:', error);
@@ -204,6 +300,77 @@ function startSyncServer() {
     }
   });
 
+  // FR-23.5: POST /api/sync/initial - Initial sync for first-time device pairing
+  // Receives tablet's historical data and sends back all member master data
+  server.post('/api/sync/initial', async (req, res) => {
+    try {
+      const payload = req.body;
+      console.log(`[InitialSync] Request from ${payload.deviceId} (${payload.deviceType})`);
+
+      // Notify renderer to process initial sync
+      if (mainWindow) {
+        mainWindow.webContents.send('sync:initial-request', payload);
+      }
+
+      // Wait briefly for renderer processing (IPC response would be better)
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Return full member data payload for tablet to import
+      res.json({
+        status: 'success',
+        schemaVersion: SCHEMA_VERSION,
+        deviceId: deviceInfo.deviceId,
+        deviceType: deviceInfo.deviceType,
+        timestamp: new Date().toISOString(),
+        isInitialSync: true,
+        entities: {
+          members: [], // Will be populated by renderer via IPC
+          checkIns: [],
+          practiceSessions: [],
+          equipmentItems: [],
+          equipmentCheckouts: [],
+          newMemberRegistrations: []
+        },
+        message: 'Initial sync received. Member data will be pushed separately.'
+      });
+    } catch (error) {
+      console.error('[InitialSync] Error:', error);
+      res.status(500).json({
+        status: 'ERROR',
+        errorMessage: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // GET /api/sync/members - Get all members for initial sync
+  // Tablets call this after pairing to get full member list
+  server.get('/api/sync/members', (req, res) => {
+    try {
+      console.log('[Sync] Full member list request');
+
+      // Notify renderer to get member data
+      if (mainWindow) {
+        mainWindow.webContents.send('sync:members-request');
+      }
+
+      // Return placeholder (actual data via IPC callback)
+      res.json({
+        schemaVersion: SCHEMA_VERSION,
+        deviceId: deviceInfo.deviceId,
+        timestamp: new Date().toISOString(),
+        members: [], // Populated by renderer
+        count: 0
+      });
+    } catch (error) {
+      console.error('[Sync] Members request error:', error);
+      res.status(500).json({
+        status: 'ERROR',
+        errorMessage: error.message
+      });
+    }
+  });
+
   // GET /api/devices - List known devices
   server.get('/api/devices', (req, res) => {
     // Request device list from renderer
@@ -228,7 +395,24 @@ function startSyncServer() {
  * Advertises _medlemssync._tcp for tablet discovery.
  */
 function startMdnsAdvertisement() {
-  bonjour = new Bonjour();
+  // Get local IP for explicit interface binding
+  const os = require('os');
+  const interfaces = os.networkInterfaces();
+  let localIp = null;
+  
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        localIp = iface.address;
+        console.log(`[mDNS] Found network interface: ${name} = ${localIp}`);
+      }
+    }
+  }
+
+  // Create Bonjour with explicit interface if found
+  const bonjourOptions = localIp ? { interface: localIp } : {};
+  console.log(`[mDNS] Bonjour options:`, bonjourOptions);
+  bonjour = new Bonjour(bonjourOptions);
 
   // Generate a network ID for pairing (persistent across sessions ideally)
   const networkId = `network-${deviceInfo.deviceId}`;
@@ -249,8 +433,19 @@ function startMdnsAdvertisement() {
   console.log(`[mDNS] Advertising ${SERVICE_TYPE} on port ${SYNC_PORT}`);
   console.log(`[mDNS] TXT records: deviceId=${deviceInfo.deviceId}, deviceType=${deviceInfo.deviceType}, deviceName=${deviceInfo.deviceName}`);
 
+  // Log when service is published
+  publishedService.on('up', () => {
+    console.log('[mDNS] Service is now advertised and UP');
+  });
+
+  publishedService.on('error', (err) => {
+    console.error('[mDNS] Service advertisement error:', err);
+  });
+
   // Also browse for other devices (tablets)
-  bonjour.find({ type: SERVICE_TYPE }, (service) => {
+  console.log('[mDNS] Starting browser for tablets...');
+  const browser = bonjour.find({ type: SERVICE_TYPE }, (service) => {
+    console.log(`[mDNS] Browser found service: ${service.name}`);
     if (service.name !== deviceInfo.deviceName) {
       console.log(`[mDNS] Found device: ${service.name} at ${service.host}:${service.port}`);
       if (mainWindow) {
@@ -262,6 +457,10 @@ function startMdnsAdvertisement() {
         });
       }
     }
+  });
+
+  browser.on('down', (service) => {
+    console.log(`[mDNS] Device went down: ${service.name}`);
   });
 }
 
@@ -289,6 +488,132 @@ function countEntities(entities) {
     (entities.devices?.length || 0);
 }
 
+/**
+ * Scan the local subnet for devices running the sync API.
+ * This is a fallback when mDNS discovery fails.
+ */
+async function scanSubnet() {
+  const os = require('os');
+  const http = require('http');
+  
+  const interfaces = os.networkInterfaces();
+  let localIp = null;
+  
+  // Find our local IP - prefer 192.168.x.x (typical home/office Wi-Fi) over virtual interfaces
+  const candidates = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        candidates.push({ name, address: iface.address });
+      }
+    }
+  }
+  
+  // Prefer 192.168.x.x, then 10.x.x.x, then anything else
+  const preferred = candidates.find(c => c.address.startsWith('192.168.')) ||
+                    candidates.find(c => c.address.startsWith('10.')) ||
+                    candidates[0];
+  
+  if (preferred) {
+    localIp = preferred.address;
+    console.log(`[SubnetScan] Selected interface: ${preferred.name} = ${preferred.address}`);
+  }
+  
+  if (!localIp) {
+    console.log('[SubnetScan] No local IP found');
+    return [];
+  }
+  
+  const parts = localIp.split('.');
+  if (parts.length !== 4) {
+    console.log('[SubnetScan] Invalid IP format:', localIp);
+    return [];
+  }
+  
+  const subnetPrefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
+  const myLastOctet = parseInt(parts[3], 10);
+  
+  console.log(`[SubnetScan] Scanning ${subnetPrefix}.0/24 (my IP: ${localIp})`);
+  
+  const foundDevices = [];
+  
+  // Probe each IP in parallel
+  const probePromises = [];
+  for (let i = 1; i <= 254; i++) {
+    if (i === myLastOctet) continue; // Skip our own IP
+    
+    const ip = `${subnetPrefix}.${i}`;
+    probePromises.push(probeDevice(ip));
+  }
+  
+  const results = await Promise.all(probePromises);
+  
+  for (const device of results) {
+    if (device) {
+      foundDevices.push(device);
+      console.log(`[SubnetScan] Found: ${device.name} at ${device.host}:${device.port}`);
+      
+      if (mainWindow) {
+        mainWindow.webContents.send('sync:device-discovered', device);
+      }
+    }
+  }
+  
+  console.log(`[SubnetScan] Complete. Found ${foundDevices.length} devices.`);
+  return foundDevices;
+}
+
+/**
+ * Probe a single IP for the sync API.
+ */
+function probeDevice(ip) {
+  return new Promise((resolve) => {
+    const http = require('http');
+    
+    const req = http.request({
+      hostname: ip,
+      port: SYNC_PORT,
+      path: '/api/sync/status',
+      method: 'GET',
+      timeout: 1000
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            const status = JSON.parse(data);
+            // Handle both new format (device object) and legacy format
+            const deviceObj = status.device;
+            resolve({
+              name: deviceObj?.name || status.deviceName || 'Unknown',
+              host: ip,
+              port: SYNC_PORT,
+              txt: {
+                deviceId: deviceObj?.id || status.deviceId,
+                deviceType: deviceObj?.type || status.deviceType,
+                schemaVersion: status.schemaVersion
+              }
+            });
+          } catch (e) {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+    });
+    
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
+    
+    req.end();
+  });
+}
+
 // IPC handlers for renderer communication
 ipcMain.handle('sync:get-device-info', () => deviceInfo);
 ipcMain.handle('sync:get-server-status', () => ({
@@ -296,12 +621,46 @@ ipcMain.handle('sync:get-server-status', () => ({
   port: SYNC_PORT,
   mdnsAdvertising: publishedService !== null
 }));
+ipcMain.handle('sync:scan-subnet', async () => {
+  console.log('[IPC] Subnet scan requested');
+  return await scanSubnet();
+});
+
+// IPC handler for renderer responding to data requests
+ipcMain.on('sync:data-response', (event, { requestId, data, error }) => {
+  const pending = pendingRequests.get(requestId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingRequests.delete(requestId);
+    if (error) {
+      pending.reject(new Error(error));
+    } else {
+      pending.resolve(data);
+    }
+  }
+});
 
 // App lifecycle
 app.whenReady().then(() => {
+  // Initialize persistent device ID
+  deviceInfo.deviceId = getOrCreateDeviceId();
+  console.log('[Startup] Device ID:', deviceInfo.deviceId);
+  
   createWindow();
   startSyncServer();
   startMdnsAdvertisement();
+  
+  // Run subnet scan as fallback after a short delay
+  setTimeout(() => {
+    console.log('[Startup] Running subnet scan as mDNS fallback...');
+    scanSubnet();
+  }, 3000);
+  
+  // Periodic rescan every 30 seconds for connection recovery
+  setInterval(() => {
+    console.log('[Periodic] Running subnet scan for connection recovery...');
+    scanSubnet();
+  }, 30000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

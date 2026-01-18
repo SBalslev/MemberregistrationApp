@@ -137,12 +137,12 @@ fun DeviceSetupScreen(
                 )
                 
                 DeviceTypeOption(
-                    type = DeviceType.ADMIN_TABLET,
-                    title = "Admin Tablet",
-                    description = "Check-in + equipment management + admin features",
+                    type = DeviceType.TRAINER_TABLET,
+                    title = "Trainer Tablet",
+                    description = "Check-in + equipment management + trainer features",
                     icon = Icons.Default.AdminPanelSettings,
-                    selected = selectedType == DeviceType.ADMIN_TABLET,
-                    onClick = { selectedType = DeviceType.ADMIN_TABLET }
+                    selected = selectedType == DeviceType.TRAINER_TABLET,
+                    onClick = { selectedType = DeviceType.TRAINER_TABLET }
                 )
                 
                 DeviceTypeOption(
@@ -176,7 +176,7 @@ fun DeviceSetupScreen(
             OutlinedTextField(
                 value = deviceName,
                 onValueChange = { deviceName = it.take(50) },
-                label = { Text("Friendly name (e.g., 'Admin Tablet 1')") },
+                label = { Text("Friendly name (e.g., 'Trainer Tablet 1')") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 supportingText = { 

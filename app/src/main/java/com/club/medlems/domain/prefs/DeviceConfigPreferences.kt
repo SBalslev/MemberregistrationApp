@@ -14,7 +14,7 @@ import javax.inject.Singleton
  * Preferences for device configuration in the distributed sync system.
  * 
  * Stores:
- * - Device type (Member Tablet, Admin Tablet, etc.)
+ * - Device type (Member Tablet, Trainer Tablet, etc.)
  * - Device name for display in pairing UI
  * - Whether initial setup has been completed
  * 
@@ -55,8 +55,8 @@ class DeviceConfigPreferences @Inject constructor(
     /** Whether equipment management is enabled for this build flavor */
     val equipmentEnabled: Boolean = BuildConfig.EQUIPMENT_ENABLED
     
-    /** Whether this is the admin build flavor */
-    val isAdminBuild: Boolean = BuildConfig.DEVICE_ROLE == DeviceType.ADMIN_TABLET.name
+    /** Whether this is the trainer build flavor */
+    val isTrainerBuild: Boolean = BuildConfig.DEVICE_ROLE == DeviceType.TRAINER_TABLET.name
     
     /**
      * Gets the configured device type.
@@ -112,18 +112,18 @@ class DeviceConfigPreferences @Inject constructor(
     }
     
     /**
-     * Checks if this device is configured as an admin device (Admin Tablet or Laptop).
+     * Checks if this device is configured as a trainer/admin device (Trainer Tablet or Laptop).
      */
-    fun isAdminDevice(): Boolean {
+    fun isTrainerDevice(): Boolean {
         val type = getDeviceType()
-        return type == DeviceType.ADMIN_TABLET || type == DeviceType.LAPTOP
+        return type == DeviceType.TRAINER_TABLET || type == DeviceType.LAPTOP
     }
     
     /**
      * Checks if this device has equipment management capabilities.
-     * Only Admin Tablet and Laptop can manage equipment.
+     * Only Trainer Tablet and Laptop can manage equipment.
      */
-    fun canManageEquipment(): Boolean = isAdminDevice()
+    fun canManageEquipment(): Boolean = isTrainerDevice()
     
     /**
      * Checks if this device can approve new member registrations.

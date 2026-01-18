@@ -24,34 +24,89 @@ export function DevicesPage() {
     // Listen for device discovery in Electron
     if (isElectron()) {
       const api = getElectronAPI();
+      
+      // Listen for mDNS/subnet discovered devices
       api?.onDeviceDiscovered((device) => {
-        // Add to devices list if not already present
+        console.log('[Devices] Discovered device:', device);
+        // Add to devices list if not already present, or update if exists
         setDevices(prev => {
-          const exists = prev.some(d => d.id === device.txt?.deviceId);
-          if (exists) return prev;
+          const deviceId = device.txt?.deviceId || device.name;
+          const existingIndex = prev.findIndex(d => d.id === deviceId);
+          
           const newDevice: DeviceInfo = {
-            id: device.txt?.deviceId || device.name,
+            id: deviceId,
             name: device.name,
-            type: (device.txt?.deviceType as DeviceInfo['type']) || 'LAPTOP',
+            type: (device.txt?.deviceType as DeviceInfo['type']) || 'MEMBER_TABLET',
             ipAddress: device.host,
             port: device.port,
             isOnline: true,
-            isTrusted: false,
+            isTrusted: existingIndex >= 0 ? prev[existingIndex].isTrusted : false,
+            lastSeenUtc: new Date().toISOString(),
+            pairingDateUtc: existingIndex >= 0 ? prev[existingIndex].pairingDateUtc : new Date().toISOString()
+          };
+          
+          if (existingIndex >= 0) {
+            // Update existing device
+            const updated = [...prev];
+            updated[existingIndex] = { ...prev[existingIndex], ...newDevice };
+            return updated;
+          }
+          return [...prev, newDevice];
+        });
+      });
+      
+      // Listen for pairing requests from tablets
+      api?.onPairingRequest((device) => {
+        console.log('[Devices] Pairing request from:', device);
+        // Add paired device to list
+        setDevices(prev => {
+          const exists = prev.some(d => d.id === device.deviceId);
+          if (exists) {
+            // Update existing device
+            return prev.map(d => d.id === device.deviceId 
+              ? { ...d, isOnline: true, isTrusted: true, lastSeenUtc: new Date().toISOString() }
+              : d
+            );
+          }
+          const newDevice: DeviceInfo = {
+            id: device.deviceId,
+            name: device.deviceName,
+            type: (device.deviceType as DeviceInfo['type']) || 'MEMBER_TABLET',
+            ipAddress: '',
+            port: 8085,
+            isOnline: true,
+            isTrusted: true,
             lastSeenUtc: new Date().toISOString(),
             pairingDateUtc: new Date().toISOString()
           };
           return [...prev, newDevice];
         });
       });
+      
+      // Trigger a subnet scan on load to find devices
+      api?.scanSubnet?.().then((foundDevices: unknown[]) => {
+        console.log('[Devices] Initial subnet scan found:', foundDevices?.length || 0, 'devices');
+      }).catch((err: Error) => {
+        console.error('[Devices] Subnet scan failed:', err);
+      });
     }
   }, []);
 
   async function loadDevices() {
     try {
-      const dbDevices = query<DeviceInfo>('SELECT * FROM DeviceInfo ORDER BY lastSeenUtc DESC');
-      setDevices(dbDevices);
+      // Query TrustedDevice table - devices are stored here after pairing
+      const dbDevices = query<DeviceInfo>('SELECT id, name, type, lastSeenUtc, pairingDateUtc, ipAddress, port, isTrusted FROM TrustedDevice ORDER BY lastSeenUtc DESC');
+      // Map to DeviceInfo format
+      const mapped = dbDevices.map(d => ({
+        ...d,
+        isOnline: false, // Will be updated by discovery
+        isTrusted: Boolean(d.isTrusted)
+      }));
+      setDevices(mapped);
     } catch (error) {
       console.error('Failed to load devices:', error);
+      // Start with empty list if table doesn't exist yet
+      setDevices([]);
     } finally {
       setIsLoading(false);
     }
@@ -65,10 +120,27 @@ export function DevicesPage() {
     }
   }
 
+  const [isScanning, setIsScanning] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   function isRecentlySeen(lastSeen?: string | null): boolean {
     if (!lastSeen) return false;
     const diff = Date.now() - new Date(lastSeen).getTime();
     return diff < 5 * 60 * 1000; // 5 minutes
+  }
+
+  async function handleRescan() {
+    if (!isElectron()) return;
+    setIsScanning(true);
+    try {
+      const api = getElectronAPI();
+      await api?.scanSubnet?.();
+    } catch (err) {
+      console.error('[Devices] Rescan failed:', err);
+    } finally {
+      setIsScanning(false);
+    }
   }
 
   const onlineCount = devices.filter(d => d.isOnline || isRecentlySeen(d.lastSeenUtc)).length;
@@ -87,8 +159,20 @@ export function DevicesPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="p-6 border-b border-gray-200 bg-white">
-          <h1 className="text-2xl font-bold text-gray-900">Enheder</h1>
-          <p className="text-gray-600 mt-1">Se og administrer tilsluttede enheder</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Enheder</h1>
+              <p className="text-gray-600 mt-1">Se og administrer tilsluttede enheder</p>
+            </div>
+            <button
+              onClick={handleRescan}
+              disabled={isScanning}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-5 h-5 ${isScanning ? 'animate-spin' : ''}`} />
+              {isScanning ? 'Scanner...' : 'Scan netværk'}
+            </button>
+          </div>
 
           {/* Server status */}
           {serverStatus && (
@@ -264,11 +348,53 @@ export function DevicesPage() {
                     <div className="pt-4 space-y-2">
                       <button 
                         className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                        disabled={!online}
+                        disabled={isSyncing || !selectedDevice.ipAddress}
+                        onClick={async () => {
+                          if (!selectedDevice?.ipAddress) {
+                            setSyncMessage({ type: 'error', text: 'Ingen IP-adresse for denne enhed' });
+                            return;
+                          }
+                          setIsSyncing(true);
+                          setSyncMessage(null);
+                          console.log('[Sync] Starting sync with:', selectedDevice.name, 'at', selectedDevice.ipAddress);
+                          try {
+                            // Trigger sync with the selected device by fetching their status
+                            const url = `http://${selectedDevice.ipAddress}:${selectedDevice.port || 8085}/api/sync/status`;
+                            console.log('[Sync] Fetching:', url);
+                            const response = await fetch(url, { 
+                              method: 'GET',
+                              signal: AbortSignal.timeout(5000) // 5 second timeout
+                            });
+                            console.log('[Sync] Response:', response.status, response.ok);
+                            if (response.ok) {
+                              const data = await response.json();
+                              console.log('[Sync] Data:', data);
+                              setSyncMessage({ type: 'success', text: `Forbindelse til ${selectedDevice.name} OK` });
+                              // Update device as online
+                              setDevices(prev => prev.map(d => 
+                                d.id === selectedDevice.id 
+                                  ? { ...d, isOnline: true, lastSeenUtc: new Date().toISOString() }
+                                  : d
+                              ));
+                            } else {
+                              setSyncMessage({ type: 'error', text: `Kunne ikke synkronisere med ${selectedDevice.name} (${response.status})` });
+                            }
+                          } catch (err) {
+                            console.error('[Sync] Error syncing with device:', err);
+                            setSyncMessage({ type: 'error', text: `Fejl ved synkronisering: ${err instanceof Error ? err.message : err}` });
+                          } finally {
+                            setIsSyncing(false);
+                          }
+                        }}
                       >
-                        <RefreshCw className="w-5 h-5" />
-                        Synkroniser nu
+                        <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} />
+                        {isSyncing ? 'Synkroniserer...' : 'Synkroniser nu'}
                       </button>
+                      {syncMessage && (
+                        <div className={`p-3 rounded-lg text-sm ${syncMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                          {syncMessage.text}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>

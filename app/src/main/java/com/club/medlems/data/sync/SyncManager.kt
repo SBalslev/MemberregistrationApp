@@ -167,6 +167,7 @@ class SyncManager @Inject constructor(
     
     /**
      * Triggers an immediate sync with all connected peers.
+     * If no peers are discovered but trusted devices exist, runs a subnet scan first.
      * 
      * @return SyncResult with combined results from all peers
      */
@@ -192,11 +193,25 @@ class SyncManager @Inject constructor(
         try {
             // Get trusted devices to sync with
             val trustedDevices = trustManager.trustedDevices.first()
-            val discoveredDevices = _connectedPeers.value
+            var discoveredDevices = _connectedPeers.value
             
             // Find peers that are both trusted and discovered
-            val peersToSync = discoveredDevices.filter { discovered ->
+            var peersToSync = discoveredDevices.filter { discovered ->
                 trustedDevices.any { it.id == discovered.deviceId }
+            }
+            
+            // If no peers found but we have trusted devices, try subnet scan
+            if (peersToSync.isEmpty() && trustedDevices.isNotEmpty()) {
+                Log.i(TAG, "No discovered peers, running subnet scan...")
+                syncLogManager.info("Sync", "No peers found, scanning subnet...")
+                
+                discoveryService.scanSubnet()
+                
+                // Re-fetch after scan
+                discoveredDevices = _connectedPeers.value
+                peersToSync = discoveredDevices.filter { discovered ->
+                    trustedDevices.any { it.id == discovered.deviceId }
+                }
             }
             
             if (peersToSync.isEmpty()) {

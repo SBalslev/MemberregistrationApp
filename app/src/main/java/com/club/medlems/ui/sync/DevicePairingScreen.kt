@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -88,10 +89,26 @@ fun DevicePairingScreen(
     val isScanning by viewModel.isScanning.collectAsState()
     val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsState()
     val logEntries by viewModel.logEntries.collectAsState()
+    val syncResultEvent by viewModel.syncResultEvent.collectAsState()
     
     var isLogExpanded by remember { mutableStateOf(false) }
     
     val snackbarHostState = remember { SnackbarHostState() }
+    
+    // Handle sync result events
+    LaunchedEffect(syncResultEvent) {
+        when (val event = syncResultEvent) {
+            is SyncResultEvent.Success -> {
+                snackbarHostState.showSnackbar("Synkronisering OK - ${event.recordsSynced} ændringer")
+                viewModel.clearSyncResultEvent()
+            }
+            is SyncResultEvent.Error -> {
+                snackbarHostState.showSnackbar("Fejl: ${event.message}")
+                viewModel.clearSyncResultEvent()
+            }
+            else -> {} // Syncing or null - no action
+        }
+    }
     
     // Handle pairing state changes
     LaunchedEffect(pairingState) {
@@ -123,6 +140,25 @@ fun DevicePairingScreen(
                     }
                 },
                 actions = {
+                    // Sync Now button - enabled when we have paired devices and not already syncing
+                    val isSyncing = syncResultEvent is SyncResultEvent.Syncing
+                    IconButton(
+                        onClick = { viewModel.syncNow() },
+                        enabled = trustedDevices.isNotEmpty() && !isSyncing
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = "Sync Now"
+                            )
+                        }
+                    }
+                    // Refresh/Scan button
                     IconButton(
                         onClick = {
                             if (isScanning) viewModel.stopDiscovery()
@@ -187,7 +223,11 @@ fun DevicePairingScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
             
+            // Filter out already-paired devices AND our own device (prevent self-pairing)
+            // Use thisDeviceId which is always available (generated if not set)
+            val thisDeviceId = viewModel.thisDeviceId
             val unpairedDevices = discoveredDevices.filter { discovered ->
+                discovered.deviceId != thisDeviceId && 
                 trustedDevices.none { it.id == discovered.deviceId }
             }
             
@@ -330,10 +370,20 @@ private fun TrustedDeviceCard(
                     OnlineIndicator(isOnline = isOnline)
                 }
                 Text(
-                    text = device.type.displayName,
+                    text = "${device.type.displayName} • ID: ${device.id.take(8)}...",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (!isOnline) {
+                    Text(
+                        text = "Offline - sidst set: ${device.lastSeenUtc?.let { 
+                            val local = it.toLocalDateTime(TimeZone.currentSystemDefault())
+                            "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+                        } ?: "ukendt"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
             
             IconButton(onClick = onUnpair) {
@@ -503,7 +553,7 @@ private fun OnlineIndicator(isOnline: Boolean) {
 private val DeviceType.displayName: String
     get() = when (this) {
         DeviceType.LAPTOP -> "Master Laptop"
-        DeviceType.ADMIN_TABLET -> "Admin Tablet"
+        DeviceType.TRAINER_TABLET -> "Trainer Tablet"
         DeviceType.MEMBER_TABLET -> "Member Tablet"
         DeviceType.DISPLAY_EQUIPMENT -> "Equipment Display"
         DeviceType.DISPLAY_PRACTICE -> "Practice Display"

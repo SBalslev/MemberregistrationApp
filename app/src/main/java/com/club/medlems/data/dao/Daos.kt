@@ -241,7 +241,7 @@ interface NewMemberRegistrationDao {
     suspend fun getUnsynced(): List<NewMemberRegistration>
 }
 
-// ===== Equipment Management DAOs (Phase 3 - Admin Tablet) =====
+// ===== Equipment Management DAOs (Phase 3 - Trainer Tablet) =====
 
 /**
  * DAO for EquipmentItem entity.

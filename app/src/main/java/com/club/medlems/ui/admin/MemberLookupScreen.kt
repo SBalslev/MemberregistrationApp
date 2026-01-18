@@ -24,7 +24,7 @@ import com.club.medlems.data.entity.MemberStatus
 import kotlinx.datetime.LocalDate
 
 /**
- * Member lookup screen for admin tablet.
+ * Member lookup screen for trainer tablet.
  * 
  * Allows attendants to:
  * - Search for members by name or ID
@@ -32,7 +32,7 @@ import kotlinx.datetime.LocalDate
  * - Perform assisted check-ins
  * - Navigate to practice session entry
  * 
- * @see [design.md FR-10] - Admin Tablet Member Lookup
+ * @see [design.md FR-10] - Trainer Tablet Member Lookup
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

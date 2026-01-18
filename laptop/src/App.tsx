@@ -12,9 +12,10 @@ import {
   EquipmentPage, 
   DevicesPage, 
   ConflictsPage, 
-  SettingsPage 
+  SettingsPage,
+  ImportPage
 } from './pages';
-import { initDatabase, getPendingRegistrations, processSyncPayload, type SyncPayload } from './database';
+import { initDatabase, getPendingRegistrations, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, type SyncPayload } from './database';
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
 
@@ -65,6 +66,113 @@ function App() {
               console.error('[App] Sync error:', err);
               setSyncStatus('Synkroniseringsfejl');
               setTimeout(() => setSyncStatus(null), 5000);
+            }
+          });
+
+          // FR-23: Listen for initial sync requests from tablets
+          api?.onInitialSyncRequest(async (payload: unknown) => {
+            console.log('[App] Initial sync request:', payload);
+            setSyncStatus('Indledende synkronisering...');
+            
+            try {
+              const result = await processInitialSyncPayload(payload as SyncPayload);
+              console.log('[App] Initial sync result:', result);
+              
+              // Send result back to main process
+              api?.sendInitialSyncResult({
+                success: result.success,
+                checkInsAdded: result.checkInsAdded,
+                sessionsAdded: result.sessionsAdded,
+                registrationsAdded: result.registrationsAdded,
+                membersReceived: result.membersReceived,
+                memberConflicts: result.memberConflicts,
+                errors: result.errors
+              });
+              
+              // Refresh pending count
+              refreshPendingCount();
+              
+              const msg = `Modtaget: ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessioner`;
+              setSyncStatus(msg);
+              setTimeout(() => setSyncStatus(null), 5000);
+            } catch (err) {
+              console.error('[App] Initial sync error:', err);
+              setSyncStatus('Fejl ved indledende synkronisering');
+              setTimeout(() => setSyncStatus(null), 5000);
+            }
+          });
+
+          // FR-23: Listen for member data requests (tablet wants full member list)
+          api?.onMembersRequest(() => {
+            console.log('[App] Members request received');
+            
+            try {
+              const members = getMemberDataForFullSync();
+              api?.sendMemberData({
+                members,
+                count: members.length,
+                timestamp: new Date().toISOString()
+              });
+              console.log(`[App] Sent ${members.length} members to tablet`);
+            } catch (err) {
+              console.error('[App] Error sending member data:', err);
+            }
+          });
+
+          // ===== Promise-based IPC handlers for sync data =====
+          
+          // Handle sync:get-members - main process requests member data
+          api?.onGetMembersRequest?.((_data) => {
+            console.log('[App] IPC get-members request');
+            const members = getMemberDataForFullSync();
+            return {
+              members,
+              count: members.length,
+              timestamp: new Date().toISOString()
+            };
+          });
+
+          // Handle sync:process-push - main process sends incoming sync data
+          api?.onProcessPushRequest?.(async (payload) => {
+            console.log('[App] IPC process-push request:', 
+              `${payload.entities.checkIns?.length || 0} check-ins, ` +
+              `${payload.entities.practiceSessions?.length || 0} sessions, ` +
+              `${payload.entities.newMemberRegistrations?.length || 0} registrations`
+            );
+            
+            setSyncStatus('Synkroniserer...');
+            
+            try {
+              const result = await processSyncPayload(payload as SyncPayload);
+              
+              // Refresh pending count after sync
+              refreshPendingCount();
+              
+              const accepted = 
+                (result.registrationsAdded || 0) + 
+                (result.registrationsUpdated || 0) +
+                (result.checkInsAdded || 0) +
+                (result.sessionsAdded || 0);
+              
+              if (accepted > 0) {
+                setSyncStatus(`${accepted} elementer modtaget`);
+              } else {
+                setSyncStatus('Synkroniseret');
+              }
+              setTimeout(() => setSyncStatus(null), 3000);
+              
+              return {
+                accepted,
+                errors: result.errors || []
+              };
+            } catch (err) {
+              console.error('[App] Process push error:', err);
+              setSyncStatus('Synkroniseringsfejl');
+              setTimeout(() => setSyncStatus(null), 5000);
+              return {
+                accepted: 0,
+                errors: [err instanceof Error ? err.message : 'Unknown error']
+              };
             }
           });
           
@@ -134,6 +242,8 @@ function PageRouter({ currentPage }: { currentPage: string }) {
       return <ConflictsPage />;
     case 'settings':
       return <SettingsPage />;
+    case 'import':
+      return <ImportPage />;
     default:
       return <DashboardPage />;
   }

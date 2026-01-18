@@ -5,3 +5,4 @@ export { EquipmentPage } from './EquipmentPage';
 export { DevicesPage } from './DevicesPage';
 export { ConflictsPage } from './ConflictsPage';
 export { SettingsPage } from './SettingsPage';
+export { ImportPage } from './ImportPage';

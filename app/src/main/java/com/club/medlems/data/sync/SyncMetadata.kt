@@ -36,8 +36,8 @@ enum class DeviceType {
     /** Member self-service tablet for check-in and practice sessions */
     MEMBER_TABLET,
     
-    /** Admin tablet with equipment management and assisted check-in */
-    ADMIN_TABLET,
+    /** Trainer tablet with equipment management and assisted check-in */
+    TRAINER_TABLET,
     
     /** Read-only display showing equipment status */
     DISPLAY_EQUIPMENT,
@@ -59,7 +59,7 @@ data class DeviceInfo(
     /** Unique device identifier (UUID generated at first launch) */
     val id: String,
     
-    /** Human-friendly name assigned during pairing (e.g., "Admin Tablet 1") */
+    /** Human-friendly name assigned during pairing (e.g., "Trainer Tablet 1") */
     val name: String,
     
     /** Type of device determining its capabilities */

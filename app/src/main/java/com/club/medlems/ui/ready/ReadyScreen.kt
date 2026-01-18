@@ -318,8 +318,8 @@ fun ReadyScreen(
                         }
                     }
                     
-                    // Admin mode indicator (top-left) - visible on admin build flavor
-                    if (deviceConfig.isAdminBuild) {
+                    // Trainer mode indicator (top-left) - visible on trainer build flavor
+                    if (deviceConfig.isTrainerBuild) {
                         Surface(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
@@ -328,7 +328,7 @@ fun ReadyScreen(
                             shape = MaterialTheme.shapes.small
                         ) {
                             Text(
-                                "ADMIN MODE",
+                                "TRÆNER",
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 color = MaterialTheme.colorScheme.onTertiary,
                                 style = MaterialTheme.typography.labelMedium,

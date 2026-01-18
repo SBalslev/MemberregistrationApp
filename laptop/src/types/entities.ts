@@ -196,7 +196,7 @@ export interface EquipmentCheckout {
 
 // ===== Device Types =====
 
-export type DeviceType = 'MEMBER_TABLET' | 'ADMIN_TABLET' | 'DISPLAY' | 'LAPTOP';
+export type DeviceType = 'MEMBER_TABLET' | 'TRAINER_TABLET' | 'DISPLAY_EQUIPMENT' | 'DISPLAY_PRACTICE' | 'LAPTOP';
 
 export interface DeviceInfo {
   id: string;

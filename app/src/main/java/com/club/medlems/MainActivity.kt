@@ -76,22 +76,22 @@ sealed class NavRoute(val route: String) {
     }
     data object Registration: NavRoute("registration")
     
-    // Equipment management routes (Admin Tablet)
+    // Equipment management routes (Trainer Tablet)
     data object EquipmentList: NavRoute("equipment")
     data object EquipmentCheckout: NavRoute("equipment/checkout/{equipmentId}") {
         fun build(equipmentId: String) = "equipment/checkout/$equipmentId"
         fun buildNoSelection() = "equipment/checkout/_"
     }
     data object CurrentCheckouts: NavRoute("equipment/checkouts")
-    data object MemberEquipmentCheckout: NavRoute("admin/members/{membershipId}/equipment") {
-        fun build(membershipId: String) = "admin/members/$membershipId/equipment"
+    data object MemberEquipmentCheckout: NavRoute("trainer/members/{membershipId}/equipment") {
+        fun build(membershipId: String) = "trainer/members/$membershipId/equipment"
     }
     
-    // Admin tablet member lookup
-    data object MemberLookup: NavRoute("admin/members")
+    // Trainer tablet member lookup
+    data object MemberLookup: NavRoute("trainer/members")
     
-    // Conflict resolution (Admin Tablet)
-    data object ConflictResolution: NavRoute("admin/conflicts")
+    // Conflict resolution (Trainer Tablet)
+    data object ConflictResolution: NavRoute("trainer/conflicts")
     
     // Device pairing (sync network)
     data object DevicePairing: NavRoute("sync/pairing")
@@ -178,7 +178,7 @@ fun AppRoot(
                 com.club.medlems.ui.attendant.RegistrationScreen(onBack = { navController.popBackStack() })
             }
             
-            // Equipment management screens (Admin Tablet)
+            // Equipment management screens (Trainer Tablet)
             composable(NavRoute.EquipmentList.route) {
                 com.club.medlems.ui.equipment.EquipmentListScreen(
                     onNavigateBack = { navController.popBackStack() },
@@ -201,7 +201,7 @@ fun AppRoot(
                 )
             }
             
-            // Admin tablet member lookup
+            // Trainer tablet member lookup
             composable(NavRoute.MemberLookup.route) {
                 com.club.medlems.ui.admin.MemberLookupScreen(
                     onNavigateBack = { navController.popBackStack() },
@@ -214,7 +214,7 @@ fun AppRoot(
                 )
             }
             
-            // Admin tablet equipment checkout with pre-selected member
+            // Trainer tablet equipment checkout with pre-selected member
             composable(NavRoute.MemberEquipmentCheckout.route) { backStackEntry ->
                 val membershipId = backStackEntry.arguments?.getString("membershipId")
                 com.club.medlems.ui.equipment.EquipmentCheckoutScreen(
@@ -225,7 +225,7 @@ fun AppRoot(
                 )
             }
             
-            // Conflict resolution screen (Admin Tablet)
+            // Conflict resolution screen (Trainer Tablet)
             composable(NavRoute.ConflictResolution.route) {
                 com.club.medlems.ui.admin.ConflictResolutionScreen(
                     onNavigateBack = { navController.popBackStack() }

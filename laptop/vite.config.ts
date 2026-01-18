@@ -4,6 +4,9 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
+// Check if running in Electron (service workers don't work there)
+const isElectron = process.env.ELECTRON === 'true' || process.argv.includes('--electron')
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -13,7 +16,8 @@ export default defineConfig({
       },
     }),
     tailwindcss(),
-    VitePWA({
+    // Only enable PWA for web builds, not Electron
+    !isElectron && VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
@@ -42,7 +46,7 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024 // 10MB for sql-wasm.wasm
       }
     })
-  ],
+  ].filter(Boolean),
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src')

@@ -257,12 +257,10 @@ class TrustManager @Inject constructor(
         val device = currentList.find { it.id == deviceId }
         
         if (device != null) {
-            val revokedDevice = device.copy(isTrusted = false)
-            val index = currentList.indexOf(device)
-            currentList[index] = revokedDevice
+            currentList.remove(device)
             _trustedDevices.value = currentList
             saveTrustedDevices()
-            Log.i(TAG, "Revoked trust for device: ${device.name}")
+            Log.i(TAG, "Removed device from trusted list: ${device.name}")
         }
     }
     
@@ -339,8 +337,15 @@ class TrustManager @Inject constructor(
                     ListSerializer(DeviceInfo.serializer()),
                     json
                 )
-                _trustedDevices.value = devices
-                Log.i(TAG, "Loaded ${devices.size} trusted devices")
+                // Filter out any devices with isTrusted=false (legacy data cleanup)
+                val trustedOnly = devices.filter { it.isTrusted }
+                _trustedDevices.value = trustedOnly
+                Log.i(TAG, "Loaded ${trustedOnly.size} trusted devices (${devices.size - trustedOnly.size} revoked filtered out)")
+                
+                // If we filtered any out, save the cleaned list
+                if (trustedOnly.size < devices.size) {
+                    saveTrustedDevices()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load trusted devices", e)
             }

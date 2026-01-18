@@ -42,6 +42,7 @@ class SyncViewModel @Inject constructor(
 ) : ViewModel() {
     
     private var syncManagerStarted = false
+    private var periodicScanJob: kotlinx.coroutines.Job? = null
     
     /** Current sync state */
     val syncState: StateFlow<SyncState> = syncManager.syncState
@@ -71,6 +72,10 @@ class SyncViewModel @Inject constructor(
     val thisDeviceInfo: DeviceInfo?
         get() = trustManager.getThisDeviceInfo()
     
+    /** This device's ID (always available, even if device not configured) */
+    val thisDeviceId: String
+        get() = trustManager.getThisDeviceId()
+    
     /** Combined UI state for sync status */
     val syncUiState: StateFlow<SyncUiState> = combine(
         syncState,
@@ -98,14 +103,28 @@ class SyncViewModel @Inject constructor(
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
     
+    // Sync result event for showing feedback to user
+    private val _syncResultEvent = MutableStateFlow<SyncResultEvent?>(null)
+    val syncResultEvent: StateFlow<SyncResultEvent?> = _syncResultEvent.asStateFlow()
+    
+    /**
+     * Clears the sync result event after it's been handled.
+     */
+    fun clearSyncResultEvent() {
+        _syncResultEvent.value = null
+    }
+    
     /**
      * Triggers an immediate sync with all connected peers.
      */
     fun syncNow() {
         viewModelScope.launch {
+            _syncResultEvent.value = SyncResultEvent.Syncing
             val result = syncManager.syncNow()
-            if (result.hasErrors) {
-                // Could emit an error event here for UI to show
+            _syncResultEvent.value = if (result.hasErrors) {
+                SyncResultEvent.Error(result.errorMessage ?: "Synkronisering fejlede")
+            } else {
+                SyncResultEvent.Success(result.totalProcessed)
             }
         }
     }
@@ -113,6 +132,8 @@ class SyncViewModel @Inject constructor(
     /**
      * Starts device discovery scanning.
      * Also starts SyncManager if not already started to enable network connectivity.
+     * Uses mDNS discovery + subnet scanning as fallback.
+     * Runs periodic rescans every 30 seconds to recover connections.
      */
     fun startDiscovery() {
         viewModelScope.launch {
@@ -120,7 +141,7 @@ class SyncViewModel @Inject constructor(
             if (!syncManagerStarted) {
                 val deviceType = deviceConfigPreferences.getDeviceType()
                 val deviceInfo = DeviceInfo(
-                    id = UUID.randomUUID().toString(),
+                    id = trustManager.getThisDeviceId(),
                     name = android.os.Build.MODEL,
                     type = deviceType,
                     pairedAtUtc = Clock.System.now()
@@ -130,7 +151,37 @@ class SyncViewModel @Inject constructor(
             }
             
             _isScanning.value = true
+            
+            // Start mDNS discovery (jmDNS + NSD)
             discoveryService.startDiscovery()
+            
+            // Also run subnet scan as fallback for unreliable mDNS
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(2000) // Give mDNS 2 seconds to find devices first
+                if (_isScanning.value) {
+                    discoveryService.scanSubnet()
+                }
+            }
+            
+            // Start periodic rescan for connection recovery
+            startPeriodicRescan()
+        }
+    }
+    
+    /**
+     * Starts periodic rescanning to recover lost connections.
+     * Runs every 30 seconds while discovery is active.
+     */
+    private fun startPeriodicRescan() {
+        periodicScanJob?.cancel()
+        periodicScanJob = viewModelScope.launch {
+            while (_isScanning.value) {
+                kotlinx.coroutines.delay(30_000) // Wait 30 seconds
+                if (_isScanning.value && isNetworkAvailable.value) {
+                    syncLogManager.debug("Rescan", "Running periodic subnet scan...")
+                    discoveryService.scanSubnet()
+                }
+            }
         }
     }
     
@@ -140,6 +191,7 @@ class SyncViewModel @Inject constructor(
     fun stopDiscovery() {
         viewModelScope.launch {
             _isScanning.value = false
+            periodicScanJob?.cancel()
             discoveryService.stopDiscovery()
         }
     }
@@ -213,4 +265,16 @@ sealed class PairingState {
     data class Pairing(val deviceName: String) : PairingState()
     data class Success(val deviceName: String) : PairingState()
     data class Error(val message: String) : PairingState()
+}
+
+/**
+ * Event for sync result feedback to the UI.
+ */
+sealed class SyncResultEvent {
+    /** Sync is in progress */
+    object Syncing : SyncResultEvent()
+    /** Sync completed successfully */
+    data class Success(val recordsSynced: Int) : SyncResultEvent()
+    /** Sync failed with error */
+    data class Error(val message: String) : SyncResultEvent()
 }

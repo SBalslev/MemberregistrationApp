@@ -235,7 +235,7 @@ fun AttendantMenuScreen(
                         }
                         Spacer(Modifier.weight(1f))
                     }
-                    // Member lookup (only for Admin Tablet and Laptop)
+                    // Member lookup (only for Trainer Tablet and Laptop)
                     if (canManageEquipment) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
                             Button(onClick = { attendant.registerInteraction(); openMemberLookup() }, modifier = Modifier.weight(1f).height(btnHeight)) {
@@ -246,7 +246,7 @@ fun AttendantMenuScreen(
                             Spacer(Modifier.weight(1f))
                         }
                     }
-                    // Equipment management row (only for Admin Tablet and Laptop)
+                    // Equipment management row (only for Trainer Tablet and Laptop)
                     if (canManageEquipment) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
                             Button(onClick = { attendant.registerInteraction(); openEquipmentList() }, modifier = Modifier.weight(1f).height(btnHeight)) {
@@ -261,7 +261,7 @@ fun AttendantMenuScreen(
                             }
                         }
                     }
-                    // Conflict resolution (only for Admin Tablet)
+                    // Conflict resolution (only for Trainer Tablet)
                     if (canManageEquipment) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
                             Button(onClick = { attendant.registerInteraction(); openConflictResolution() }, modifier = Modifier.weight(1f).height(btnHeight)) {

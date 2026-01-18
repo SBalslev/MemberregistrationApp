@@ -23,7 +23,7 @@ android {
         targetSdk = 34
     // Auto-incrementing versionCode: use epoch seconds so each build is higher
     versionCode = (System.currentTimeMillis() / 1000L).toInt()
-        versionName = "1.3.8"
+        versionName = "1.3.18"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -41,12 +41,12 @@ android {
             buildConfigField("String", "DEVICE_ROLE", "\"MEMBER_TABLET\"")
             buildConfigField("Boolean", "EQUIPMENT_ENABLED", "false")
         }
-        create("admin") {
+        create("trainer") {
             dimension = "deviceRole"
-            applicationIdSuffix = ".admin"
-            // Admin tablet - distinct app name
-            resValue("string", "app_name_flavor", "ISS Skydning Admin")
-            buildConfigField("String", "DEVICE_ROLE", "\"ADMIN_TABLET\"")
+            applicationIdSuffix = ".trainer"
+            // Trainer tablet - distinct app name
+            resValue("string", "app_name_flavor", "ISS Skydning Træner")
+            buildConfigField("String", "DEVICE_ROLE", "\"TRAINER_TABLET\"")
             buildConfigField("Boolean", "EQUIPMENT_ENABLED", "true")
         }
     }

@@ -5,7 +5,7 @@
 This feature transforms the existing single-tablet membership check-in application into a distributed three-device system that operates on a local network with offline-first capabilities. The system will consist of:
 
 1. **Tablet 1 (Member App)** - Existing Android app for member self-service check-in and practice session recording
-2. **Tablet 2 (Admin App)** - New Android admin app for assisted check-in and equipment management
+2. **Tablet 2 (Trainer App)** - New Android trainer app for assisted check-in and equipment management
 3. **Laptop (Master Admin App)** - New Windows/browser app for complete membership management
 
 The system must function reliably when devices are offline and automatically synchronize data when connectivity is restored, ensuring no data loss and minimal conflicts.
@@ -21,7 +21,7 @@ The system must function reliably when devices are offline and automatically syn
 
 1. Enable three devices to operate independently on a local network with automatic data synchronization
 2. Implement offline-first architecture where any device can be unavailable at any time
-3. Add equipment checkout management accessible from the admin tablet
+3. Add equipment checkout management accessible from the trainer tablet
 4. Create a master membership management system on the laptop
 5. Maintain backward compatibility with the existing member check-in workflow
 6. Ensure zero data loss during network interruptions and device unavailability
@@ -31,7 +31,7 @@ The system must function reliably when devices are offline and automatically syn
 
 **US-1: Admin Assisted Check-in**
 
-As a club admin, I want to check in members on their behalf from the admin tablet so that I can assist members who don't have their membership cards or need help.
+As a club admin, I want to check in members on their behalf from the trainer tablet so that I can assist members who don't have their membership cards or need help.
 
 **US-2: Equipment Checkout**
 
@@ -61,13 +61,13 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 ### FR-1: Device Roles
 
-**FR-1.1** The system SHALL consist of three device types: Member Tablet, Admin Tablet, and Master Laptop.
+**FR-1.1** The system SHALL consist of three device types: Member Tablet, Trainer Tablet, and Master Laptop.
 
 **FR-1.2** Member Tablet SHALL maintain existing functionality for member self-service check-in and practice session recording.
 
-**FR-1.3** Admin Tablet SHALL support all member tablet functions plus admin-only features (assisted check-in, equipment management).
+**FR-1.3** Trainer Tablet SHALL support all member tablet functions plus trainer-only features (assisted check-in, equipment management).
 
-**FR-1.3.1** Admin Tablet SHALL be a separate application build, distinct from Member Tablet app.
+**FR-1.3.1** Trainer Tablet SHALL be a separate application build, distinct from Member Tablet app.
 
 **FR-1.4** Master Laptop SHALL support a superset of all functionality with exclusive rights to edit membership master data.
 
@@ -79,7 +79,7 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 **FR-2.1** All devices SHALL operate on a local network without internet connectivity requirement.
 
-**FR-2.2** Tablets (Member and Admin) SHALL automatically discover each other and sync data without user intervention.
+**FR-2.2** Tablets (Member and Trainer) SHALL automatically discover each other and sync data without user intervention.
 
 **FR-2.3** Master Laptop SHALL require explicit user action to push membership master data changes to tablets.
 
@@ -121,9 +121,9 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 **FR-4.7** Equipment checkout records SHALL sync across all devices in real-time when online.
 
-### FR-5: Equipment Management (Admin Tablet Only)
+### FR-5: Equipment Management (Trainer Tablet Only)
 
-**FR-5.1** Admin Tablet SHALL allow checking out equipment to members.
+**FR-5.1** Trainer Tablet SHALL allow checking out equipment to members.
 
 **FR-5.2** Each equipment item SHALL be identified by a serial number and an ID.
 
@@ -135,9 +135,9 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 **FR-5.4** A member SHALL be limited to checking out one equipment item at a time.
 
-**FR-5.5** Admin Tablet SHALL display all currently checked-out equipment with member names.
+**FR-5.5** Trainer Tablet SHALL display all currently checked-out equipment with member names.
 
-**FR-5.6** Admin Tablet SHALL allow checking in (returning) equipment from members.
+**FR-5.6** Trainer Tablet SHALL allow checking in (returning) equipment from members.
 
 **FR-5.7** If equipment is checked out while offline, the system SHALL prevent duplicate checkouts when syncing.
 
@@ -147,7 +147,7 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 **FR-5.10** Equipment checkout conflicts SHALL be clearly visible on admin devices with conflict resolution interface.
 
-**FR-5.11** Any admin device (Admin Tablet or Master Laptop) SHALL have authority to resolve equipment checkout conflicts.
+**FR-5.11** Any admin device (Trainer Tablet or Master Laptop) SHALL have authority to resolve equipment checkout conflicts.
 
 **FR-5.12** Conflict resolution performed on one device SHALL sync to all other devices.
 
@@ -276,7 +276,7 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 ### FR-14: Backup and Restore
 
-**FR-14.1** All devices (Member Tablet, Admin Tablet, Master Laptop) SHALL perform scheduled automatic backups.
+**FR-14.1** All devices (Member Tablet, Trainer Tablet, Master Laptop) SHALL perform scheduled automatic backups.
 
 **FR-14.2** Backup files SHALL include complete local database with all synced data.
 
@@ -314,7 +314,7 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 ### FR-17: Member Lookup (Admin Devices)
 
-**FR-17.1** Admin Tablet and Master Laptop SHALL provide member search functionality.
+**FR-17.1** Trainer Tablet and Master Laptop SHALL provide member search functionality.
 
 **FR-17.2** Member search SHALL support searching by member name (first name, last name, or both).
 
@@ -473,8 +473,8 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 **FR-22.2** Clicking "Add New Device" SHALL:
 
-- Prompt admin to select device type (Member Tablet, Admin Tablet, Display Tablet)
-- Prompt admin to enter friendly device name (e.g., "Admin Tablet 1", "Display - Main Hall")
+- Prompt admin to select device type (Member Tablet, Trainer Tablet, Display Tablet)
+- Prompt admin to enter friendly device name (e.g., "Trainer Tablet 1", "Display - Main Hall")
 - Generate pairing QR code containing: JWT trust token, sync network ID, laptop endpoint URL
 - Display QR code full-screen with instructions: "Scan this code from the new device"
 
@@ -578,10 +578,10 @@ As a club member or admin, I want to see practice sessions recorded across all d
 - Add subtle sync status indicator in settings or footer
 - No user-facing sync controls
 
-**Admin Tablet:**
+**Trainer Tablet:**
 
-- Separate application build from Member Tablet (different package name: com.club.medlems.admin)
-- Start with Member Tablet UI as base, add admin-specific features
+- Separate application build from Member Tablet (different package name: com.club.medlems.trainer)
+- Start with Member Tablet UI as base, add trainer-specific features
 - Add "Admin Mode" indicator always visible in header
 - Equipment management as new top-level navigation section:
   - Equipment list with status indicators
@@ -646,7 +646,7 @@ As a club member or admin, I want to see practice sessions recorded across all d
 - Equipment status overview:
   - All equipment with current status
   - Checkout history for each item
-  - Conflict resolution interface (matches admin tablet functionality)
+  - Conflict resolution interface (matches trainer tablet functionality)
 - Manual "Push Master Data" button (primary action):
   - Confirmation dialog: "Push member data to X tablets?"
   - Progress indicator showing push status per device
@@ -782,7 +782,7 @@ enum class ConflictStatus {
 
 - UUIDs generated for equipment items to prevent offline conflicts
 - Serial numbers manually entered by admins for human identification
-- Equipment checkout conflicts resolved by any admin (laptop or admin tablet)
+- Equipment checkout conflicts resolved by any admin (laptop or trainer tablet)
 - Conflict resolution syncs immediately to all devices
 
 **Backup and Restore Strategy:**
@@ -810,7 +810,7 @@ enum class ConflictStatus {
 **Application Builds:**
 
 - **Member Tablet**: com.club.medlems.member - Self-service check-in
-- **Admin Tablet**: com.club.medlems.admin - Admin features + equipment management
+- **Trainer Tablet**: com.club.medlems.trainer - Trainer features + equipment management
 - **Display Tablet - Equipment**: com.club.medlems.display.equipment - Equipment status board
 - **Display Tablet - Practice**: com.club.medlems.display.practice - Practice session displays
 - **Master Laptop**: Progressive Web App, installable, works offline
@@ -829,14 +829,14 @@ enum class ConflictStatus {
 - Search by name (first, last, or full name) or membership ID
 - Live search with 2-character minimum
 - Results show: membership ID, full name, status
-- Available on Admin Tablet and Master Laptop
+- Available on Trainer Tablet and Master Laptop
 - QR scanning remains for member self-service on Member Tablet
 
 **Equipment Conflict Resolution:**
 
 - Conflicts shown in dedicated section with notification badge
 - Conflict detail shows both checkout attempts with timestamps and devices
-- Admin selects: Keep first checkout or Reassign to second member
+- Trainer selects: Keep first checkout or Reassign to second member
 - Cancelled checkout marked in database (conflictStatus=Cancelled, retained for audit)
 - Resolution syncs immediately to all devices
 
@@ -908,7 +908,7 @@ enum class ConflictStatus {
 14. ✅ **Scalability**: 2 tablets now, support 3-4 for future display screens
 15. ✅ **Audit Trail**: Logging for troubleshooting only, no user-facing audit
 16. ✅ **QR Code Pairing**: Laptop generates, tablets scan using existing capability
-17. ✅ **Conflict Resolution Authority**: Any admin device (laptop or admin tablet)
+17. ✅ **Conflict Resolution Authority**: Any admin device (laptop or trainer tablet)
 18. ✅ **Display-Only Screens**: Read-only paired devices with interactive filtering (no writes)
 19. ✅ **Network Interruption Grace Period**: 60 seconds before marking device offline
 20. ✅ **Master Data Push Confirmation**: Explicit progress dialog showing device count and status

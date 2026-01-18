@@ -1,12 +1,15 @@
 /**
  * Sync service for processing incoming sync payloads from tablets.
  * Handles registration sync with photo storage.
+ * Implements initial full sync for first-time device pairing.
  * 
  * @see [design.md FR-18] - Sync Protocol Specification
+ * @see [design.md FR-23] - Initial Data Migration Strategy
  */
 
 import { execute, query } from './db';
 import type { NewMemberRegistration, ApprovalStatus } from '../types/entities';
+import { getAllMembers } from './memberRepository';
 
 /**
  * Incoming sync payload from tablet/admin devices.
@@ -135,10 +138,37 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
-  // TODO: Process check-ins when needed
-  // TODO: Process practice sessions when needed
+  // Process check-ins
+  if (payload.entities.checkIns) {
+    console.log(`[SyncService] Processing ${payload.entities.checkIns.length} check-ins`);
+    for (const checkIn of payload.entities.checkIns) {
+      try {
+        const added = await processCheckIn(checkIn);
+        if (added) result.checkInsAdded++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`CheckIn ${checkIn.id}: ${msg}`);
+        console.error(`[SyncService] Error processing check-in ${checkIn.id}:`, error);
+      }
+    }
+  }
 
-  console.log(`[SyncService] Sync complete: ${result.registrationsAdded} added, ${result.registrationsUpdated} updated`);
+  // Process practice sessions
+  if (payload.entities.practiceSessions) {
+    console.log(`[SyncService] Processing ${payload.entities.practiceSessions.length} practice sessions`);
+    for (const session of payload.entities.practiceSessions) {
+      try {
+        const added = await processPracticeSession(session);
+        if (added) result.sessionsAdded++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`Session ${session.id}: ${msg}`);
+        console.error(`[SyncService] Error processing session ${session.id}:`, error);
+      }
+    }
+  }
+
+  console.log(`[SyncService] Sync complete: ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions`);
   return result;
 }
 
@@ -261,4 +291,240 @@ export function getRegistrationsForSync(): NewMemberRegistration[] {
      AND (syncedAtUtc IS NULL OR syncedAtUtc < updatedAtUtc)
      ORDER BY createdAtUtc DESC`
   );
+}
+
+// ===== Initial Sync / Migration Support =====
+
+/**
+ * Check if a device has completed initial sync.
+ */
+export function hasCompletedInitialSync(deviceId: string): boolean {
+  const result = query<{ initialSyncCompleted: number }>(
+    'SELECT 1 as initialSyncCompleted FROM TrustedDevice WHERE id = ? AND isTrusted = 1',
+    [deviceId]
+  );
+  
+  // For now, check if device exists in trusted list
+  // A more sophisticated check would track initialSyncCompleted separately
+  return result.length > 0;
+}
+
+/**
+ * Mark device as having completed initial sync.
+ */
+export function markInitialSyncComplete(deviceId: string): void {
+  const now = new Date().toISOString();
+  execute(
+    'UPDATE TrustedDevice SET lastSeenUtc = ? WHERE id = ?',
+    [now, deviceId]
+  );
+}
+
+/**
+ * Get all member data for full sync to a new device.
+ * This is used during initial pairing to push all master data to tablets.
+ * 
+ * @see FR-23.5 - When existing Member Tablet pairs for first time, laptop pushes master member data
+ */
+export function getMemberDataForFullSync(): SyncableMember[] {
+  const members = getAllMembers();
+  
+  return members.map(m => ({
+    membershipId: m.membershipId,
+    firstName: m.firstName,
+    lastName: m.lastName,
+    email: m.email,
+    phone: m.phone,
+    status: m.status,
+    birthDate: m.birthday,
+    deviceId: 'laptop-master',
+    syncVersion: m.syncVersion,
+    createdAtUtc: m.createdAtUtc,
+    modifiedAtUtc: m.updatedAtUtc
+  }));
+}
+
+/**
+ * Process initial sync payload from a tablet.
+ * This handles the first-time sync where:
+ * - Laptop's member data takes precedence (FR-23.6)
+ * - Tablet's historical CheckIn/PracticeSession data is preserved (FR-23.7, FR-23.8)
+ */
+export async function processInitialSyncPayload(payload: SyncPayload): Promise<InitialSyncResult> {
+  const result: InitialSyncResult = {
+    membersReceived: 0,
+    memberConflicts: 0,
+    checkInsAdded: 0,
+    sessionsAdded: 0,
+    registrationsAdded: 0,
+    success: true,
+    errors: []
+  };
+
+  console.log(`[InitialSync] Processing initial sync from ${payload.deviceId}`);
+
+  // Process check-ins from tablet (preserve all - FR-23.8)
+  if (payload.entities.checkIns) {
+    for (const checkIn of payload.entities.checkIns) {
+      try {
+        const added = await processCheckIn(checkIn);
+        if (added) result.checkInsAdded++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`CheckIn ${checkIn.id}: ${msg}`);
+      }
+    }
+  }
+
+  // Process practice sessions from tablet (preserve all - FR-23.8)
+  if (payload.entities.practiceSessions) {
+    for (const session of payload.entities.practiceSessions) {
+      try {
+        const added = await processPracticeSession(session);
+        if (added) result.sessionsAdded++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`Session ${session.id}: ${msg}`);
+      }
+    }
+  }
+
+  // Process registrations from tablet
+  if (payload.entities.newMemberRegistrations) {
+    for (const reg of payload.entities.newMemberRegistrations) {
+      try {
+        const addResult = await processRegistration(reg, payload.deviceId);
+        if (addResult === 'added') result.registrationsAdded++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`Registration ${reg.id}: ${msg}`);
+      }
+    }
+  }
+
+  // Member data from tablet is NOT imported - laptop is master (FR-23.6)
+  // We just count them for reporting
+  result.membersReceived = payload.entities.members?.length || 0;
+  
+  // Log any member conflicts (where tablet has different data)
+  if (payload.entities.members) {
+    for (const tabletMember of payload.entities.members) {
+      const existing = query<{ membershipId: string }>(
+        'SELECT membershipId FROM Member WHERE membershipId = ?',
+        [tabletMember.membershipId]
+      );
+      if (existing.length > 0) {
+        result.memberConflicts++;
+        console.log(`[InitialSync] Member conflict: ${tabletMember.membershipId} - laptop version kept`);
+      }
+    }
+  }
+
+  // Mark initial sync complete for this device
+  markInitialSyncComplete(payload.deviceId);
+
+  console.log(`[InitialSync] Complete: ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions added`);
+  return result;
+}
+
+export interface InitialSyncResult {
+  membersReceived: number;
+  memberConflicts: number;
+  checkInsAdded: number;
+  sessionsAdded: number;
+  registrationsAdded: number;
+  success: boolean;
+  errors: string[];
+}
+
+/**
+ * Process a check-in record from tablet (for initial sync).
+ * Check-ins are always preserved (FR-23.8).
+ */
+async function processCheckIn(checkIn: SyncableCheckIn): Promise<boolean> {
+  // Check if already exists
+  const existing = query<{ id: string }>(
+    'SELECT id FROM CheckIn WHERE id = ?',
+    [checkIn.id]
+  );
+  
+  if (existing.length > 0) {
+    return false; // Already exists
+  }
+
+  execute(
+    `INSERT INTO CheckIn (id, membershipId, localDate, createdAtUtc, syncedAtUtc, syncVersion)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      checkIn.id,
+      checkIn.membershipId,
+      checkIn.localDate,
+      checkIn.createdAtUtc,
+      new Date().toISOString(),
+      checkIn.syncVersion
+    ]
+  );
+  
+  return true;
+}
+
+/**
+ * Process a practice session from tablet (for initial sync).
+ * Practice sessions are always preserved (FR-23.8).
+ */
+async function processPracticeSession(session: SyncablePracticeSession): Promise<boolean> {
+  // Check if already exists
+  const existing = query<{ id: string }>(
+    'SELECT id FROM PracticeSession WHERE id = ?',
+    [session.id]
+  );
+  
+  if (existing.length > 0) {
+    return false; // Already exists
+  }
+
+  execute(
+    `INSERT INTO PracticeSession (
+      id, membershipId, localDate, practiceType, classification, 
+      points, krydser, notes, createdAtUtc, syncedAtUtc, syncVersion
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      session.id,
+      session.membershipId,
+      session.localDate,
+      session.practiceType,
+      session.classification || '',
+      session.points,
+      session.krydser ?? null,
+      null, // notes not in sync payload
+      session.createdAtUtc,
+      new Date().toISOString(),
+      session.syncVersion
+    ]
+  );
+  
+  return true;
+}
+
+/**
+ * Get full sync payload for a device that is doing initial sync.
+ * Returns all member data to be pushed to the tablet.
+ */
+export function getFullSyncPayload(_deviceId: string): SyncPayload {
+  const members = getMemberDataForFullSync();
+  
+  return {
+    schemaVersion: '9.0.0',
+    deviceId: 'laptop-master',
+    deviceType: 'LAPTOP', // Must match Android DeviceType enum
+    timestamp: new Date().toISOString(),
+    entities: {
+      members,
+      checkIns: [],
+      practiceSessions: [],
+      newMemberRegistrations: [],
+      equipmentItems: [],
+      equipmentCheckouts: []
+    }
+  };
 }

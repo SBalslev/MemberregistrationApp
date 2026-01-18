@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Settings,
   RefreshCw,
+  Upload,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 
@@ -29,11 +30,12 @@ const navItems: NavItem[] = [
   { id: 'equipment', label: 'Udstyr', icon: Package },
   { id: 'devices', label: 'Enheder', icon: Laptop },
   { id: 'conflicts', label: 'Konflikter', icon: AlertTriangle },
+  { id: 'import', label: 'Importer CSV', icon: Upload },
   { id: 'settings', label: 'Indstillinger', icon: Settings },
 ];
 
 export function Sidebar() {
-  const { currentPage, setCurrentPage, hasPendingChanges, isSyncing, pendingRegistrationCount } = useAppStore();
+  const { currentPage, setCurrentPage, hasPendingChanges, isSyncing, pendingRegistrationCount, triggerSync } = useAppStore();
 
   // Get badge count for a nav item
   function getBadgeCount(badgeKey?: string): number {
@@ -92,6 +94,7 @@ export function Sidebar() {
       <div className="p-4 border-t border-gray-200">
         <button
           disabled={isSyncing}
+          onClick={() => triggerSync()}
           className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
             hasPendingChanges
               ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'

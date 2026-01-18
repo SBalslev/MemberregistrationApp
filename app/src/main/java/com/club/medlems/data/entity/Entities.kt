@@ -111,7 +111,7 @@ data class NewMemberRegistration(
     val syncedAtUtc: Instant? = null
 )
 
-// ===== Equipment Management Entities (Phase 3 - Admin Tablet) =====
+// ===== Equipment Management Entities (Phase 3 - Trainer Tablet) =====
 
 /** Equipment item status */
 enum class EquipmentStatus { 
