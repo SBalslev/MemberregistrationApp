@@ -510,7 +510,7 @@ async function processPracticeSession(session: SyncablePracticeSession): Promise
  * Get full sync payload for a device that is doing initial sync.
  * Returns all member data to be pushed to the tablet.
  */
-export function getFullSyncPayload(_deviceId: string): SyncPayload {
+export function getFullSyncPayload(): SyncPayload {
   const members = getMemberDataForFullSync();
   
   return {

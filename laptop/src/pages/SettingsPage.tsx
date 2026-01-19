@@ -15,53 +15,54 @@ interface AppSettings {
   theme: 'light' | 'dark' | 'system';
 }
 
-export function SettingsPage() {
-  const [settings, setSettings] = useState<AppSettings>({
+// Load initial settings from localStorage
+function getInitialSettings(): AppSettings {
+  const saved = localStorage.getItem('appSettings');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch {
+      // Fall through to default
+    }
+  }
+  return {
     autoSync: true,
     syncIntervalMinutes: 5,
     showOfflineMembers: true,
     theme: 'light'
-  });
+  };
+}
+
+export function SettingsPage() {
+  const [settings, setSettings] = useState<AppSettings>(getInitialSettings);
   const [deviceInfo, setDeviceInfo] = useState<{ deviceId: string; deviceName: string } | null>(null);
   const [serverStatus, setServerStatus] = useState<{ running: boolean; port: number } | null>(null);
-  const [dbSize, setDbSize] = useState<string>('Beregner...');
+  const [dbSize] = useState<string>(() => {
+    try {
+      const data = exportDatabase();
+      const sizeKb = Math.round(data.length / 1024);
+      return sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
+    } catch {
+      return 'Ukendt';
+    }
+  });
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
   const [importStatus, setImportStatus] = useState<'idle' | 'importing' | 'success' | 'error'>('idle');
 
   useEffect(() => {
-    loadSettings();
+    // Load device info if running in Electron (async operation)
+    async function loadDeviceInfo() {
+      if (isElectron()) {
+        const api = getElectronAPI();
+        const info = await api?.getDeviceInfo();
+        setDeviceInfo(info || null);
+        
+        const status = await api?.getServerStatus();
+        setServerStatus(status || null);
+      }
+    }
     loadDeviceInfo();
-    estimateDbSize();
   }, []);
-
-  async function loadSettings() {
-    // In a real app, load from localStorage or database
-    const saved = localStorage.getItem('appSettings');
-    if (saved) {
-      setSettings(JSON.parse(saved));
-    }
-  }
-
-  async function loadDeviceInfo() {
-    if (isElectron()) {
-      const api = getElectronAPI();
-      const info = await api?.getDeviceInfo();
-      setDeviceInfo(info || null);
-      
-      const status = await api?.getServerStatus();
-      setServerStatus(status || null);
-    }
-  }
-
-  function estimateDbSize() {
-    try {
-      const data = exportDatabase();
-      const sizeKb = Math.round(data.length / 1024);
-      setDbSize(sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`);
-    } catch {
-      setDbSize('Ukendt');
-    }
-  }
 
   function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     const newSettings = { ...settings, [key]: value };
@@ -105,10 +106,9 @@ export function SettingsPage() {
         const buffer = await file.arrayBuffer();
         importDatabase(new Uint8Array(buffer));
         setImportStatus('success');
-        estimateDbSize();
         setTimeout(() => {
           setImportStatus('idle');
-          window.location.reload(); // Reload to refresh data
+          window.location.reload(); // Reload to refresh data (including db size)
         }, 2000);
       } catch (error) {
         console.error('Import failed:', error);

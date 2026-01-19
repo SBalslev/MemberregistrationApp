@@ -5,7 +5,7 @@
  * @see [prd.md] - Financial Transactions Management
  */
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { Wallet, Plus, Download, ChevronDown, Settings, Printer, BarChart3 } from 'lucide-react';
 import { TransactionTable, TransactionDialog, YearSettingsDialog, CategoryTotals, MemberFeeStatusTable, MemberHistoryDialog, TransactionFilterBar, applyTransactionFilters, DEFAULT_FILTERS, PrintView, FinanceCharts, QuickFeePaymentDialog, ConsolidateFeePaymentsDialog } from '../components/finance';
 import type { TransactionFilters } from '../components/finance';
@@ -44,23 +44,32 @@ import type { Member } from '../types/entities';
 export function FinancePage() {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [transactions, setTransactions] = useState<TransactionWithLines[]>([]);
-  const [categories, setCategories] = useState<PostingCategory[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
-  const [balances, setBalances] = useState({ cash: 0, bank: 0 });
+  
+  // Track previous year to detect changes
+  const [loadedYear, setLoadedYear] = useState<number | null>(null);
+  
+  // Initialize state with lazy loaders
+  const [transactions, setTransactions] = useState<TransactionWithLines[]>(() => 
+    getTransactionsWithLinesByYear(currentYear)
+  );
+  const [categories, setCategories] = useState<PostingCategory[]>(getCategories);
+  const [members, setMembers] = useState<Member[]>(getAllMembers);
+  const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>(getFiscalYears);
+  const [balances, setBalances] = useState(() => getRunningBalances(currentYear));
+  const [feeRates, setFeeRates] = useState<FeeRate[]>(() => getFeeRatesForYear(currentYear));
+  const [pendingPayments, setPendingPayments] = useState<PendingFeePaymentWithMember[]>(() => 
+    getPendingFeePayments(currentYear)
+  );
+  
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<TransactionFormData | undefined>(undefined);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [isYearSettingsOpen, setIsYearSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'transactions' | 'categories' | 'fees' | 'charts'>('transactions');
-  const [feeRates, setFeeRates] = useState<FeeRate[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [filters, setFilters] = useState<TransactionFilters>(DEFAULT_FILTERS);
   const printRef = useRef<HTMLDivElement>(null);
   
-  // Pending fee payments state
-  const [pendingPayments, setPendingPayments] = useState<PendingFeePaymentWithMember[]>([]);
   const [isQuickPaymentOpen, setIsQuickPaymentOpen] = useState(false);
   const [isConsolidateOpen, setIsConsolidateOpen] = useState(false);
   const [quickPaymentMemberId, setQuickPaymentMemberId] = useState<string | undefined>(undefined);
@@ -70,10 +79,10 @@ export function FinancePage() {
     window.print();
   }, []);
 
-  // Load data
-  const loadData = useCallback(() => {
-    const txns = getTransactionsWithLinesByYear(selectedYear);
-    setTransactions(txns);
+  // Reload data when year changes (after initial render)
+  if (loadedYear !== null && loadedYear !== selectedYear) {
+    setLoadedYear(selectedYear);
+    setTransactions(getTransactionsWithLinesByYear(selectedYear));
     setBalances(getRunningBalances(selectedYear));
     setCategories(getCategories());
     setMembers(getAllMembers());
@@ -95,27 +104,46 @@ export function FinancePage() {
       });
       setFiscalYears(getFiscalYears());
     }
-  }, [selectedYear]);
+  }
+  
+  // Mark as loaded after first render
+  if (loadedYear === null) {
+    setLoadedYear(selectedYear);
+  }
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Load data function for refresh after mutations
+  const loadData = useCallback(() => {
+    setTransactions(getTransactionsWithLinesByYear(selectedYear));
+    setBalances(getRunningBalances(selectedYear));
+    setCategories(getCategories());
+    setMembers(getAllMembers());
+    setFiscalYears(getFiscalYears());
+    setFeeRates(getFeeRatesForYear(selectedYear));
+    setPendingPayments(getPendingFeePayments(selectedYear));
+  }, [selectedYear]);
 
   // Calculate display rows with running balances
   const displayRows: TransactionDisplayRow[] = useMemo(() => {
     const fiscalYear = getFiscalYear(selectedYear);
-    let runningCash = fiscalYear?.openingCashBalance ?? 0;
-    let runningBank = fiscalYear?.openingBankBalance ?? 0;
+    const openingCash = fiscalYear?.openingCashBalance ?? 0;
+    const openingBank = fiscalYear?.openingBankBalance ?? 0;
 
-    return transactions.map(txn => {
+    // Use reduce to calculate running balances without mutation
+    const result: TransactionDisplayRow[] = [];
+    let runningCash = openingCash;
+    let runningBank = openingBank;
+    
+    for (const txn of transactions) {
       runningCash += (txn.cashIn ?? 0) - (txn.cashOut ?? 0);
       runningBank += (txn.bankIn ?? 0) - (txn.bankOut ?? 0);
-      return {
+      result.push({
         ...txn,
         runningCashBalance: runningCash,
         runningBankBalance: runningBank,
-      };
-    });
+      });
+    }
+    
+    return result;
   }, [transactions, selectedYear]);
 
   // Apply filters to display rows

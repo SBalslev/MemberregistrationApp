@@ -2,22 +2,18 @@
  * Members page - list and manage members.
  */
 
-import { useEffect, useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2 } from 'lucide-react';
 import { getAllMembers, searchMembers, upsertMember } from '../database';
 import type { Member, Gender } from '../types';
 import { useAppStore } from '../store';
 
 export function MembersPage() {
-  const [members, setMembers] = useState<Member[]>([]);
+  const [members, setMembers] = useState<Member[]>(() => getAllMembers());
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ACTIVE' | 'INACTIVE'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const { selectedMember, setSelectedMember } = useAppStore();
-
-  useEffect(() => {
-    loadMembers();
-  }, []);
 
   function loadMembers() {
     const allMembers = getAllMembers();

@@ -5,7 +5,7 @@
  * @see [prd.md] - Financial Transactions Management
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import type { Member } from '../../types/entities';
 import type {
@@ -144,14 +144,18 @@ export function TransactionDialog({
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [touched, setTouched] = useState(false);
 
-  // Reset form when dialog opens/closes or initialData changes
-  useEffect(() => {
-    if (isOpen) {
-      setFormData(initialData ?? createEmptyFormData());
-      setErrors({});
-      setTouched(false);
-    }
-  }, [isOpen, initialData]);
+  // Track previous isOpen to detect dialog opening
+  const [wasOpen, setWasOpen] = useState(false);
+
+  // Reset form when dialog opens
+  if (isOpen && !wasOpen) {
+    setWasOpen(true);
+    setFormData(initialData ?? createEmptyFormData());
+    setErrors({});
+    setTouched(false);
+  } else if (!isOpen && wasOpen) {
+    setWasOpen(false);
+  }
 
   // Don't render if not open
   if (!isOpen) {

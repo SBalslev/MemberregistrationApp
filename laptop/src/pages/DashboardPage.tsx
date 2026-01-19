@@ -3,7 +3,7 @@
  * Shows quick stats and recent activity.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Users,
   UserPlus,
@@ -26,36 +26,23 @@ interface Stats {
   pendingConflicts: number;
 }
 
+function getInitialStats(): Stats {
+  const memberCounts = getMemberCountByStatus();
+  const regCounts = getRegistrationCounts();
+  return {
+    activeMembers: memberCounts.ACTIVE,
+    inactiveMembers: memberCounts.INACTIVE,
+    pendingRegistrations: regCounts.PENDING,
+    approvedRegistrations: regCounts.APPROVED,
+    equipmentOut: 0, // TODO: Load from equipment repo
+    onlineDevices: 0, // TODO: Load from device discovery
+    pendingConflicts: 0, // TODO: Load from conflicts
+  };
+}
+
 export function DashboardPage() {
   const { setCurrentPage } = useAppStore();
-  const [stats, setStats] = useState<Stats>({
-    activeMembers: 0,
-    inactiveMembers: 0,
-    pendingRegistrations: 0,
-    approvedRegistrations: 0,
-    equipmentOut: 0,
-    onlineDevices: 0,
-    pendingConflicts: 0,
-  });
-
-  useEffect(() => {
-    loadStats();
-  }, []);
-
-  async function loadStats() {
-    const memberCounts = getMemberCountByStatus();
-    const regCounts = getRegistrationCounts();
-
-    setStats({
-      activeMembers: memberCounts.ACTIVE,
-      inactiveMembers: memberCounts.INACTIVE,
-      pendingRegistrations: regCounts.PENDING,
-      approvedRegistrations: regCounts.APPROVED,
-      equipmentOut: 0, // TODO: Load from equipment repo
-      onlineDevices: 0, // TODO: Load from device discovery
-      pendingConflicts: 0, // TODO: Load from conflicts
-    });
-  }
+  const [stats] = useState<Stats>(getInitialStats);
 
   return (
     <div className="p-8">

@@ -123,7 +123,7 @@ function App() {
           // ===== Promise-based IPC handlers for sync data =====
           
           // Handle sync:get-members - main process requests member data
-          api?.onGetMembersRequest?.((_data) => {
+          api?.onGetMembersRequest?.(() => {
             console.log('[App] IPC get-members request');
             const members = getMemberDataForFullSync();
             return {

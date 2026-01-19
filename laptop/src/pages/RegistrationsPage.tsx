@@ -20,35 +20,37 @@ import { useAppStore } from '../store';
 
 type TabType = 'pending' | 'rejected';
 
+function getRegistrationsForTab(tab: TabType): NewMemberRegistration[] {
+  switch (tab) {
+    case 'pending':
+      return getPendingRegistrations();
+    case 'rejected':
+      return getRegistrationsByStatus('REJECTED');
+    default:
+      return [];
+  }
+}
+
 export function RegistrationsPage() {
-  const [registrations, setRegistrations] = useState<NewMemberRegistration[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>('pending');
+  const [registrations, setRegistrations] = useState<NewMemberRegistration[]>(() => getRegistrationsForTab('pending'));
   const { selectedRegistration, setSelectedRegistration, setPendingRegistrationCount } = useAppStore();
 
-  useEffect(() => {
-    loadRegistrations();
-  }, [activeTab]);
+  // Reload registrations when tab changes
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab);
+    setRegistrations(getRegistrationsForTab(tab));
+  };
+
+  function loadRegistrations() {
+    setRegistrations(getRegistrationsForTab(activeTab));
+  }
 
   // Update pending count in store when pending registrations load
   useEffect(() => {
     const pendingRegs = getPendingRegistrations();
     setPendingRegistrationCount(pendingRegs.length);
   }, [registrations, setPendingRegistrationCount]);
-
-  function loadRegistrations() {
-    let regs: NewMemberRegistration[];
-    switch (activeTab) {
-      case 'pending':
-        regs = getPendingRegistrations();
-        break;
-      case 'rejected':
-        regs = getRegistrationsByStatus('REJECTED');
-        break;
-      default:
-        regs = [];
-    }
-    setRegistrations(regs);
-  }
 
   const tabs: { id: TabType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'pending', label: 'Afventende', icon: Clock },
@@ -70,7 +72,7 @@ export function RegistrationsPage() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => handleTabChange(tab.id)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     activeTab === tab.id
                       ? 'bg-blue-100 text-blue-700'

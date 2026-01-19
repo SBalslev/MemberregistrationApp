@@ -3,7 +3,7 @@
  * Allows recording a fee payment for a member before consolidating into a transaction.
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X, CreditCard, Banknote, Building2 } from 'lucide-react';
 import type { Member } from '../../types/entities';
 import type { PaymentMethod, MemberType, FeeRate } from '../../types';
@@ -34,45 +34,42 @@ export function QuickFeePaymentDialog({
   year,
   preselectedMemberId,
 }: QuickFeePaymentDialogProps) {
+  // Helper to get default amount for a member
+  const getDefaultAmount = (selectedMemberId: string | null | undefined) => {
+    if (!selectedMemberId) return 0;
+    const member = members.find(m => m.membershipId === selectedMemberId);
+    if (!member) return 0;
+    const memberType = (member.memberType as MemberType) ?? 'ADULT';
+    const feeRate = feeRates.find(r => r.memberType === memberType && r.fiscalYear === year);
+    return feeRate?.feeAmount ?? 0;
+  };
+
   const [memberId, setMemberId] = useState('');
   const [amount, setAmount] = useState(0);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
   const [notes, setNotes] = useState('');
 
-  // Reset form when dialog opens
-  useEffect(() => {
-    if (isOpen) {
-      setMemberId(preselectedMemberId ?? '');
-      setPaymentDate(new Date().toISOString().split('T')[0]);
-      setPaymentMethod('CASH');
-      setNotes('');
-      
-      // Set default amount based on selected member
-      if (preselectedMemberId) {
-        const member = members.find(m => m.membershipId === preselectedMemberId);
-        if (member) {
-          const memberType = (member.memberType as MemberType) ?? 'ADULT';
-          const feeRate = feeRates.find(r => r.memberType === memberType && r.fiscalYear === year);
-          setAmount(feeRate?.feeAmount ?? 0);
-        }
-      } else {
-        setAmount(0);
-      }
-    }
-  }, [isOpen, preselectedMemberId, members, feeRates, year]);
+  // Track previous isOpen to detect dialog opening
+  const [wasOpen, setWasOpen] = useState(false);
 
-  // Update amount when member changes
-  useEffect(() => {
-    if (memberId) {
-      const member = members.find(m => m.membershipId === memberId);
-      if (member) {
-        const memberType = (member.memberType as MemberType) ?? 'ADULT';
-        const feeRate = feeRates.find(r => r.memberType === memberType && r.fiscalYear === year);
-        setAmount(feeRate?.feeAmount ?? 0);
-      }
-    }
-  }, [memberId, members, feeRates, year]);
+  // Reset form when dialog opens
+  if (isOpen && !wasOpen) {
+    setWasOpen(true);
+    setMemberId(preselectedMemberId ?? '');
+    setPaymentDate(new Date().toISOString().split('T')[0]);
+    setPaymentMethod('CASH');
+    setNotes('');
+    setAmount(getDefaultAmount(preselectedMemberId));
+  } else if (!isOpen && wasOpen) {
+    setWasOpen(false);
+  }
+
+  // Update amount when member changes (during dialog interaction)
+  const handleMemberChange = (newMemberId: string) => {
+    setMemberId(newMemberId);
+    setAmount(getDefaultAmount(newMemberId));
+  };
 
   if (!isOpen) return null;
 
@@ -129,7 +126,7 @@ export function QuickFeePaymentDialog({
               </label>
               <select
                 value={memberId}
-                onChange={(e) => setMemberId(e.target.value)}
+                onChange={(e) => handleMemberChange(e.target.value)}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >

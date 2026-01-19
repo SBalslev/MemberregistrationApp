@@ -3,7 +3,7 @@
  * Allows setting opening balances and closing years.
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X, Calendar, Lock, Unlock, Plus, ArrowUpFromLine } from 'lucide-react';
 import type { FiscalYear, RunningBalances } from '../../types';
 
@@ -32,8 +32,12 @@ export function YearSettingsDialog({
   const [newYear, setNewYear] = useState<number | null>(null);
   const [showCreateYear, setShowCreateYear] = useState(false);
 
-  // Initialize form when dialog opens or fiscal year changes
-  useEffect(() => {
+  // Track previous isOpen to detect dialog opening
+  const [wasOpen, setWasOpen] = useState(false);
+
+  // Initialize form when dialog opens
+  if (isOpen && !wasOpen) {
+    setWasOpen(true);
     if (fiscalYear) {
       setOpeningCash(fiscalYear.openingCashBalance);
       setOpeningBank(fiscalYear.openingBankBalance);
@@ -41,7 +45,9 @@ export function YearSettingsDialog({
     }
     setShowCreateYear(false);
     setNewYear(null);
-  }, [fiscalYear, isOpen]);
+  } else if (!isOpen && wasOpen) {
+    setWasOpen(false);
+  }
 
   if (!isOpen) return null;
 

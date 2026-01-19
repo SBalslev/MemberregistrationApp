@@ -16,8 +16,9 @@ export { MemberFeeStatusTable } from './MemberFeeStatusTable';
 
 export { MemberHistoryDialog } from './MemberHistoryDialog';
 
-export { TransactionFilterBar, applyTransactionFilters, DEFAULT_FILTERS } from './TransactionFilterBar';
-export type { TransactionFilters } from './TransactionFilterBar';
+export { TransactionFilterBar } from './TransactionFilterBar';
+export { applyTransactionFilters, DEFAULT_FILTERS } from './transactionFilterUtils';
+export type { TransactionFilters } from './transactionFilterUtils';
 
 export { PrintView } from './PrintView';
 
