@@ -10,6 +10,7 @@ import {
   MembersPage, 
   RegistrationsPage, 
   EquipmentPage, 
+  FinancePage,
   DevicesPage, 
   ConflictsPage, 
   SettingsPage,
@@ -236,6 +237,8 @@ function PageRouter({ currentPage }: { currentPage: string }) {
       return <RegistrationsPage />;
     case 'equipment':
       return <EquipmentPage />;
+    case 'finance':
+      return <FinancePage />;
     case 'devices':
       return <DevicesPage />;
     case 'conflicts':

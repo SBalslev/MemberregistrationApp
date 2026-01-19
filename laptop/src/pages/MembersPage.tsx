@@ -394,6 +394,7 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
       guardianName: isUnder18 ? guardianName.trim() || null : null,
       guardianPhone: isUnder18 ? guardianPhone.trim() || null : null,
       guardianEmail: isUnder18 ? guardianEmail.trim() || null : null,
+      memberType: 'ADULT',
       status: 'ACTIVE',
       photoUri,
       createdAtUtc: now,

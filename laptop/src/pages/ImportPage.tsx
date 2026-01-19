@@ -420,6 +420,7 @@ export function ImportPage() {
         guardianName: parsed.data.guardianName || null,
         guardianPhone: parsed.data.guardianPhone || null,
         guardianEmail: parsed.data.guardianEmail || null,
+        memberType: 'ADULT',
         status: parsed.data.status || 'ACTIVE',
         photoUri: null,
         createdAtUtc: parsed.data.createdAtUtc || new Date().toISOString(),

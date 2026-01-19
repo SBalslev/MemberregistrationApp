@@ -135,6 +135,127 @@ async function runMigrations(): Promise<void> {
     db.run('ALTER TABLE Member ADD COLUMN guardianEmail TEXT');
     migrationsRun.push('Member.guardianEmail');
   }
+  
+  // Add memberType column if missing (for fee tracking)
+  if (!existingMemberColumns.includes('memberType')) {
+    db.run("ALTER TABLE Member ADD COLUMN memberType TEXT DEFAULT 'ADULT'");
+    migrationsRun.push('Member.memberType');
+  }
+
+  // ===== Migration: Finance tables =====
+  // Check if PostingCategory table exists
+  const tableCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='PostingCategory'");
+  if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+    // Create finance tables
+    db.run(`
+      CREATE TABLE IF NOT EXISTS PostingCategory (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        sortOrder INTEGER NOT NULL DEFAULT 0,
+        isActive INTEGER NOT NULL DEFAULT 1,
+        createdAtUtc TEXT NOT NULL,
+        updatedAtUtc TEXT NOT NULL
+      )
+    `);
+    
+    db.run(`
+      CREATE TABLE IF NOT EXISTS FiscalYear (
+        year INTEGER PRIMARY KEY NOT NULL,
+        openingCashBalance REAL NOT NULL DEFAULT 0,
+        openingBankBalance REAL NOT NULL DEFAULT 0,
+        isClosed INTEGER NOT NULL DEFAULT 0,
+        createdAtUtc TEXT NOT NULL,
+        updatedAtUtc TEXT NOT NULL
+      )
+    `);
+    
+    db.run(`
+      CREATE TABLE IF NOT EXISTS FeeRate (
+        fiscalYear INTEGER NOT NULL,
+        memberType TEXT NOT NULL,
+        feeAmount REAL NOT NULL,
+        PRIMARY KEY (fiscalYear, memberType),
+        FOREIGN KEY (fiscalYear) REFERENCES FiscalYear(year)
+      )
+    `);
+    
+    db.run(`
+      CREATE TABLE IF NOT EXISTS FinancialTransaction (
+        id TEXT PRIMARY KEY NOT NULL,
+        fiscalYear INTEGER NOT NULL,
+        sequenceNumber INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        description TEXT NOT NULL,
+        cashIn REAL,
+        cashOut REAL,
+        bankIn REAL,
+        bankOut REAL,
+        notes TEXT,
+        isDeleted INTEGER NOT NULL DEFAULT 0,
+        createdAtUtc TEXT NOT NULL,
+        updatedAtUtc TEXT NOT NULL,
+        FOREIGN KEY (fiscalYear) REFERENCES FiscalYear(year),
+        UNIQUE(fiscalYear, sequenceNumber)
+      )
+    `);
+    
+    db.run(`
+      CREATE TABLE IF NOT EXISTS TransactionLine (
+        id TEXT PRIMARY KEY NOT NULL,
+        transactionId TEXT NOT NULL,
+        categoryId TEXT NOT NULL,
+        amount REAL NOT NULL,
+        isIncome INTEGER NOT NULL DEFAULT 0,
+        memberId TEXT,
+        lineDescription TEXT,
+        FOREIGN KEY (transactionId) REFERENCES FinancialTransaction(id),
+        FOREIGN KEY (categoryId) REFERENCES PostingCategory(id),
+        FOREIGN KEY (memberId) REFERENCES Member(membershipId)
+      )
+    `);
+    
+    // Create indexes
+    db.run('CREATE INDEX IF NOT EXISTS idx_transaction_year ON FinancialTransaction(fiscalYear)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_transaction_date ON FinancialTransaction(date)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_transaction_line_txn ON TransactionLine(transactionId)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_transaction_line_member ON TransactionLine(memberId) WHERE memberId IS NOT NULL');
+    db.run('CREATE INDEX IF NOT EXISTS idx_transaction_line_category ON TransactionLine(categoryId)');
+    
+    // Seed default data
+    await seedDefaultCategories();
+    
+    migrationsRun.push('Finance tables created');
+  }
+
+  // ===== Migration: PendingFeePayment table =====
+  const pendingFeeCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='PendingFeePayment'");
+  if (pendingFeeCheck.length === 0 || pendingFeeCheck[0].values.length === 0) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS PendingFeePayment (
+        id TEXT PRIMARY KEY NOT NULL,
+        fiscalYear INTEGER NOT NULL,
+        memberId TEXT NOT NULL,
+        amount REAL NOT NULL,
+        paymentDate TEXT NOT NULL,
+        paymentMethod TEXT NOT NULL CHECK(paymentMethod IN ('CASH', 'BANK')),
+        notes TEXT,
+        isConsolidated INTEGER NOT NULL DEFAULT 0,
+        consolidatedTransactionId TEXT,
+        createdAtUtc TEXT NOT NULL,
+        updatedAtUtc TEXT NOT NULL,
+        FOREIGN KEY (fiscalYear) REFERENCES FiscalYear(year),
+        FOREIGN KEY (memberId) REFERENCES Member(membershipId),
+        FOREIGN KEY (consolidatedTransactionId) REFERENCES FinancialTransaction(id)
+      )
+    `);
+    
+    db.run('CREATE INDEX IF NOT EXISTS idx_pending_fee_year ON PendingFeePayment(fiscalYear)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_pending_fee_member ON PendingFeePayment(memberId)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_pending_fee_consolidated ON PendingFeePayment(isConsolidated)');
+    
+    migrationsRun.push('PendingFeePayment table created');
+  }
 
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
@@ -316,6 +437,71 @@ async function createSchema(): Promise<void> {
       detectedAtUtc TEXT NOT NULL
     );
 
+    -- ===== Financial Transaction Tables (Kassebog) =====
+
+    -- Posting categories for financial transactions
+    CREATE TABLE IF NOT EXISTS PostingCategory (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      isActive INTEGER NOT NULL DEFAULT 1,
+      createdAtUtc TEXT NOT NULL,
+      updatedAtUtc TEXT NOT NULL
+    );
+
+    -- Fiscal years with opening balances
+    CREATE TABLE IF NOT EXISTS FiscalYear (
+      year INTEGER PRIMARY KEY NOT NULL,
+      openingCashBalance REAL NOT NULL DEFAULT 0,
+      openingBankBalance REAL NOT NULL DEFAULT 0,
+      isClosed INTEGER NOT NULL DEFAULT 0,
+      createdAtUtc TEXT NOT NULL,
+      updatedAtUtc TEXT NOT NULL
+    );
+
+    -- Fee rates per fiscal year and member type
+    CREATE TABLE IF NOT EXISTS FeeRate (
+      fiscalYear INTEGER NOT NULL,
+      memberType TEXT NOT NULL,
+      feeAmount REAL NOT NULL,
+      PRIMARY KEY (fiscalYear, memberType),
+      FOREIGN KEY (fiscalYear) REFERENCES FiscalYear(year)
+    );
+
+    -- Financial transactions (header)
+    CREATE TABLE IF NOT EXISTS FinancialTransaction (
+      id TEXT PRIMARY KEY NOT NULL,
+      fiscalYear INTEGER NOT NULL,
+      sequenceNumber INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      description TEXT NOT NULL,
+      cashIn REAL,
+      cashOut REAL,
+      bankIn REAL,
+      bankOut REAL,
+      notes TEXT,
+      isDeleted INTEGER NOT NULL DEFAULT 0,
+      createdAtUtc TEXT NOT NULL,
+      updatedAtUtc TEXT NOT NULL,
+      FOREIGN KEY (fiscalYear) REFERENCES FiscalYear(year),
+      UNIQUE(fiscalYear, sequenceNumber)
+    );
+
+    -- Transaction lines (itemized with optional member links)
+    CREATE TABLE IF NOT EXISTS TransactionLine (
+      id TEXT PRIMARY KEY NOT NULL,
+      transactionId TEXT NOT NULL,
+      categoryId TEXT NOT NULL,
+      amount REAL NOT NULL,
+      isIncome INTEGER NOT NULL DEFAULT 0,
+      memberId TEXT,
+      lineDescription TEXT,
+      FOREIGN KEY (transactionId) REFERENCES FinancialTransaction(id),
+      FOREIGN KEY (categoryId) REFERENCES PostingCategory(id),
+      FOREIGN KEY (memberId) REFERENCES Member(membershipId)
+    );
+
     -- Schema version metadata
     CREATE TABLE IF NOT EXISTS _schema_version (
       version INTEGER PRIMARY KEY
@@ -334,7 +520,17 @@ async function createSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_checkout_member ON EquipmentCheckout(membershipId);
     CREATE INDEX IF NOT EXISTS idx_registration_status ON NewMemberRegistration(approvalStatus);
     CREATE INDEX IF NOT EXISTS idx_conflict_status ON SyncConflict(status);
+    
+    -- Financial transaction indexes
+    CREATE INDEX IF NOT EXISTS idx_transaction_year ON FinancialTransaction(fiscalYear);
+    CREATE INDEX IF NOT EXISTS idx_transaction_date ON FinancialTransaction(date);
+    CREATE INDEX IF NOT EXISTS idx_transaction_line_txn ON TransactionLine(transactionId);
+    CREATE INDEX IF NOT EXISTS idx_transaction_line_member ON TransactionLine(memberId) WHERE memberId IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_transaction_line_category ON TransactionLine(categoryId);
   `);
+
+  // Seed default posting categories
+  await seedDefaultCategories();
 
   await saveToIndexedDB();
 }
@@ -345,6 +541,55 @@ async function createSchema(): Promise<void> {
 export function getDatabase(): Database {
   if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
   return db;
+}
+
+/**
+ * Seed default posting categories for financial transactions.
+ */
+async function seedDefaultCategories(): Promise<void> {
+  if (!db) return;
+  
+  const now = new Date().toISOString();
+  const categories = [
+    { id: 'AMMO', name: 'Patroner/skiver', description: 'Ammunition and targets', sortOrder: 1 },
+    { id: 'COMP', name: 'Kapskydning/præmier', description: 'Competitions and prizes', sortOrder: 2 },
+    { id: 'FEES', name: 'Kontingent/Bestyrelse', description: 'Membership fees and board expenses', sortOrder: 3 },
+    { id: 'WEAP', name: 'Våben/vedligeholdelse', description: 'Weapons and maintenance', sortOrder: 4 },
+    { id: 'OFFC', name: 'Porto/Kontoart', description: 'Postage and office supplies', sortOrder: 5 },
+    { id: 'GIFT', name: 'Begr/gaver/støtte', description: 'Flowers, gifts, support', sortOrder: 6 },
+    { id: 'MISC', name: 'Diverse/renter/gebyr', description: 'Miscellaneous, interest, fees', sortOrder: 7 },
+    { id: 'SUBS', name: 'Tilskud/kontingent hovedafdeling', description: 'Subsidies and main association fees', sortOrder: 8 },
+    { id: 'UTIL', name: 'Vand', description: 'Utilities (water)', sortOrder: 9 },
+  ];
+  
+  for (const cat of categories) {
+    db.run(
+      `INSERT OR IGNORE INTO PostingCategory (id, name, description, sortOrder, isActive, createdAtUtc, updatedAtUtc)
+       VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      [cat.id, cat.name, cat.description, cat.sortOrder, now, now]
+    );
+  }
+  
+  // Seed default fiscal year 2026 if not exists
+  db.run(
+    `INSERT OR IGNORE INTO FiscalYear (year, openingCashBalance, openingBankBalance, isClosed, createdAtUtc, updatedAtUtc)
+     VALUES (2026, 0, 0, 0, ?, ?)`,
+    [now, now]
+  );
+  
+  // Seed default fee rates for 2026
+  const feeRates = [
+    { memberType: 'ADULT', feeAmount: 600 },
+    { memberType: 'CHILD', feeAmount: 300 },
+    { memberType: 'CHILD_PLUS', feeAmount: 600 },
+  ];
+  
+  for (const rate of feeRates) {
+    db.run(
+      `INSERT OR IGNORE INTO FeeRate (fiscalYear, memberType, feeAmount) VALUES (2026, ?, ?)`,
+      [rate.memberType, rate.feeAmount]
+    );
+  }
 }
 
 /**

@@ -25,6 +25,8 @@ export interface Member {
   guardianName: string | null;
   guardianPhone: string | null;
   guardianEmail: string | null;
+  // Member type for fee calculation
+  memberType: 'ADULT' | 'CHILD' | 'CHILD_PLUS';
   status: MemberStatus;
   photoUri: string | null;
   createdAtUtc: string; // ISO datetime
