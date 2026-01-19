@@ -58,6 +58,17 @@ export default defineConfig({
     exclude: ['sql.js']
   },
   build: {
-    target: 'esnext'
+    target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Heavy libraries get their own chunks
+          'sql': ['sql.js'],
+          'xlsx': ['xlsx'],
+          'charts': ['recharts'],
+          'vendor': ['react', 'react-dom', '@tanstack/react-router', '@tanstack/react-query']
+        }
+      }
+    }
   }
 })
