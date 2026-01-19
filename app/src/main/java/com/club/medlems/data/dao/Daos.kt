@@ -202,6 +202,9 @@ interface NewMemberRegistrationDao {
     @Insert
     suspend fun insert(registration: NewMemberRegistration)
     
+    @Update
+    suspend fun update(registration: NewMemberRegistration)
+    
     @Query("SELECT * FROM NewMemberRegistration ORDER BY createdAtUtc DESC")
     suspend fun allRegistrations(): List<NewMemberRegistration>
     

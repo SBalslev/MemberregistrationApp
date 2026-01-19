@@ -24,8 +24,8 @@ export interface SyncPayload {
     checkIns?: SyncableCheckIn[];
     practiceSessions?: SyncablePracticeSession[];
     newMemberRegistrations?: SyncableNewMemberRegistration[];
-    equipmentItems?: unknown[];
-    equipmentCheckouts?: unknown[];
+    equipmentItems?: SyncableEquipmentItem[];
+    equipmentCheckouts?: SyncableEquipmentCheckout[];
   };
 }
 
@@ -91,12 +91,45 @@ interface SyncableNewMemberRegistration {
   modifiedAtUtc: string;
 }
 
+interface SyncableEquipmentItem {
+  id: string;
+  serialNumber: string;
+  type: string;
+  description?: string | null;
+  status: string;
+  deviceId: string;
+  syncVersion: number;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
+  syncedAtUtc?: string | null;
+}
+
+interface SyncableEquipmentCheckout {
+  id: string;
+  equipmentId: string;
+  membershipId: string;
+  checkedOutAtUtc: string;
+  checkedInAtUtc?: string | null;
+  checkedOutByDeviceId: string;
+  checkedInByDeviceId?: string | null;
+  checkoutNotes?: string | null;
+  checkinNotes?: string | null;
+  conflictStatus?: string | null;
+  deviceId: string;
+  syncVersion: number;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
+  syncedAtUtc?: string | null;
+}
+
 export interface SyncResult {
   registrationsAdded: number;
   registrationsUpdated: number;
   checkInsAdded: number;
   sessionsAdded: number;
   photosStored: number;
+  equipmentItemsProcessed: number;
+  equipmentCheckoutsProcessed: number;
   errors: string[];
 }
 
@@ -111,6 +144,8 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     checkInsAdded: 0,
     sessionsAdded: 0,
     photosStored: 0,
+    equipmentItemsProcessed: 0,
+    equipmentCheckoutsProcessed: 0,
     errors: []
   };
 
@@ -168,7 +203,37 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
-  console.log(`[SyncService] Sync complete: ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions`);
+  // Process equipment items
+  if (payload.entities.equipmentItems) {
+    console.log(`[SyncService] Processing ${payload.entities.equipmentItems.length} equipment items`);
+    for (const item of payload.entities.equipmentItems) {
+      try {
+        const processed = await processEquipmentItem(item);
+        if (processed) result.equipmentItemsProcessed++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`EquipmentItem ${item.id}: ${msg}`);
+        console.error(`[SyncService] Error processing equipment item ${item.id}:`, error);
+      }
+    }
+  }
+
+  // Process equipment checkouts
+  if (payload.entities.equipmentCheckouts) {
+    console.log(`[SyncService] Processing ${payload.entities.equipmentCheckouts.length} equipment checkouts`);
+    for (const checkout of payload.entities.equipmentCheckouts) {
+      try {
+        const processed = await processEquipmentCheckout(checkout);
+        if (processed) result.equipmentCheckoutsProcessed++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`EquipmentCheckout ${checkout.id}: ${msg}`);
+        console.error(`[SyncService] Error processing equipment checkout ${checkout.id}:`, error);
+      }
+    }
+  }
+
+  console.log(`[SyncService] Sync complete: ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts`);
   return result;
 }
 
@@ -507,11 +572,203 @@ async function processPracticeSession(session: SyncablePracticeSession): Promise
 }
 
 /**
+ * Process an equipment item from sync payload.
+ * Updates existing items when incoming syncVersion is higher.
+ * Maps sync fields to database schema columns.
+ */
+async function processEquipmentItem(item: SyncableEquipmentItem): Promise<boolean> {
+  // Check if already exists
+  const existing = query<{ id: string; syncVersion: number }>(
+    'SELECT id, syncVersion FROM EquipmentItem WHERE id = ?',
+    [item.id]
+  );
+  
+  const now = new Date().toISOString();
+  
+  if (existing.length > 0) {
+    // Check if we should update (newer sync version)
+    if (existing[0].syncVersion >= item.syncVersion) {
+      return false; // Our version is same or newer
+    }
+    
+    // Update existing item - map sync fields to DB schema
+    execute(
+      `UPDATE EquipmentItem SET
+        serialNumber = ?, name = ?, equipmentType = ?, description = ?, status = ?,
+        createdByDeviceId = ?, syncVersion = ?, modifiedAtUtc = ?, syncedAtUtc = ?
+       WHERE id = ?`,
+      [
+        item.serialNumber,
+        item.serialNumber, // Use serialNumber as name if not provided
+        item.type,
+        item.description ?? null,
+        item.status,
+        item.deviceId,
+        item.syncVersion,
+        item.modifiedAtUtc,
+        now,
+        item.id
+      ]
+    );
+    console.log(`[SyncService] Updated equipment item ${item.id}: version=${item.syncVersion}`);
+    return true;
+  }
+
+  // Insert new item - map sync fields to DB schema
+  execute(
+    `INSERT INTO EquipmentItem (
+      id, serialNumber, name, equipmentType, description, status,
+      createdByDeviceId, createdAtUtc, modifiedAtUtc, syncedAtUtc, syncVersion
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      item.id,
+      item.serialNumber,
+      item.serialNumber, // Use serialNumber as name if not provided
+      item.type,
+      item.description ?? null,
+      item.status,
+      item.deviceId,
+      item.createdAtUtc,
+      item.modifiedAtUtc,
+      now,
+      item.syncVersion
+    ]
+  );
+  
+  return true;
+}
+
+/**
+ * Process an equipment checkout from sync payload.
+ * Updates existing checkouts when incoming syncVersion is higher.
+ * Handles check-in updates from other devices.
+ * Maps sync fields to database schema columns.
+ */
+async function processEquipmentCheckout(checkout: SyncableEquipmentCheckout): Promise<boolean> {
+  // Check if already exists
+  const existing = query<{ id: string; syncVersion: number }>(
+    'SELECT id, syncVersion FROM EquipmentCheckout WHERE id = ?',
+    [checkout.id]
+  );
+  
+  const now = new Date().toISOString();
+  
+  if (existing.length > 0) {
+    // Check if we should update (newer sync version)
+    if (existing[0].syncVersion >= checkout.syncVersion) {
+      return false; // Our version is same or newer
+    }
+    
+    // Update existing checkout - map sync fields to DB schema
+    execute(
+      `UPDATE EquipmentCheckout SET
+        equipmentId = ?, membershipId = ?, checkedOutAtUtc = ?,
+        checkedInAtUtc = ?, checkedOutByDeviceId = ?, checkedInByDeviceId = ?,
+        checkoutNotes = ?, checkinNotes = ?, conflictStatus = ?,
+        syncVersion = ?, modifiedAtUtc = ?, syncedAtUtc = ?
+       WHERE id = ?`,
+      [
+        checkout.equipmentId,
+        checkout.membershipId,
+        checkout.checkedOutAtUtc,
+        checkout.checkedInAtUtc ?? null,
+        checkout.checkedOutByDeviceId,
+        checkout.checkedInByDeviceId ?? null,
+        checkout.checkoutNotes ?? null,
+        checkout.checkinNotes ?? null,
+        checkout.conflictStatus ?? 'None',
+        checkout.syncVersion,
+        checkout.modifiedAtUtc,
+        now,
+        checkout.id
+      ]
+    );
+    console.log(`[SyncService] Updated checkout ${checkout.id}: checkedIn=${checkout.checkedInAtUtc != null}, version=${checkout.syncVersion}`);
+    return true;
+  }
+
+  // Insert new checkout - map sync fields to DB schema
+  execute(
+    `INSERT INTO EquipmentCheckout (
+      id, equipmentId, membershipId, checkedOutAtUtc, checkedInAtUtc,
+      checkedOutByDeviceId, checkedInByDeviceId, checkoutNotes, checkinNotes,
+      conflictStatus, syncVersion, createdAtUtc, modifiedAtUtc, syncedAtUtc
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      checkout.id,
+      checkout.equipmentId,
+      checkout.membershipId,
+      checkout.checkedOutAtUtc,
+      checkout.checkedInAtUtc ?? null,
+      checkout.checkedOutByDeviceId,
+      checkout.checkedInByDeviceId ?? null,
+      checkout.checkoutNotes ?? null,
+      checkout.checkinNotes ?? null,
+      checkout.conflictStatus ?? 'None',
+      checkout.syncVersion,
+      checkout.createdAtUtc,
+      checkout.modifiedAtUtc,
+      now
+    ]
+  );
+  
+  return true;
+}
+
+/**
+ * Get equipment items for sync (to send to tablets).
+ * Maps database schema columns to sync interface fields.
+ */
+export function getEquipmentForSync(): { equipmentItems: SyncableEquipmentItem[], equipmentCheckouts: SyncableEquipmentCheckout[] } {
+  // Map DB columns to sync fields - equipmentType -> type, createdByDeviceId -> deviceId
+  const items = query<{
+    id: string;
+    serialNumber: string;
+    equipmentType: string;
+    description: string | null;
+    status: string;
+    createdByDeviceId: string;
+    syncVersion: number;
+    createdAtUtc: string;
+    modifiedAtUtc: string;
+    syncedAtUtc: string | null;
+  }>(
+    `SELECT id, serialNumber, equipmentType, description, status, 
+            createdByDeviceId, syncVersion, createdAtUtc, modifiedAtUtc, syncedAtUtc 
+     FROM EquipmentItem`
+  );
+  
+  // Convert to sync format
+  const syncItems: SyncableEquipmentItem[] = items.map(item => ({
+    id: item.id,
+    serialNumber: item.serialNumber,
+    type: item.equipmentType,
+    description: item.description,
+    status: item.status,
+    deviceId: item.createdByDeviceId,
+    syncVersion: item.syncVersion,
+    createdAtUtc: item.createdAtUtc,
+    modifiedAtUtc: item.modifiedAtUtc,
+    syncedAtUtc: item.syncedAtUtc
+  }));
+  
+  const checkouts = query<SyncableEquipmentCheckout>(
+    `SELECT id, equipmentId, membershipId, checkedOutAtUtc, checkedInAtUtc,
+            checkedOutByDeviceId, checkedInByDeviceId, checkoutNotes, checkinNotes,
+            conflictStatus, checkedOutByDeviceId as deviceId, syncVersion, createdAtUtc, modifiedAtUtc, syncedAtUtc
+     FROM EquipmentCheckout`
+  );
+  
+  return { equipmentItems: syncItems, equipmentCheckouts: checkouts };
+}
+
+/**
  * Get full sync payload for a device that is doing initial sync.
  * Returns all member data to be pushed to the tablet.
  */
 export function getFullSyncPayload(): SyncPayload {
   const members = getMemberDataForFullSync();
+  const { equipmentItems, equipmentCheckouts } = getEquipmentForSync();
   
   return {
     schemaVersion: '9.0.0',
@@ -523,8 +780,8 @@ export function getFullSyncPayload(): SyncPayload {
       checkIns: [],
       practiceSessions: [],
       newMemberRegistrations: [],
-      equipmentItems: [],
-      equipmentCheckouts: []
+      equipmentItems,
+      equipmentCheckouts
     }
   };
 }

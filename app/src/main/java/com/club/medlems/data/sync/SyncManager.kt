@@ -248,11 +248,16 @@ class SyncManager @Inject constructor(
     /**
      * Syncs with a single peer device.
      * Performs push (our changes) then pull (their changes).
+     * 
+     * For tablet-to-tablet sync:
+     * - Push only check-ins/sessions (not members)
+     * - Pull check-ins/sessions from peer tablets
+     * - Members only flow from laptop
      */
     private suspend fun syncWithPeer(peer: DiscoveredDevice): SyncResult {
         val baseUrl = "http://${peer.address.hostAddress}:${peer.port}"
-        Log.d(TAG, "Syncing with peer: ${peer.deviceName} at $baseUrl")
-        syncLogManager.info("Sync", "Syncing with ${peer.deviceName} at $baseUrl")
+        Log.d(TAG, "Syncing with peer: ${peer.deviceName} (${peer.deviceType}) at $baseUrl")
+        syncLogManager.info("Sync", "Syncing with ${peer.deviceName} (${peer.deviceType}) at $baseUrl")
         
         var result = SyncResult()
         
@@ -272,8 +277,8 @@ class SyncManager @Inject constructor(
                 return SyncResult(errorMessage = "Schema version mismatch - update required")
             }
             
-            // Push our changes
-            val pushResult = pushChangesToPeer(baseUrl)
+            // Push our changes (filtered based on peer type)
+            val pushResult = pushChangesToPeer(baseUrl, peer.deviceType)
             result = result.combine(pushResult)
             
             // Pull their changes
@@ -291,12 +296,18 @@ class SyncManager @Inject constructor(
     
     /**
      * Pushes local changes to a peer.
+     * 
+     * @param baseUrl The peer's API base URL
+     * @param peerDeviceType The type of peer device (affects what data we push)
      */
-    private suspend fun pushChangesToPeer(baseUrl: String): SyncResult {
+    private suspend fun pushChangesToPeer(
+        baseUrl: String,
+        peerDeviceType: DeviceType
+    ): SyncResult {
         val deviceId = trustManager.getThisDeviceId()
         
-        // Collect unsynced entities
-        val entities = collectUnsyncedEntities(deviceId)
+        // Collect unsynced entities (filtered based on destination type)
+        val entities = collectUnsyncedEntities(deviceId, peerDeviceType)
         
         if (entities.isEmpty) {
             Log.d(TAG, "No changes to push")
@@ -364,9 +375,15 @@ class SyncManager @Inject constructor(
     
     /**
      * Collects all unsynced entities from local database.
+     * 
+     * @param deviceId This device's ID
+     * @param destinationDeviceType The type of device we're pushing to (for filtering)
      */
-    private suspend fun collectUnsyncedEntities(deviceId: String): SyncEntities {
-        return syncRepository.collectUnsyncedEntities(deviceId)
+    private suspend fun collectUnsyncedEntities(
+        deviceId: String,
+        destinationDeviceType: DeviceType
+    ): SyncEntities {
+        return syncRepository.collectUnsyncedEntities(deviceId, destinationDeviceType)
     }
     
     /**

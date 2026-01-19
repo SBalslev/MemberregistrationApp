@@ -16,7 +16,7 @@ import {
   SettingsPage,
   ImportPage
 } from './pages';
-import { initDatabase, getPendingRegistrations, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, type SyncPayload } from './database';
+import { initDatabase, getPendingRegistrations, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getRegistrationsForSync, getEquipmentForSync, type SyncPayload } from './database';
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
 
@@ -126,8 +126,16 @@ function App() {
           api?.onGetMembersRequest?.(() => {
             console.log('[App] IPC get-members request');
             const members = getMemberDataForFullSync();
+            // Also include approved/rejected registrations for sync back to tablets
+            const registrations = getRegistrationsForSync();
+            // Include equipment data
+            const { equipmentItems, equipmentCheckouts } = getEquipmentForSync();
+            console.log(`[App] Returning ${members.length} members, ${registrations.length} registrations, ${equipmentItems.length} equipment items for sync`);
             return {
               members,
+              registrations,
+              equipmentItems,
+              equipmentCheckouts,
               count: members.length,
               timestamp: new Date().toISOString()
             };

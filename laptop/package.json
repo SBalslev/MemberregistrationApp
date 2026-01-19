@@ -13,7 +13,10 @@
     "build:win": "npm run build:electron && electron-builder --win",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron": "electron ."
+    "electron": "electron .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "build": {
     "appId": "com.club.medlemsadmin",
@@ -51,6 +54,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/sql.js": "^1.4.9",
     "@vitejs/plugin-react": "^5.1.1",
+    "@vitest/coverage-v8": "^4.0.17",
     "babel-plugin-react-compiler": "^1.0.0",
     "bonjour-service": "^1.3.0",
     "cors": "^2.8.5",
@@ -68,6 +72,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
-    "vite-plugin-pwa": "^1.2.0"
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^4.0.17"
   }
 }

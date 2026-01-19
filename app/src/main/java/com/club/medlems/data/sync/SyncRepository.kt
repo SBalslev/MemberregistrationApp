@@ -2,6 +2,8 @@ package com.club.medlems.data.sync
 
 import android.util.Log
 import com.club.medlems.data.dao.CheckInDao
+import com.club.medlems.data.dao.EquipmentCheckoutDao
+import com.club.medlems.data.dao.EquipmentItemDao
 import com.club.medlems.data.dao.MemberDao
 import com.club.medlems.data.dao.NewMemberRegistrationDao
 import com.club.medlems.data.dao.PracticeSessionDao
@@ -19,6 +21,9 @@ import kotlinx.datetime.Instant
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+// Equipment entity types - use fully qualified names in code to avoid conflicts with sync types
+import com.club.medlems.data.entity.EquipmentCheckout as EntityEquipmentCheckout
+import com.club.medlems.data.entity.EquipmentItem as EntityEquipmentItem
 
 /**
  * Handles sync operations between local database and remote peers.
@@ -37,6 +42,8 @@ class SyncRepository @Inject constructor(
     private val practiceSessionDao: PracticeSessionDao,
     private val scanEventDao: ScanEventDao,
     private val newMemberRegistrationDao: NewMemberRegistrationDao,
+    private val equipmentItemDao: EquipmentItemDao,
+    private val equipmentCheckoutDao: EquipmentCheckoutDao,
     private val conflictDetector: ConflictDetector,
     private val conflictRepository: ConflictRepository,
     private val deviceConfigPreferences: DeviceConfigPreferences
@@ -67,15 +74,20 @@ class SyncRepository @Inject constructor(
         val sessions = practiceSessionDao.sessionsCreatedAfter(since).map { it.toSyncable(deviceId) }
         val registrations = newMemberRegistrationDao.registrationsCreatedAfter(since)
             .map { it.toSyncable(deviceId) }
+        val equipmentItems = equipmentItemDao.getUnsynced().map { it.toSyncable(deviceId) }
+        val equipmentCheckouts = equipmentCheckoutDao.getUnsynced().map { it.toSyncable(deviceId) }
         
         Log.i(TAG, "Collected: ${members.size} members, ${checkIns.size} check-ins, " +
-            "${sessions.size} sessions, ${registrations.size} registrations")
+            "${sessions.size} sessions, ${registrations.size} registrations, " +
+            "${equipmentItems.size} equipment items, ${equipmentCheckouts.size} checkouts")
         
         SyncEntities(
             members = members,
             checkIns = checkIns,
             practiceSessions = sessions,
-            newMemberRegistrations = registrations
+            newMemberRegistrations = registrations,
+            equipmentItems = equipmentItems,
+            equipmentCheckouts = equipmentCheckouts
         )
     }
     
@@ -167,20 +179,73 @@ class SyncRepository @Inject constructor(
         }
         
         // Process new member registrations
+        // Note: Updates existing registrations when incoming syncVersion is higher
+        // This ensures approval/rejection status flows back from laptop to tablets
         payload.entities.newMemberRegistrations.forEach { syncReg ->
             try {
                 val existing = newMemberRegistrationDao.get(syncReg.id)
                 if (existing == null) {
+                    // New registration - insert it
                     newMemberRegistrationDao.insert(syncReg.toEntity())
                     registrationsProcessed++
+                } else if (syncReg.syncVersion > existing.syncVersion) {
+                    // Incoming has higher version - update local record
+                    // This handles approval/rejection status flowing from laptop
+                    newMemberRegistrationDao.update(syncReg.toEntity())
+                    registrationsProcessed++
+                    Log.d(TAG, "Updated registration ${syncReg.id}: status=${syncReg.approvalStatus}, version=${syncReg.syncVersion}")
                 }
+                // If existing.syncVersion >= syncReg.syncVersion, skip (already up to date)
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing registration ${syncReg.id}", e)
             }
         }
         
+        // Process equipment items
+        // Laptop is master for equipment - updates flow from laptop to tablets
+        var equipmentItemsProcessed = 0
+        payload.entities.equipmentItems.forEach { syncItem ->
+            try {
+                val existing = equipmentItemDao.get(syncItem.id)
+                if (existing == null) {
+                    // New equipment item - insert it
+                    equipmentItemDao.insert(syncItem.toEntity())
+                    equipmentItemsProcessed++
+                } else if (syncItem.syncVersion > existing.syncVersion) {
+                    // Incoming has higher version - update local record
+                    equipmentItemDao.update(syncItem.toEntity())
+                    equipmentItemsProcessed++
+                    Log.d(TAG, "Updated equipment item ${syncItem.id}: version=${syncItem.syncVersion}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing equipment item ${syncItem.id}", e)
+            }
+        }
+        
+        // Process equipment checkouts
+        // Checkouts can come from any device - use version-based updates
+        var equipmentCheckoutsProcessed = 0
+        payload.entities.equipmentCheckouts.forEach { syncCheckout ->
+            try {
+                val existing = equipmentCheckoutDao.get(syncCheckout.id)
+                if (existing == null) {
+                    // New checkout - insert it
+                    equipmentCheckoutDao.insert(syncCheckout.toEntity())
+                    equipmentCheckoutsProcessed++
+                } else if (syncCheckout.syncVersion > existing.syncVersion) {
+                    // Incoming has higher version - update (handles check-in from other device)
+                    equipmentCheckoutDao.update(syncCheckout.toEntity())
+                    equipmentCheckoutsProcessed++
+                    Log.d(TAG, "Updated checkout ${syncCheckout.id}: checkedIn=${syncCheckout.checkedInAtUtc != null}, version=${syncCheckout.syncVersion}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing checkout ${syncCheckout.id}", e)
+            }
+        }
+        
         Log.i(TAG, "Sync applied: $membersProcessed members, $checkInsProcessed check-ins, " +
             "$sessionsProcessed sessions, $registrationsProcessed registrations, " +
+            "$equipmentItemsProcessed equipment items, $equipmentCheckoutsProcessed checkouts, " +
             "${conflicts.size} conflicts")
         
         SyncResult(
@@ -188,6 +253,8 @@ class SyncRepository @Inject constructor(
             checkInsProcessed = checkInsProcessed,
             sessionsProcessed = sessionsProcessed,
             registrationsProcessed = registrationsProcessed,
+            equipmentItemsProcessed = equipmentItemsProcessed,
+            equipmentCheckoutsProcessed = equipmentCheckoutsProcessed,
             conflicts = conflicts
         )
     }
@@ -262,15 +329,34 @@ class SyncRepository @Inject constructor(
     /**
      * Collects all unsynced entities into a SyncEntities payload for pushing.
      * 
+     * Filtering rules for tablet-to-tablet sync:
+     * - Members: Only push if destination is LAPTOP (laptops are master for member data)
+     * - Check-ins/Sessions: Push to ANY peer (append-only, all devices share)
+     * - Registrations: Push to ANY peer (will be approved by laptop)
+     * 
      * @param deviceId This device's ID
-     * @return SyncEntities containing all unsynced records
+     * @param destinationDeviceType The type of device we're pushing to (for filtering)
+     * @return SyncEntities containing records appropriate for the destination
      */
-    suspend fun collectUnsyncedEntities(deviceId: String): SyncEntities = withContext(Dispatchers.IO) {
+    suspend fun collectUnsyncedEntities(
+        deviceId: String,
+        destinationDeviceType: DeviceType = DeviceType.LAPTOP
+    ): SyncEntities = withContext(Dispatchers.IO) {
+        // Only include members when pushing to laptop (laptop is master for member data)
+        // Tablets don't need to share member data with each other
+        val members = if (destinationDeviceType == DeviceType.LAPTOP) {
+            memberDao.getUnsynced().map { it.toSyncable(deviceId) }
+        } else {
+            emptyList()
+        }
+        
         SyncEntities(
-            members = memberDao.getUnsynced().map { it.toSyncable(deviceId) },
+            members = members,
             checkIns = checkInDao.getUnsynced().map { it.toSyncable(deviceId) },
             practiceSessions = practiceSessionDao.getUnsynced().map { it.toSyncable(deviceId) },
-            newMemberRegistrations = newMemberRegistrationDao.getUnsynced().map { it.toSyncable(deviceId) }
+            newMemberRegistrations = newMemberRegistrationDao.getUnsynced().map { it.toSyncable(deviceId) },
+            equipmentItems = equipmentItemDao.getUnsynced().map { it.toSyncable(deviceId) },
+            equipmentCheckouts = equipmentCheckoutDao.getUnsynced().map { it.toSyncable(deviceId) }
         )
     }
     
@@ -285,6 +371,8 @@ class SyncRepository @Inject constructor(
         entities.checkIns.forEach { checkInDao.markSynced(it.id, syncedAt) }
         entities.practiceSessions.forEach { practiceSessionDao.markSynced(it.id, syncedAt) }
         entities.newMemberRegistrations.forEach { newMemberRegistrationDao.markSynced(it.id, syncedAt) }
+        entities.equipmentItems.forEach { equipmentItemDao.markSynced(it.id, syncedAt) }
+        entities.equipmentCheckouts.forEach { equipmentCheckoutDao.markSynced(it.id, syncedAt) }
     }
     
     /**
@@ -445,7 +533,105 @@ class SyncRepository @Inject constructor(
         guardianName = guardianName,
         guardianPhone = guardianPhone,
         guardianEmail = guardianEmail,
-        createdAtUtc = createdAtUtc
+        createdAtUtc = createdAtUtc,
+        approvalStatus = when (approvalStatus) {
+            ApprovalStatus.PENDING -> com.club.medlems.data.entity.ApprovalStatus.PENDING
+            ApprovalStatus.APPROVED -> com.club.medlems.data.entity.ApprovalStatus.APPROVED
+            ApprovalStatus.REJECTED -> com.club.medlems.data.entity.ApprovalStatus.REJECTED
+        },
+        syncVersion = syncVersion,
+        syncedAtUtc = syncedAtUtc
+    )
+    
+    // Equipment converters
+    private fun EntityEquipmentItem.toSyncable(deviceId: String) = SyncableEquipmentItem(
+        id = id,
+        serialNumber = serialNumber,
+        type = when (type) {
+            com.club.medlems.data.entity.EquipmentType.TrainingMaterial -> EquipmentType.TRAINING_MATERIAL
+        },
+        description = description,
+        status = when (status) {
+            com.club.medlems.data.entity.EquipmentStatus.Available -> EquipmentStatus.AVAILABLE
+            com.club.medlems.data.entity.EquipmentStatus.CheckedOut -> EquipmentStatus.CHECKED_OUT
+            com.club.medlems.data.entity.EquipmentStatus.Maintenance -> EquipmentStatus.MAINTENANCE
+            com.club.medlems.data.entity.EquipmentStatus.Retired -> EquipmentStatus.RETIRED
+        },
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        createdAtUtc = createdAtUtc,
+        modifiedAtUtc = modifiedAtUtc,
+        syncedAtUtc = syncedAtUtc
+    )
+    
+    private fun SyncableEquipmentItem.toEntity() = EntityEquipmentItem(
+        id = id,
+        serialNumber = serialNumber,
+        type = when (type) {
+            EquipmentType.TRAINING_MATERIAL -> com.club.medlems.data.entity.EquipmentType.TrainingMaterial
+        },
+        description = description,
+        status = when (status) {
+            EquipmentStatus.AVAILABLE -> com.club.medlems.data.entity.EquipmentStatus.Available
+            EquipmentStatus.CHECKED_OUT -> com.club.medlems.data.entity.EquipmentStatus.CheckedOut
+            EquipmentStatus.MAINTENANCE -> com.club.medlems.data.entity.EquipmentStatus.Maintenance
+            EquipmentStatus.RETIRED -> com.club.medlems.data.entity.EquipmentStatus.Retired
+        },
+        createdByDeviceId = deviceId,
+        createdAtUtc = createdAtUtc,
+        modifiedAtUtc = modifiedAtUtc,
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        syncedAtUtc = syncedAtUtc
+    )
+    
+    private fun EntityEquipmentCheckout.toSyncable(deviceId: String) = SyncableEquipmentCheckout(
+        id = id,
+        equipmentId = equipmentId,
+        membershipId = membershipId,
+        checkedOutAtUtc = checkedOutAtUtc,
+        checkedInAtUtc = checkedInAtUtc,
+        checkedOutByDeviceId = checkedOutByDeviceId,
+        checkedInByDeviceId = checkedInByDeviceId,
+        checkoutNotes = checkoutNotes,
+        checkinNotes = checkinNotes,
+        conflictStatus = conflictStatus?.let {
+            when (it) {
+                com.club.medlems.data.entity.ConflictStatus.Pending -> ConflictStatus.PENDING
+                com.club.medlems.data.entity.ConflictStatus.Resolved -> ConflictStatus.RESOLVED
+                com.club.medlems.data.entity.ConflictStatus.Cancelled -> ConflictStatus.CANCELLED
+            }
+        },
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        createdAtUtc = createdAtUtc,
+        modifiedAtUtc = modifiedAtUtc,
+        syncedAtUtc = syncedAtUtc
+    )
+    
+    private fun SyncableEquipmentCheckout.toEntity() = EntityEquipmentCheckout(
+        id = id,
+        equipmentId = equipmentId,
+        membershipId = membershipId,
+        checkedOutAtUtc = checkedOutAtUtc,
+        checkedInAtUtc = checkedInAtUtc,
+        checkedOutByDeviceId = checkedOutByDeviceId,
+        checkedInByDeviceId = checkedInByDeviceId,
+        checkoutNotes = checkoutNotes,
+        checkinNotes = checkinNotes,
+        conflictStatus = conflictStatus?.let {
+            when (it) {
+                ConflictStatus.PENDING -> com.club.medlems.data.entity.ConflictStatus.Pending
+                ConflictStatus.RESOLVED -> com.club.medlems.data.entity.ConflictStatus.Resolved
+                ConflictStatus.CANCELLED -> com.club.medlems.data.entity.ConflictStatus.Cancelled
+            }
+        },
+        conflictResolutionNotes = null,
+        createdAtUtc = createdAtUtc,
+        modifiedAtUtc = modifiedAtUtc,
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        syncedAtUtc = syncedAtUtc
     )
 }
 
@@ -457,11 +643,14 @@ data class SyncResult(
     val checkInsProcessed: Int = 0,
     val sessionsProcessed: Int = 0,
     val registrationsProcessed: Int = 0,
+    val equipmentItemsProcessed: Int = 0,
+    val equipmentCheckoutsProcessed: Int = 0,
     val conflicts: List<SyncConflict> = emptyList(),
     val errorMessage: String? = null
 ) {
     val totalProcessed: Int get() = membersProcessed + checkInsProcessed + 
-        sessionsProcessed + registrationsProcessed
+        sessionsProcessed + registrationsProcessed + 
+        equipmentItemsProcessed + equipmentCheckoutsProcessed
     val hasConflicts: Boolean get() = conflicts.isNotEmpty()
     val hasErrors: Boolean get() = errorMessage != null || conflicts.isNotEmpty()
     
@@ -473,6 +662,8 @@ data class SyncResult(
         checkInsProcessed = this.checkInsProcessed + other.checkInsProcessed,
         sessionsProcessed = this.sessionsProcessed + other.sessionsProcessed,
         registrationsProcessed = this.registrationsProcessed + other.registrationsProcessed,
+        equipmentItemsProcessed = this.equipmentItemsProcessed + other.equipmentItemsProcessed,
+        equipmentCheckoutsProcessed = this.equipmentCheckoutsProcessed + other.equipmentCheckoutsProcessed,
         conflicts = this.conflicts + other.conflicts,
         errorMessage = this.errorMessage ?: other.errorMessage
     )

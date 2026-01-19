@@ -157,23 +157,27 @@ export interface NewMemberRegistration {
 
 // ===== Equipment Types =====
 
+// Sync-compatible equipment status - matches Android sync types
 export type EquipmentStatus = 'AVAILABLE' | 'CHECKED_OUT' | 'MAINTENANCE' | 'RETIRED';
-export type EquipmentType = 'RIFLE' | 'PISTOL' | 'ACCESSORY' | 'SAFETY_GEAR' | 'OTHER';
-export type ConflictStatus = 'None' | 'Pending' | 'Resolved';
+// Sync-compatible equipment type - matches Android sync types
+export type EquipmentType = 'TRAINING_MATERIAL';
+export type ConflictStatus = 'PENDING' | 'RESOLVED' | 'CANCELLED';
 
 export interface EquipmentItem {
   id: string;
   serialNumber: string;
   name: string;
   description: string | null;
-  equipmentType: EquipmentType;
+  type: EquipmentType; // Sync field - maps to equipmentType in DB
+  equipmentType?: EquipmentType; // DB field - for local queries
   status: EquipmentStatus;
-  notes: string | null;
+  notes?: string | null;
+  deviceId?: string; // Sync field
+  createdByDeviceId?: string; // DB field
+  syncVersion: number;
   createdAtUtc: string;
-  createdByDeviceId: string;
   modifiedAtUtc: string;
   syncedAtUtc: string | null;
-  syncVersion: number;
 }
 
 export interface EquipmentCheckout {
@@ -181,19 +185,17 @@ export interface EquipmentCheckout {
   equipmentId: string;
   membershipId: string;
   checkedOutAtUtc: string;
-  checkedOutByDeviceId: string;
-  expectedReturnAtUtc: string | null;
-  checkoutNotes: string | null;
   checkedInAtUtc: string | null;
+  checkedOutByDeviceId: string;
   checkedInByDeviceId: string | null;
+  checkoutNotes: string | null;
   checkinNotes: string | null;
-  conflictStatus: ConflictStatus;
-  conflictingCheckoutId: string | null;
-  conflictResolutionNotes: string | null;
+  conflictStatus: ConflictStatus | null;
+  deviceId: string;
+  syncVersion: number;
   createdAtUtc: string;
   modifiedAtUtc: string;
   syncedAtUtc: string | null;
-  syncVersion: number;
 }
 
 // ===== Device Types =====

@@ -242,6 +242,20 @@ function startSyncServer() {
           entities.members = memberData.members;
           console.log(`[Sync] Sending ${entities.members.length} members to tablet`);
         }
+        // Include approved/rejected registrations so tablets get status updates
+        if (memberData && memberData.registrations) {
+          entities.newMemberRegistrations = memberData.registrations;
+          console.log(`[Sync] Sending ${entities.newMemberRegistrations.length} registrations to tablet`);
+        }
+        // Include equipment data
+        if (memberData && memberData.equipmentItems) {
+          entities.equipmentItems = memberData.equipmentItems;
+          console.log(`[Sync] Sending ${entities.equipmentItems.length} equipment items to tablet`);
+        }
+        if (memberData && memberData.equipmentCheckouts) {
+          entities.equipmentCheckouts = memberData.equipmentCheckouts;
+          console.log(`[Sync] Sending ${entities.equipmentCheckouts.length} equipment checkouts to tablet`);
+        }
       } catch (ipcError) {
         console.warn('[Sync] Could not get members from renderer:', ipcError.message);
         // Continue with empty members
