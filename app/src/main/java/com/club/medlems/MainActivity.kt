@@ -22,6 +22,8 @@ import com.club.medlems.ui.session.PracticeSessionScreen
 import com.club.medlems.ui.leaderboard.LeaderboardScreen
 import com.club.medlems.ui.importexport.ImportExportScreen
 import com.club.medlems.ui.attendant.AttendantMenuScreen
+import com.club.medlems.ui.display.EquipmentDisplayScreen
+import com.club.medlems.ui.display.PracticeSessionDisplayScreen
 import com.club.medlems.domain.security.AttendantModeManager
 import com.club.medlems.domain.prefs.DeviceConfigPreferences
 import javax.inject.Inject
@@ -106,6 +108,22 @@ fun AppRoot(
     val deviceConfig = rootViewModel.deviceConfig
     val attState by attendantManager.state.collectAsState()
     val setupComplete by deviceConfig.setupCompleteFlow.collectAsState()
+    
+    // Check if this is a display-only tablet (equipment or practice display)
+    val isDisplayMode = BuildConfig.DISPLAY_MODE
+    val deviceRole = BuildConfig.DEVICE_ROLE
+    
+    // Display mode tablets show full-screen status displays without navigation
+    if (isDisplayMode) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            when (deviceRole) {
+                "EQUIPMENT_DISPLAY" -> EquipmentDisplayScreen()
+                "PRACTICE_DISPLAY" -> PracticeSessionDisplayScreen()
+                else -> EquipmentDisplayScreen() // Default fallback
+            }
+        }
+        return
+    }
     
     // Determine start destination based on setup state
     val startDestination = if (setupComplete) NavRoute.Ready.route else NavRoute.DeviceSetup.route

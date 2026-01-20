@@ -40,6 +40,7 @@ android {
             resValue("string", "app_name_flavor", "ISS Skydning")
             buildConfigField("String", "DEVICE_ROLE", "\"MEMBER_TABLET\"")
             buildConfigField("Boolean", "EQUIPMENT_ENABLED", "false")
+            buildConfigField("Boolean", "DISPLAY_MODE", "false")
         }
         create("trainer") {
             dimension = "deviceRole"
@@ -48,6 +49,25 @@ android {
             resValue("string", "app_name_flavor", "ISS Skydning Træner")
             buildConfigField("String", "DEVICE_ROLE", "\"TRAINER_TABLET\"")
             buildConfigField("Boolean", "EQUIPMENT_ENABLED", "true")
+            buildConfigField("Boolean", "DISPLAY_MODE", "false")
+        }
+        create("equipmentDisplay") {
+            dimension = "deviceRole"
+            applicationIdSuffix = ".display.equipment"
+            // Equipment display tablet - read-only status board
+            resValue("string", "app_name_flavor", "ISS Udstyr Display")
+            buildConfigField("String", "DEVICE_ROLE", "\"EQUIPMENT_DISPLAY\"")
+            buildConfigField("Boolean", "EQUIPMENT_ENABLED", "true")
+            buildConfigField("Boolean", "DISPLAY_MODE", "true")
+        }
+        create("practiceDisplay") {
+            dimension = "deviceRole"
+            applicationIdSuffix = ".display.practice"
+            // Practice display tablet - leaderboards and session stats
+            resValue("string", "app_name_flavor", "ISS Træning Display")
+            buildConfigField("String", "DEVICE_ROLE", "\"PRACTICE_DISPLAY\"")
+            buildConfigField("Boolean", "EQUIPMENT_ENABLED", "false")
+            buildConfigField("Boolean", "DISPLAY_MODE", "true")
         }
     }
 

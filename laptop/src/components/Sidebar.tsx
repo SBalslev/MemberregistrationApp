@@ -1,8 +1,11 @@
 /**
  * Sidebar navigation component.
  * Provides main navigation for the laptop app.
+ * 
+ * @see [design.md FR-15] - Push Confirmation
  */
 
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -15,6 +18,9 @@ import {
   Upload,
 } from 'lucide-react';
 import { useAppStore } from '../store';
+import { PushConfirmationDialog } from './PushConfirmationDialog';
+import { query } from '../database';
+import type { DeviceInfo } from '../types/entities';
 
 interface NavItem {
   id: string;
@@ -37,7 +43,25 @@ const navItems: NavItem[] = [
 ];
 
 export function Sidebar() {
-  const { currentPage, setCurrentPage, hasPendingChanges, isSyncing, triggerSync } = useAppStore();
+  const { currentPage, setCurrentPage, hasPendingChanges, isSyncing } = useAppStore();
+  const [showPushDialog, setShowPushDialog] = useState(false);
+  const [devices, setDevices] = useState<DeviceInfo[]>([]);
+
+  // Load paired devices for the push dialog
+  useEffect(() => {
+    try {
+      const dbDevices = query<DeviceInfo>(
+        'SELECT id, name, type, lastSeenUtc, pairingDateUtc, ipAddress, port, isTrusted FROM TrustedDevice ORDER BY name ASC'
+      );
+      setDevices(dbDevices.map(d => ({
+        ...d,
+        isOnline: false, // Will be updated by discovery
+        isTrusted: Boolean(d.isTrusted)
+      })));
+    } catch {
+      setDevices([]);
+    }
+  }, [showPushDialog]);
 
   // Get badge count for a nav item
   // NOTE: 'registrations' badge removed - approval workflow deprecated per FR-7.2
@@ -45,8 +69,13 @@ export function Sidebar() {
     return 0;
   }
 
+  function handleSyncClick() {
+    setShowPushDialog(true);
+  }
+
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen">
+    <>
+      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen">
       {/* Logo/Header */}
       <div className="h-16 flex items-center px-6 border-b border-gray-200">
         <div className="flex items-center gap-3">
@@ -96,7 +125,7 @@ export function Sidebar() {
       <div className="p-4 border-t border-gray-200">
         <button
           disabled={isSyncing}
-          onClick={() => triggerSync()}
+          onClick={handleSyncClick}
           className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
             hasPendingChanges
               ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
@@ -117,5 +146,13 @@ export function Sidebar() {
         )}
       </div>
     </aside>
+
+    {/* Push Confirmation Dialog */}
+    <PushConfirmationDialog
+      isOpen={showPushDialog}
+      onClose={() => setShowPushDialog(false)}
+      devices={devices}
+    />
+  </>
   );
 }

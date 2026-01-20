@@ -381,6 +381,22 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('EquipmentCheckout.internalMemberId');
   }
 
+  // ===== Migration: Security Hardening - TrustedDevice auth tokens =====
+  const trustedDeviceColumns = db.exec("PRAGMA table_info(TrustedDevice)");
+  const existingTrustedDeviceColumns = trustedDeviceColumns[0]?.values.map(row => row[1] as string) || [];
+  
+  // Add authToken column if missing
+  if (!existingTrustedDeviceColumns.includes('authToken')) {
+    db.run("ALTER TABLE TrustedDevice ADD COLUMN authToken TEXT");
+    migrationsRun.push('TrustedDevice.authToken');
+  }
+  
+  // Add tokenExpiresAt column if missing
+  if (!existingTrustedDeviceColumns.includes('tokenExpiresAt')) {
+    db.run("ALTER TABLE TrustedDevice ADD COLUMN tokenExpiresAt TEXT");
+    migrationsRun.push('TrustedDevice.tokenExpiresAt');
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -553,7 +569,9 @@ async function createSchema(): Promise<void> {
       pairingDateUtc TEXT NOT NULL,
       ipAddress TEXT,
       port INTEGER,
-      isTrusted INTEGER NOT NULL DEFAULT 1
+      isTrusted INTEGER NOT NULL DEFAULT 1,
+      authToken TEXT,
+      tokenExpiresAt TEXT
     );
 
     -- Sync conflicts table

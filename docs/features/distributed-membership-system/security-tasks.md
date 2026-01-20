@@ -2,7 +2,8 @@
 
 > **Created**: January 18, 2026
 > **Priority**: High (before production deployment)
-> **Status**: Not Started
+> **Status**: In Progress (SEC-1, SEC-2, SEC-3, SEC-4 completed)
+> **Last Updated**: Session date
 
 ---
 
@@ -16,32 +17,31 @@ The current sync implementation uses a **fallback self-signed token** approach t
 
 **Priority**: 🔴 High
 **Estimated Effort**: 4-6 hours
+**Status**: ✅ COMPLETED
 
 ### Description
 Create a mutual authentication handshake when devices first connect.
 
 ### Requirements
 
-- [ ] Laptop displays 6-digit pairing code (time-limited, 2 minutes)
-- [ ] User enters code on tablet to confirm pairing
-- [ ] On successful code entry:
+- [x] Laptop displays 6-digit pairing code (time-limited, 2 minutes)
+- [x] User enters code on tablet to confirm pairing
+- [x] On successful code entry:
   - Tablet sends its device info + public identifier
   - Laptop sends its device info + shared secret
   - Both save each other's info to trusted device list
-- [ ] Failed attempts:
+- [x] Failed attempts:
   - Rate limit to 3 attempts per device
   - Block device for 5 minutes after 3 failures
-- [ ] UI shows pairing status indicator
+- [x] UI shows pairing status indicator
 
-### Files to Modify
+### Implementation
 
-| File | Changes |
-|------|---------|
-| `main.cjs` | Add `/api/pair/initiate` and `/api/pair/confirm` endpoints |
-| `DeviceCard.tsx` | Add "Pair Device" button with code entry modal |
-| `SyncApiServer.kt` | Add pairing endpoints |
-| `PairingViewModel.kt` | New - handle pairing flow |
-| `TrustManager.kt` | Save paired device tokens persistently |
+- `laptop/src/database/trustManager.ts` - Full pairing session management
+- `laptop/electron/main.cjs` - `/api/pair` endpoint with rate limiting
+- `laptop/src/pages/DevicesPage.tsx` - "Par ny enhed" button + modal with 6-digit code display
+- `app/.../ui/sync/DevicePairingScreen.kt` - "Par med kode" button + code entry dialog
+- `app/.../network/SyncClient.kt` - `pairWithDevice()` function
 
 ---
 
@@ -49,29 +49,28 @@ Create a mutual authentication handshake when devices first connect.
 
 **Priority**: 🔴 High
 **Estimated Effort**: 2-3 hours
+**Status**: ✅ COMPLETED
 
 ### Description
 Exchange and persist authentication tokens during pairing ceremony.
 
 ### Requirements
 
-- [ ] On pairing success:
-  - Laptop generates unique token for tablet (UUID v4)
-  - Tablet generates unique token for laptop (UUID v4)
-  - Both persist tokens in encrypted storage
-- [ ] Tokens stored with device ID mapping:
+- [x] On pairing success:
+  - Laptop generates unique token for tablet (UUID v4 with `tok_` prefix)
+  - Tablet stores token using TrustManager
+  - Laptop persists tokens in database and in-memory cache
+- [x] Tokens stored with device ID mapping:
   ```
-  TrustedDevice(deviceId, deviceName, token, pairedAt, lastSeen)
+  TrustedDevice(deviceId, deviceName, token, pairedAt, lastSeen, tokenExpiresAt)
   ```
-- [ ] Call `trustManager.savePersistentToken()` - currently exists but never used
+- [x] Call `trustManager.savePersistentToken()` - now used in SyncClient.pairWithDevice()
 
-### Files to Modify
+### Implementation
 
-| File | Changes |
-|------|---------|
-| `TrustManager.kt` | Implement proper token storage from pairing |
-| `TrustedDevice.kt` | Add token field to entity |
-| `main.cjs` | Store tablet tokens in config file |
+- `laptop/src/database/db.ts` - Added migration for authToken/tokenExpiresAt columns
+- `laptop/electron/main.cjs` - Stores tokens in trustedDevicesCache Map
+- `app/.../network/TrustManager.kt` - Already had savePersistentToken(), now used
 
 ---
 
@@ -79,18 +78,19 @@ Exchange and persist authentication tokens during pairing ceremony.
 
 **Priority**: 🔴 High  
 **Estimated Effort**: 2 hours
+**Status**: ✅ COMPLETED
 
 ### Description
 Add authentication middleware to validate tokens on sync endpoints.
 
 ### Requirements
 
-- [ ] Laptop validates `Authorization: Bearer <token>` header
-- [ ] Return 401 Unauthorized if:
+- [x] Laptop validates `Authorization: Bearer <token>` header
+- [x] Return 401 Unauthorized if:
   - No Authorization header
   - Token doesn't match any trusted device
   - Device not in paired list
-- [ ] Log failed auth attempts with device ID and IP
+- [x] Log failed auth attempts with device ID and IP
 
 ### Implementation
 
@@ -98,6 +98,47 @@ Add authentication middleware to validate tokens on sync endpoints.
 // Laptop - main.cjs
 function authMiddleware(req, res, next) {
     const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ')) {
+        console.warn('[Auth] No Authorization header from', req.ip);
+        return res.status(401).json({ error: 'No token provided' });
+    }
+    const token = auth.split(' ')[1];
+    const device = trustedDevicesCache.get(token);
+    if (!device) {
+        console.warn('[Auth] Invalid token from', req.ip);
+        return res.status(401).json({ error: 'Invalid token' });
+    }
+    req.trustedDevice = device;
+    next();
+}
+
+// Applied to: /api/sync/push, /api/sync/pull, /api/sync/initial, /api/sync/members
+```
+
+---
+
+## Task SEC-4: Token Expiration and Renewal
+
+**Priority**: 🟡 Medium
+**Estimated Effort**: 3-4 hours
+**Status**: ✅ COMPLETED
+
+### Description
+Tokens should expire and be renewable to limit damage from token compromise.
+
+### Requirements
+
+- [x] Token lifetime: 30 days
+- [x] 7 days before expiry, automatically renew on next sync
+- [x] Store `expiresAt` with token
+- [x] Re-pairing required if token expired without renewal
+- [ ] Option: Short-lived tokens (1 hour) renewed on each sync
+
+### Implementation
+
+- `laptop/src/database/trustManager.ts` - validateAuthToken() checks expiry and auto-renews
+- `laptop/src/database/db.ts` - TrustedDevice schema includes tokenExpiresAt
+- Token auto-renewal happens during validation if within 7 days of expiry
     if (!auth?.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'No token provided' });
     }

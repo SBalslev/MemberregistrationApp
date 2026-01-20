@@ -55,6 +55,48 @@ export interface ElectronAPI {
   // Promise-based IPC for sync data requests
   onGetMembersRequest?: (handler: (data: { since?: string }) => Promise<MemberDataPayload> | MemberDataPayload) => void;
   onProcessPushRequest?: (handler: (payload: SyncPushPayload) => Promise<SyncProcessResult> | SyncProcessResult) => void;
+
+  // ===== SEC-1, SEC-2: Pairing Session Management =====
+  
+  /** Start a new pairing session, returns 6-digit code and expiration */
+  startPairingSession?: (deviceType?: string, deviceName?: string) => Promise<{ code: string; expiresAt: string }>;
+  
+  /** Cancel the current pairing session */
+  cancelPairingSession?: () => Promise<{ success: boolean }>;
+  
+  /** Get current pairing session status */
+  getPairingSession?: () => Promise<{ code: string; expiresAt: string; isExpired: boolean } | null>;
+  
+  /** Sync trusted devices from database to main process cache */
+  syncTrustedDevices?: (devices: TrustedDeviceCache[]) => Promise<{ success: boolean; count: number }>;
+  
+  /** Revoke a device from the trusted cache */
+  revokeDevice?: (deviceId: string) => Promise<{ success: boolean }>;
+  
+  /** Listen for successful pairing completion (to save to database) */
+  onPairingComplete?: (callback: (deviceData: PairingCompleteData) => void) => void;
+}
+
+/** Device data for trusted devices cache sync */
+export interface TrustedDeviceCache {
+  id: string;
+  name: string;
+  type: string;
+  authToken: string | null;
+  tokenExpiresAt: string | null;
+  isTrusted: boolean;
+}
+
+/** Data returned when pairing completes successfully */
+export interface PairingCompleteData {
+  id: string;
+  name: string;
+  type: string;
+  token: string;
+  tokenExpiresAt: string;
+  pairingDateUtc: string;
+  lastSeenUtc: string;
+  isTrusted: boolean;
 }
 
 export interface SyncPushPayload {

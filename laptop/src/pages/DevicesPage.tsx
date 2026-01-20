@@ -3,12 +3,13 @@
  * Shows connected tablets and sync status.
  * 
  * @see [design.md FR-2] - Network Architecture
+ * @see [security-tasks.md SEC-1] - Proper Pairing Ceremony
  */
 
-import { useState, useEffect } from 'react';
-import { Tablet, Laptop, Wifi, WifiOff, RefreshCw, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Tablet, Laptop, Wifi, WifiOff, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, X, Shield } from 'lucide-react';
 import { isElectron, getElectronAPI } from '../types/electron';
-import { query } from '../database';
+import { query, saveTrustedDevice, getTrustedDevices } from '../database';
 import type { DeviceInfo } from '../types/entities';
 
 export function DevicesPage() {
@@ -16,6 +17,29 @@ export function DevicesPage() {
   const [serverStatus, setServerStatus] = useState<{ running: boolean; port: number } | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<DeviceInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Pairing state (SEC-1)
+  const [showPairingModal, setShowPairingModal] = useState(false);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [pairingExpiresAt, setPairingExpiresAt] = useState<Date | null>(null);
+  const [pairingTimeLeft, setPairingTimeLeft] = useState<number>(0);
+
+  // Sync trusted devices to main process cache
+  const syncDevicesToCache = useCallback(async () => {
+    if (!isElectron()) return;
+    
+    const api = getElectronAPI();
+    const trustedDevices = getTrustedDevices();
+    
+    await api?.syncTrustedDevices?.(trustedDevices.map(d => ({
+      id: d.id,
+      name: d.name,
+      type: d.type,
+      authToken: d.authToken,
+      tokenExpiresAt: d.tokenExpiresAt,
+      isTrusted: d.isTrusted
+    })));
+  }, []);
 
   useEffect(() => {
     loadDevices();
@@ -89,8 +113,51 @@ export function DevicesPage() {
       }).catch((err: Error) => {
         console.error('[Devices] Subnet scan failed:', err);
       });
+      
+      // Listen for successful pairing completion (SEC-1)
+      api?.onPairingComplete?.((deviceData) => {
+        console.log('[Devices] Pairing complete:', deviceData);
+        
+        // Save to database
+        try {
+          const device: DeviceInfo = {
+            id: deviceData.id,
+            name: deviceData.name,
+            type: deviceData.type as DeviceInfo['type'],
+            ipAddress: null,
+            port: 8085,
+            isTrusted: true,
+            isOnline: true,
+            lastSeenUtc: deviceData.lastSeenUtc,
+            pairingDateUtc: deviceData.pairingDateUtc
+          };
+          
+          saveTrustedDevice(device, deviceData.token, deviceData.tokenExpiresAt);
+          
+          // Add to local state
+          setDevices(prev => {
+            const exists = prev.some(d => d.id === device.id);
+            if (exists) {
+              return prev.map(d => d.id === device.id ? device : d);
+            }
+            return [...prev, device];
+          });
+          
+          // Close pairing modal
+          setShowPairingModal(false);
+          setPairingCode(null);
+          
+          // Sync to cache
+          syncDevicesToCache();
+        } catch (err) {
+          console.error('[Devices] Failed to save paired device:', err);
+        }
+      });
+      
+      // Sync trusted devices to main process on load
+      syncDevicesToCache();
     }
-  }, []);
+  }, [syncDevicesToCache]);
 
   async function loadDevices() {
     try {
@@ -118,6 +185,58 @@ export function DevicesPage() {
       const status = await api?.getServerStatus();
       setServerStatus(status || null);
     }
+  }
+
+  // Countdown timer for pairing code (SEC-1)
+  useEffect(() => {
+    if (!pairingExpiresAt) {
+      setPairingTimeLeft(0);
+      return;
+    }
+    
+    const updateTimer = () => {
+      const now = Date.now();
+      const timeLeft = Math.max(0, Math.floor((pairingExpiresAt.getTime() - now) / 1000));
+      setPairingTimeLeft(timeLeft);
+      
+      if (timeLeft === 0) {
+        setPairingCode(null);
+        setPairingExpiresAt(null);
+      }
+    };
+    
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    
+    return () => clearInterval(interval);
+  }, [pairingExpiresAt]);
+
+  // Start a new pairing session
+  async function startPairing() {
+    if (!isElectron()) return;
+    
+    const api = getElectronAPI();
+    try {
+      const result = await api?.startPairingSession?.();
+      if (result) {
+        setPairingCode(result.code);
+        setPairingExpiresAt(new Date(result.expiresAt));
+        setShowPairingModal(true);
+      }
+    } catch (err) {
+      console.error('[Pairing] Failed to start session:', err);
+    }
+  }
+
+  // Cancel pairing session
+  async function cancelPairing() {
+    if (!isElectron()) return;
+    
+    const api = getElectronAPI();
+    await api?.cancelPairingSession?.();
+    setPairingCode(null);
+    setPairingExpiresAt(null);
+    setShowPairingModal(false);
   }
 
   const [isScanning, setIsScanning] = useState(false);
@@ -164,14 +283,23 @@ export function DevicesPage() {
               <h1 className="text-2xl font-bold text-gray-900">Enheder</h1>
               <p className="text-gray-600 mt-1">Se og administrer tilsluttede enheder</p>
             </div>
-            <button
-              onClick={handleRescan}
-              disabled={isScanning}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <RefreshCw className={`w-5 h-5 ${isScanning ? 'animate-spin' : ''}`} />
-              {isScanning ? 'Scanner...' : 'Scan netværk'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={startPairing}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                <Plus className="w-5 h-5" />
+                Par ny enhed
+              </button>
+              <button
+                onClick={handleRescan}
+                disabled={isScanning}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`w-5 h-5 ${isScanning ? 'animate-spin' : ''}`} />
+                {isScanning ? 'Scanner...' : 'Scan netværk'}
+              </button>
+            </div>
           </div>
 
           {/* Server status */}
@@ -400,6 +528,68 @@ export function DevicesPage() {
                 </>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Pairing Modal */}
+      {showPairingModal && pairingCode && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-green-100 rounded-full">
+                  <Shield className="w-6 h-6 text-green-600" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-900">Par ny enhed</h2>
+              </div>
+              <button
+                onClick={cancelPairing}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="text-center mb-6">
+              <p className="text-gray-600 mb-4">
+                Indtast denne kode på tabletten for at forbinde:
+              </p>
+              
+              {/* 6-digit code display */}
+              <div className="flex justify-center gap-2 mb-4">
+                {pairingCode.split('').map((digit, index) => (
+                  <div
+                    key={index}
+                    className="w-14 h-16 bg-gray-100 rounded-xl flex items-center justify-center text-3xl font-bold text-gray-900 border-2 border-gray-200"
+                  >
+                    {digit}
+                  </div>
+                ))}
+              </div>
+
+              {/* Countdown timer */}
+              <div className={`text-sm ${pairingTimeLeft < 60 ? 'text-red-600' : 'text-gray-500'}`}>
+                Udløber om {Math.floor(pairingTimeLeft / 60)}:{(pairingTimeLeft % 60).toString().padStart(2, '0')}
+              </div>
+            </div>
+
+            <div className="bg-blue-50 rounded-lg p-4 mb-6">
+              <h3 className="font-medium text-blue-900 mb-2">Sådan gør du:</h3>
+              <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                <li>Åbn appen på tabletten</li>
+                <li>Gå til Indstillinger → Enheder</li>
+                <li>Tryk på "Par med laptop"</li>
+                <li>Indtast koden ovenfor</li>
+              </ol>
+            </div>
+
+            <button
+              onClick={cancelPairing}
+              className="w-full py-3 px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+            >
+              Annuller
+            </button>
           </div>
         </div>
       )}

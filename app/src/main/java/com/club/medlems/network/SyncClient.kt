@@ -218,6 +218,99 @@ class SyncClient @Inject constructor(
         
         return Pair(pushResult, pullResult)
     }
+
+    /**
+     * Pairs with a laptop device using a 6-digit pairing code.
+     * On success, stores the persistent auth token for future requests.
+     * 
+     * @param baseUrl The base URL of the laptop device
+     * @param pairingCode The 6-digit pairing code shown on the laptop
+     * @return PairingResult with success or error details
+     */
+    suspend fun pairWithDevice(
+        baseUrl: String,
+        pairingCode: String
+    ): PairingResult {
+        Log.d(TAG, "pairWithDevice: Attempting to pair with $baseUrl using code $pairingCode")
+        
+        val deviceInfo = trustManager.getThisDeviceInfo()
+            ?: return PairingResult(
+                success = false,
+                errorMessage = "Device not configured - please set device name first"
+            )
+        
+        return try {
+            val request = PairingRequest(
+                code = pairingCode,
+                deviceId = trustManager.getThisDeviceId(),
+                deviceName = deviceInfo.name,
+                deviceType = deviceInfo.type.name
+            )
+            
+            val response = client.post("$baseUrl/api/pair") {
+                contentType(ContentType.Application.Json)
+                setBody(SyncJson.json.encodeToString(PairingRequest.serializer(), request))
+            }
+            
+            val responseText = response.bodyAsText()
+            Log.d(TAG, "pairWithDevice: Response status=${response.status}, body=$responseText")
+            
+            when (response.status.value) {
+                200 -> {
+                    val pairingResponse = SyncJson.json.decodeFromString<PairingResponse>(responseText)
+                    // Store the persistent token
+                    trustManager.savePersistentToken(pairingResponse.authToken)
+                    // Store the laptop as trusted device
+                    trustManager.addTrustedDevice(
+                        com.club.medlems.data.sync.DeviceInfo(
+                            id = pairingResponse.laptopDeviceId,
+                            name = pairingResponse.laptopName,
+                            type = com.club.medlems.data.sync.DeviceType.LAPTOP,
+                            lastSeenUtc = Clock.System.now(),
+                            pairedAtUtc = Clock.System.now(),
+                            isTrusted = true
+                        )
+                    )
+                    Log.i(TAG, "Successfully paired with ${pairingResponse.laptopName}")
+                    PairingResult(success = true)
+                }
+                401 -> {
+                    val errorResponse = try {
+                        SyncJson.json.decodeFromString<ErrorResponse>(responseText)
+                    } catch (_: Exception) {
+                        ErrorResponse("Invalid pairing code")
+                    }
+                    Log.w(TAG, "Pairing failed: ${errorResponse.error}")
+                    PairingResult(
+                        success = false,
+                        errorMessage = errorResponse.error,
+                        isRateLimited = errorResponse.error.contains("for mange forsøg", ignoreCase = true)
+                    )
+                }
+                429 -> {
+                    Log.w(TAG, "Pairing rate limited")
+                    PairingResult(
+                        success = false,
+                        errorMessage = "For mange forsøg - vent venligst",
+                        isRateLimited = true
+                    )
+                }
+                else -> {
+                    Log.w(TAG, "Pairing failed with status ${response.status}")
+                    PairingResult(
+                        success = false,
+                        errorMessage = "Fejl: HTTP ${response.status.value}"
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "pairWithDevice: Error", e)
+            PairingResult(
+                success = false,
+                errorMessage = "Netværksfejl: ${e.message}"
+            )
+        }
+    }
     
     /**
      * Executes a block with exponential backoff retry.
@@ -251,3 +344,42 @@ class SyncClient @Inject constructor(
         client.close()
     }
 }
+
+/**
+ * Request body for pairing with a laptop.
+ */
+@kotlinx.serialization.Serializable
+data class PairingRequest(
+    val code: String,
+    val deviceId: String,
+    val deviceName: String,
+    val deviceType: String
+)
+
+/**
+ * Response from successful pairing.
+ */
+@kotlinx.serialization.Serializable
+data class PairingResponse(
+    val success: Boolean,
+    val authToken: String,
+    val laptopDeviceId: String,
+    val laptopName: String
+)
+
+/**
+ * Error response from failed requests.
+ */
+@kotlinx.serialization.Serializable
+data class ErrorResponse(
+    val error: String
+)
+
+/**
+ * Result of a pairing attempt.
+ */
+data class PairingResult(
+    val success: Boolean,
+    val errorMessage: String? = null,
+    val isRateLimited: Boolean = false
+)

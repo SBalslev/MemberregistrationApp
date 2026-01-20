@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -29,11 +32,13 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,11 +49,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,8 +67,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.club.medlems.data.sync.DeviceInfo
 import com.club.medlems.data.sync.DeviceType
@@ -92,6 +101,9 @@ fun DevicePairingScreen(
     val syncResultEvent by viewModel.syncResultEvent.collectAsState()
     
     var isLogExpanded by remember { mutableStateOf(false) }
+    var showPairingDialog by remember { mutableStateOf(false) }
+    var pairingCode by remember { mutableStateOf("") }
+    var laptopIpAddress by remember { mutableStateOf("") }
     
     val snackbarHostState = remember { SnackbarHostState() }
     
@@ -114,11 +126,13 @@ fun DevicePairingScreen(
     LaunchedEffect(pairingState) {
         when (val state = pairingState) {
             is PairingState.Success -> {
-                snackbarHostState.showSnackbar("Paired with ${state.deviceName}")
+                showPairingDialog = false
+                pairingCode = ""
+                snackbarHostState.showSnackbar("Parret med ${state.deviceName}")
                 viewModel.resetPairingState()
             }
             is PairingState.Error -> {
-                snackbarHostState.showSnackbar("Error: ${state.message}")
+                snackbarHostState.showSnackbar("Fejl: ${state.message}")
                 viewModel.resetPairingState()
             }
             else -> {}
@@ -189,10 +203,26 @@ fun DevicePairingScreen(
             
             Spacer(modifier = Modifier.height(16.dp))
             
+            // Manual pairing button
+            Button(
+                onClick = { showPairingDialog = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Key,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Par med kode")
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
             // Trusted devices section
             if (trustedDevices.isNotEmpty()) {
                 Text(
-                    text = "Paired Devices",
+                    text = "Parrede enheder",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -264,6 +294,162 @@ fun DevicePairingScreen(
             )
         }
     }
+    
+    // Pairing code dialog
+    if (showPairingDialog) {
+        PairingCodeDialog(
+            pairingCode = pairingCode,
+            onCodeChange = { newCode ->
+                // Only allow digits and limit to 6 characters
+                if (newCode.length <= 6 && newCode.all { it.isDigit() }) {
+                    pairingCode = newCode
+                }
+            },
+            laptopIpAddress = laptopIpAddress,
+            onIpAddressChange = { laptopIpAddress = it },
+            isPairing = pairingState is PairingState.Pairing,
+            onPair = {
+                val baseUrl = if (laptopIpAddress.contains(":")) {
+                    "http://$laptopIpAddress"
+                } else {
+                    "http://$laptopIpAddress:8085"
+                }
+                viewModel.pairWithCode(baseUrl, pairingCode)
+            },
+            onDismiss = {
+                showPairingDialog = false
+                pairingCode = ""
+            }
+        )
+    }
+}
+
+/**
+ * Dialog for entering a 6-digit pairing code.
+ */
+@Composable
+private fun PairingCodeDialog(
+    pairingCode: String,
+    onCodeChange: (String) -> Unit,
+    laptopIpAddress: String,
+    onIpAddressChange: (String) -> Unit,
+    isPairing: Boolean,
+    onPair: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isPairing) onDismiss() },
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Key,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = {
+            Text(
+                text = "Par med laptop",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Indtast laptoppens IP-adresse og den 6-cifrede kode som vises på laptoppens skærm.",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // IP Address field
+                OutlinedTextField(
+                    value = laptopIpAddress,
+                    onValueChange = onIpAddressChange,
+                    label = { Text("Laptop IP-adresse") },
+                    placeholder = { Text("192.168.1.100") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // 6-digit code display
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    for (i in 0 until 6) {
+                        val digit = pairingCode.getOrNull(i)?.toString() ?: ""
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .border(
+                                    2.dp,
+                                    if (i == pairingCode.length)
+                                        MaterialTheme.colorScheme.primary
+                                    else
+                                        MaterialTheme.colorScheme.outline,
+                                    RoundedCornerShape(8.dp)
+                                )
+                        ) {
+                            Text(
+                                text = digit,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Hidden text field for keyboard input
+                BasicTextField(
+                    value = pairingCode,
+                    onValueChange = onCodeChange,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                )
+                
+                if (isPairing) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onPair,
+                enabled = pairingCode.length == 6 && laptopIpAddress.isNotBlank() && !isPairing
+            ) {
+                Text("Par")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isPairing
+            ) {
+                Text("Annuller")
+            }
+        }
+    )
 }
 
 /**

@@ -12,6 +12,7 @@ import com.club.medlems.data.sync.SyncState
 import com.club.medlems.domain.prefs.DeviceConfigPreferences
 import com.club.medlems.network.DeviceDiscoveryService
 import com.club.medlems.network.DiscoveredDevice
+import com.club.medlems.network.SyncClient
 import com.club.medlems.network.TrustManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,7 +39,8 @@ class SyncViewModel @Inject constructor(
     private val discoveryService: DeviceDiscoveryService,
     private val trustManager: TrustManager,
     private val syncLogManager: SyncLogManager,
-    private val deviceConfigPreferences: DeviceConfigPreferences
+    private val deviceConfigPreferences: DeviceConfigPreferences,
+    private val syncClient: SyncClient
 ) : ViewModel() {
     
     private var syncManagerStarted = false
@@ -198,6 +200,8 @@ class SyncViewModel @Inject constructor(
     
     /**
      * Initiates pairing with a discovered device.
+     * This starts the auto-pairing process for devices found on the local network.
+     * For secure pairing with a code, use pairWithCode().
      */
     fun pairWithDevice(device: DiscoveredDevice) {
         viewModelScope.launch {
@@ -209,6 +213,33 @@ class SyncViewModel @Inject constructor(
                 _pairingState.value = PairingState.Success(device.deviceName)
             } catch (e: Exception) {
                 _pairingState.value = PairingState.Error(e.message ?: "Pairing failed")
+            }
+        }
+    }
+
+    /**
+     * Pairs with a laptop device using a 6-digit pairing code.
+     * This is the secure pairing method for production use.
+     * 
+     * @param baseUrl The URL of the laptop (e.g., "http://192.168.1.100:8085")
+     * @param pairingCode The 6-digit code shown on the laptop
+     */
+    fun pairWithCode(baseUrl: String, pairingCode: String) {
+        viewModelScope.launch {
+            _pairingState.value = PairingState.Pairing("laptop")
+            
+            try {
+                val result = syncClient.pairWithDevice(baseUrl, pairingCode)
+                
+                if (result.success) {
+                    _pairingState.value = PairingState.Success("Laptop")
+                } else {
+                    _pairingState.value = PairingState.Error(
+                        result.errorMessage ?: "Parring mislykkedes"
+                    )
+                }
+            } catch (e: Exception) {
+                _pairingState.value = PairingState.Error(e.message ?: "Netværksfejl")
             }
         }
     }

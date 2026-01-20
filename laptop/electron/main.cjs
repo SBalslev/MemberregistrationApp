@@ -66,6 +66,104 @@ let deviceInfo = {
 let pendingPushData = null;
 let lastSyncTimestamp = null;
 
+// ===== Security: Token-based authentication (SEC-3) =====
+// In-memory trusted devices cache (synced from renderer database)
+const trustedDevicesCache = new Map(); // Map<token, deviceInfo>
+let activePairingSession = null; // { code, expiresAt, deviceType, deviceName }
+const pairingRateLimits = new Map(); // Map<deviceId, { attempts, blockedUntil }>
+
+/**
+ * Generate a 6-digit pairing code.
+ */
+function generatePairingCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+/**
+ * Generate a secure auth token.
+ */
+function generateAuthToken() {
+  const crypto = require('crypto');
+  return 'tok_' + crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Check if a device is rate-limited for pairing.
+ */
+function isRateLimited(deviceId) {
+  const entry = pairingRateLimits.get(deviceId);
+  if (!entry) return false;
+  
+  if (entry.blockedUntil && Date.now() < entry.blockedUntil) {
+    return true;
+  }
+  
+  // Block expired, reset
+  if (entry.blockedUntil) {
+    pairingRateLimits.delete(deviceId);
+  }
+  return false;
+}
+
+/**
+ * Record a failed pairing attempt.
+ */
+function recordFailedPairingAttempt(deviceId) {
+  let entry = pairingRateLimits.get(deviceId) || { attempts: 0, blockedUntil: null };
+  entry.attempts++;
+  
+  if (entry.attempts >= 3) {
+    entry.blockedUntil = Date.now() + (5 * 60 * 1000); // 5 minute block
+    console.log(`[Auth] Device ${deviceId} blocked until ${new Date(entry.blockedUntil).toISOString()}`);
+  }
+  
+  pairingRateLimits.set(deviceId, entry);
+  return entry;
+}
+
+/**
+ * Auth middleware for sync endpoints.
+ * Validates Bearer token against trusted devices.
+ */
+function authMiddleware(req, res, next) {
+  const auth = req.headers.authorization;
+  
+  if (!auth || !auth.startsWith('Bearer ')) {
+    console.warn('[Auth] Missing or invalid Authorization header');
+    return res.status(401).json({ 
+      error: 'Unauthorized', 
+      message: 'Missing Bearer token. Device pairing required.' 
+    });
+  }
+  
+  const token = auth.split(' ')[1];
+  
+  // Check in-memory cache first
+  const cachedDevice = trustedDevicesCache.get(token);
+  if (cachedDevice) {
+    // Check if token expired
+    if (cachedDevice.tokenExpiresAt && new Date(cachedDevice.tokenExpiresAt) <= new Date()) {
+      console.warn(`[Auth] Token expired for device ${cachedDevice.name}`);
+      trustedDevicesCache.delete(token);
+      return res.status(401).json({ 
+        error: 'Token expired', 
+        message: 'Auth token has expired. Please re-pair the device.' 
+      });
+    }
+    
+    req.trustedDevice = cachedDevice;
+    return next();
+  }
+  
+  // Token not in cache - might need to refresh from database via IPC
+  // For now, reject unknown tokens
+  console.warn('[Auth] Unknown token attempted');
+  return res.status(401).json({ 
+    error: 'Invalid token', 
+    message: 'Device not recognized. Please pair the device first.' 
+  });
+}
+
 // Pending IPC request resolvers (for sync data requests)
 const pendingRequests = new Map();
 let requestIdCounter = 0;
@@ -170,10 +268,11 @@ function startSyncServer() {
   });
 
   // FR-18.2: POST /api/sync/push - Receive entity changes from tablets
-  server.post('/api/sync/push', async (req, res) => {
+  // Protected by auth middleware
+  server.post('/api/sync/push', authMiddleware, async (req, res) => {
     try {
       const payload = req.body;
-      console.log(`[Sync] Received push from ${payload.deviceId}: ` +
+      console.log(`[Sync] Received push from ${req.trustedDevice?.name || payload.deviceId}: ` +
         `${payload.entities?.members?.length || 0} members, ` +
         `${payload.entities?.checkIns?.length || 0} check-ins, ` +
         `${payload.entities?.practiceSessions?.length || 0} sessions, ` +
@@ -221,10 +320,11 @@ function startSyncServer() {
   });
 
   // FR-18.2: GET /api/sync/pull - Send changes to tablets (laptop sends member data)
-  server.get('/api/sync/pull', async (req, res) => {
+  // Protected by auth middleware
+  server.get('/api/sync/pull', authMiddleware, async (req, res) => {
     try {
       const since = req.query.since ? new Date(req.query.since) : new Date(0);
-      console.log(`[Sync] Pull request from tablet, since: ${since.toISOString()}`);
+      console.log(`[Sync] Pull request from ${req.trustedDevice?.name || 'unknown'}, since: ${since.toISOString()}`);
 
       // Request member data from renderer (laptop is master for members)
       let entities = {
@@ -278,48 +378,116 @@ function startSyncServer() {
     }
   });
 
-  // FR-18.2: POST /api/pair - Initial pairing handshake
+  // SEC-1, SEC-2: POST /api/pair/initiate - Laptop initiates pairing (internal use via IPC)
+  // This is called from the UI to start a pairing session
+  
+  // SEC-1, SEC-2: POST /api/pair - Tablet confirms pairing with 6-digit code
   server.post('/api/pair', (req, res) => {
     try {
-      const { deviceId, deviceType, deviceName, pairingCode } = req.body;
-      console.log(`[Pair] Request from ${deviceName} (${deviceType})`);
+      // Support both field names for compatibility
+      const { deviceId, deviceType, deviceName, code, pairingCode } = req.body;
+      const submittedCode = code || pairingCode;
+      console.log(`[Pair] Request from ${deviceName} (${deviceType}) with code: ${submittedCode ? '******' : 'none'}`);
 
-      // Notify renderer of pairing request
-      if (mainWindow) {
-        mainWindow.webContents.send('sync:pairing-request', {
-          deviceId,
-          deviceType,
-          deviceName,
-          pairingCode
+      // Check rate limit
+      if (isRateLimited(deviceId)) {
+        const entry = pairingRateLimits.get(deviceId);
+        console.warn(`[Pair] Device ${deviceId} is rate-limited`);
+        return res.status(429).json({
+          error: 'For mange forsøg - vent venligst',
+          blockedUntil: entry?.blockedUntil ? new Date(entry.blockedUntil).toISOString() : null
         });
       }
 
-      // Generate a simple token (in production, use proper JWT)
-      const token = Buffer.from(`${deviceId}:${Date.now()}`).toString('base64');
+      // Check if there's an active pairing session
+      if (!activePairingSession) {
+        recordFailedPairingAttempt(deviceId);
+        console.warn(`[Pair] No active pairing session`);
+        return res.status(400).json({
+          error: 'Ingen aktiv parringssession. Start parring fra laptop først.'
+        });
+      }
 
-      res.json({
-        status: 'paired',
+      // Check if session expired
+      if (Date.now() > activePairingSession.expiresAt) {
+        activePairingSession = null;
+        recordFailedPairingAttempt(deviceId);
+        console.warn(`[Pair] Pairing session expired`);
+        return res.status(400).json({
+          error: 'Parringssession udløbet. Start en ny parring.'
+        });
+      }
+
+      // Validate pairing code
+      if (submittedCode !== activePairingSession.code) {
+        const result = recordFailedPairingAttempt(deviceId);
+        console.warn(`[Pair] Invalid pairing code from ${deviceId}`);
+        
+        if (result.attempts >= 3) {
+          return res.status(429).json({
+            error: 'For mange forsøg - enhed blokeret i 5 minutter'
+          });
+        }
+        
+        return res.status(401).json({
+          error: 'Ugyldig parringskode',
+          attemptsRemaining: 3 - result.attempts
+        });
+      }
+
+      // Pairing successful! Generate token
+      const token = generateAuthToken();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30); // 30 day expiry
+
+      // Store in cache
+      const deviceData = {
+        id: deviceId,
+        name: deviceName,
+        type: deviceType,
         token,
-        masterDeviceId: deviceInfo.deviceId,
-        masterDeviceName: deviceInfo.deviceName,
+        tokenExpiresAt: expiresAt.toISOString(),
+        pairingDateUtc: new Date().toISOString(),
+        lastSeenUtc: new Date().toISOString(),
+        isTrusted: true
+      };
+      trustedDevicesCache.set(token, deviceData);
+
+      // Notify renderer to persist to database
+      if (mainWindow) {
+        mainWindow.webContents.send('sync:pairing-complete', deviceData);
+      }
+
+      // Clear pairing session and rate limit
+      activePairingSession = null;
+      pairingRateLimits.delete(deviceId);
+
+      console.log(`[Pair] SUCCESS - Device ${deviceName} (${deviceId}) paired`);
+
+      // Response matches Android's PairingResponse class
+      res.json({
+        success: true,
+        authToken: token,
+        laptopDeviceId: deviceInfo.deviceId,
+        laptopName: deviceInfo.deviceName,
+        tokenExpiresAt: expiresAt.toISOString(),
         schemaVersion: SCHEMA_VERSION,
         timestamp: new Date().toISOString()
       });
     } catch (error) {
       console.error('[Pair] Error:', error);
       res.status(500).json({
-        status: 'ERROR',
-        errorMessage: error.message
+        error: error.message
       });
     }
   });
 
   // FR-23.5: POST /api/sync/initial - Initial sync for first-time device pairing
-  // Receives tablet's historical data and sends back all member master data
-  server.post('/api/sync/initial', async (req, res) => {
+  // Protected by auth middleware
+  server.post('/api/sync/initial', authMiddleware, async (req, res) => {
     try {
       const payload = req.body;
-      console.log(`[InitialSync] Request from ${payload.deviceId} (${payload.deviceType})`);
+      console.log(`[InitialSync] Request from ${req.trustedDevice?.name || payload.deviceId} (${payload.deviceType})`);
 
       // Notify renderer to process initial sync
       if (mainWindow) {
@@ -358,10 +526,10 @@ function startSyncServer() {
   });
 
   // GET /api/sync/members - Get all members for initial sync
-  // Tablets call this after pairing to get full member list
-  server.get('/api/sync/members', (req, res) => {
+  // Protected by auth middleware
+  server.get('/api/sync/members', authMiddleware, (req, res) => {
     try {
-      console.log('[Sync] Full member list request');
+      console.log(`[Sync] Full member list request from ${req.trustedDevice?.name || 'unknown'}`);
 
       // Notify renderer to get member data
       if (mainWindow) {
@@ -638,6 +806,77 @@ ipcMain.handle('sync:get-server-status', () => ({
 ipcMain.handle('sync:scan-subnet', async () => {
   console.log('[IPC] Subnet scan requested');
   return await scanSubnet();
+});
+
+// ===== SEC-1: Pairing Session Management =====
+
+// Start a new pairing session (called from UI)
+ipcMain.handle('pairing:start-session', (event, { deviceType, deviceName }) => {
+  const code = generatePairingCode();
+  const expiresAt = Date.now() + (2 * 60 * 1000); // 2 minutes
+  
+  activePairingSession = {
+    code,
+    expiresAt,
+    deviceType: deviceType || null,
+    deviceName: deviceName || null
+  };
+  
+  console.log(`[Pairing] Started session with code ${code}, expires at ${new Date(expiresAt).toISOString()}`);
+  
+  return {
+    code,
+    expiresAt: new Date(expiresAt).toISOString()
+  };
+});
+
+// Cancel the current pairing session
+ipcMain.handle('pairing:cancel-session', () => {
+  activePairingSession = null;
+  console.log('[Pairing] Session cancelled');
+  return { success: true };
+});
+
+// Get current pairing session status
+ipcMain.handle('pairing:get-session', () => {
+  if (!activePairingSession) {
+    return null;
+  }
+  
+  return {
+    code: activePairingSession.code,
+    expiresAt: new Date(activePairingSession.expiresAt).toISOString(),
+    isExpired: Date.now() > activePairingSession.expiresAt
+  };
+});
+
+// Sync trusted devices from database to cache (called on app startup and after changes)
+ipcMain.handle('pairing:sync-trusted-devices', (event, devices) => {
+  trustedDevicesCache.clear();
+  
+  if (Array.isArray(devices)) {
+    for (const device of devices) {
+      if (device.authToken) {
+        trustedDevicesCache.set(device.authToken, device);
+      }
+    }
+    console.log(`[Pairing] Synced ${trustedDevicesCache.size} trusted devices to cache`);
+  }
+  
+  return { success: true, count: trustedDevicesCache.size };
+});
+
+// Revoke a device (remove from cache)
+ipcMain.handle('pairing:revoke-device', (event, { deviceId }) => {
+  // Find and remove from cache
+  for (const [token, device] of trustedDevicesCache.entries()) {
+    if (device.id === deviceId) {
+      trustedDevicesCache.delete(token);
+      console.log(`[Pairing] Revoked device ${deviceId} from cache`);
+      break;
+    }
+  }
+  return { success: true };
 });
 
 // IPC handler for renderer responding to data requests

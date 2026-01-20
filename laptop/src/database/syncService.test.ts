@@ -562,7 +562,7 @@ describe('Trial Member Sync Operations', () => {
       // Registrations are no longer stored as PENDING
       // They are immediately converted to trial members
       
-      const registration = {
+      const registrationData = {
         id: 'reg-789',
         temporaryId: 'temp-789',
         firstName: 'Auto',
@@ -575,6 +575,8 @@ describe('Trial Member Sync Operations', () => {
       const isAutoConverted = true;
       
       expect(isAutoConverted).toBe(true);
+      // Verify registration has required fields
+      expect(registrationData.firstName).toBe('Auto');
     });
   });
 

@@ -94,6 +94,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
           ipcRenderer.send('sync:data-response', { requestId, error: error.message });
         });
     });
+  },
+
+  // ===== SEC-1, SEC-2: Pairing Session Management =====
+  
+  // Start a new pairing session (returns 6-digit code)
+  startPairingSession: (deviceType, deviceName) => 
+    ipcRenderer.invoke('pairing:start-session', { deviceType, deviceName }),
+  
+  // Cancel the current pairing session
+  cancelPairingSession: () => ipcRenderer.invoke('pairing:cancel-session'),
+  
+  // Get current pairing session status
+  getPairingSession: () => ipcRenderer.invoke('pairing:get-session'),
+  
+  // Sync trusted devices from database to main process cache
+  syncTrustedDevices: (devices) => ipcRenderer.invoke('pairing:sync-trusted-devices', devices),
+  
+  // Revoke a device
+  revokeDevice: (deviceId) => ipcRenderer.invoke('pairing:revoke-device', { deviceId }),
+  
+  // Listen for successful pairing completion (to save to database)
+  onPairingComplete: (callback) => {
+    ipcRenderer.on('sync:pairing-complete', (event, deviceData) => callback(deviceData));
   }
 });
 

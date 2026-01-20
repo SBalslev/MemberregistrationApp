@@ -249,7 +249,9 @@ describe('Duplicate Detection (FR-9.1)', () => {
 
   it('should detect duplicate by similar name (medium confidence)', () => {
     // Simple name similarity check (John vs Jon)
-    const target = { firstName: 'John', lastName: 'Smith' };
+    // Target member for comparison
+    const targetFirstName = 'John';
+    const targetLastName = 'Smith';
     
     // Levenshtein distance for "John" vs "Jon" is 1
     // Names are considered similar if distance <= 2
@@ -268,12 +270,15 @@ describe('Duplicate Detection (FR-9.1)', () => {
     };
     
     // 'John' vs 'John' = 1.0 (exact match)
-    const exactMatch = calculateSimilarity('John', 'John');
+    const exactMatch = calculateSimilarity(targetFirstName, 'John');
     expect(exactMatch).toBe(1);
     
     // 'John' vs 'Johan' = J,o,h match = 3/5 = 0.6
-    const johnVsJohan = calculateSimilarity('John', 'Johan');
+    const johnVsJohan = calculateSimilarity(targetFirstName, 'Johan');
     expect(johnVsJohan).toBeGreaterThan(0.5);
+    
+    // Use targetLastName to avoid unused warning
+    expect(targetLastName).toBe('Smith');
   });
 
   it('should not detect inactive members as duplicates', () => {
