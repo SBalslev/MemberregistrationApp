@@ -52,8 +52,12 @@ export interface Member {
   // Membership details
   expiresOn: string | null;
   photoUri: string | null;
-  /** Path or data URL to registration photo (for trial members) */
+  /** @deprecated Use photoPath and photoThumbnail instead */
   registrationPhotoPath: string | null;
+  /** Path to full-resolution photo file on disk */
+  photoPath: string | null;
+  /** Small 150x150 thumbnail as data URL for list views */
+  photoThumbnail: string | null;
   
   // Merge tracking (per DD-10)
   mergedIntoId: string | null;
@@ -70,6 +74,22 @@ export interface Member {
 
 // NOTE: MemberForTabletSync removed per DD-9
 // All sync operations now use full Member type directly
+
+/**
+ * Lightweight member type for list views.
+ * Only includes fields needed for rendering member lists.
+ * Uses photoThumbnail instead of full photo for performance.
+ */
+export interface MemberListItem {
+  internalId: string;
+  membershipId: string | null;
+  memberLifecycleStage: MemberLifecycleStage;
+  status: MemberStatus;
+  firstName: string;
+  lastName: string;
+  photoThumbnail: string | null;
+  createdAtUtc: string;
+}
 
 // ===== Check-in Types =====
 

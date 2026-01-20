@@ -113,11 +113,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Revoke a device
   revokeDevice: (deviceId) => ipcRenderer.invoke('pairing:revoke-device', { deviceId }),
-  
+
   // Listen for successful pairing completion (to save to database)
   onPairingComplete: (callback) => {
     ipcRenderer.on('sync:pairing-complete', (event, deviceData) => callback(deviceData));
-  }
+  },
+
+  // ===== Photo Processing API =====
+
+  // Process a photo: save full resolution and generate thumbnail
+  processPhoto: (internalId, base64Data) =>
+    ipcRenderer.invoke('photo:process', { internalId, base64Data }),
+
+  // Delete a member's photo file
+  deletePhoto: (internalId) =>
+    ipcRenderer.invoke('photo:delete', { internalId }),
+
+  // Get the path to a member's photo file
+  getPhotoPath: (internalId) =>
+    ipcRenderer.invoke('photo:get-path', { internalId })
 });
 
 // Expose platform info

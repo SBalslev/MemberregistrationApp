@@ -11,6 +11,7 @@ const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const { Bonjour } = require('bonjour-service');
+const sharp = require('sharp');
 
 // Configuration
 const SYNC_PORT = 8085;  // Changed from 8080 to avoid VS Code Copilot proxy conflict
@@ -877,6 +878,108 @@ ipcMain.handle('pairing:revoke-device', (event, { deviceId }) => {
     }
   }
   return { success: true };
+});
+
+// ===== Photo Processing (Phase 2) =====
+
+/**
+ * Get the photos directory path.
+ */
+function getPhotosDir() {
+  const userDataPath = app.getPath('userData');
+  return path.join(userDataPath, 'photos', 'members');
+}
+
+/**
+ * Ensure the photos directory exists.
+ */
+function ensurePhotosDir() {
+  const photosDir = getPhotosDir();
+  if (!fs.existsSync(photosDir)) {
+    fs.mkdirSync(photosDir, { recursive: true });
+    console.log('[Photo] Created photos directory:', photosDir);
+  }
+  return photosDir;
+}
+
+/**
+ * Process a photo: save full resolution and generate thumbnail.
+ * @param {string} internalId - Member's internal UUID
+ * @param {string} base64Data - Base64 encoded photo data (without data URL prefix)
+ * @returns {Promise<{photoPath: string, photoThumbnail: string}>}
+ */
+async function processPhoto(internalId, base64Data) {
+  const photosDir = ensurePhotosDir();
+  const photoPath = path.join(photosDir, `${internalId}.jpg`);
+
+  // Decode base64 to buffer
+  const imageBuffer = Buffer.from(base64Data, 'base64');
+
+  // Save full resolution photo
+  await fs.promises.writeFile(photoPath, imageBuffer);
+  console.log(`[Photo] Saved full photo: ${photoPath} (${imageBuffer.length} bytes)`);
+
+  // Generate 150x150 thumbnail
+  const thumbnailBuffer = await sharp(imageBuffer)
+    .resize(150, 150, {
+      fit: 'cover',
+      position: 'centre'
+    })
+    .jpeg({ quality: 75 })
+    .toBuffer();
+
+  // Convert thumbnail to data URL
+  const thumbnailBase64 = thumbnailBuffer.toString('base64');
+  const photoThumbnail = `data:image/jpeg;base64,${thumbnailBase64}`;
+
+  console.log(`[Photo] Generated thumbnail: ${thumbnailBuffer.length} bytes`);
+
+  return { photoPath, photoThumbnail };
+}
+
+/**
+ * Delete a member's photo file.
+ * @param {string} internalId - Member's internal UUID
+ * @returns {boolean} True if file was deleted
+ */
+function deletePhoto(internalId) {
+  const photoPath = path.join(getPhotosDir(), `${internalId}.jpg`);
+  if (fs.existsSync(photoPath)) {
+    fs.unlinkSync(photoPath);
+    console.log(`[Photo] Deleted: ${photoPath}`);
+    return true;
+  }
+  return false;
+}
+
+// IPC handlers for photo processing
+ipcMain.handle('photo:process', async (event, { internalId, base64Data }) => {
+  try {
+    const result = await processPhoto(internalId, base64Data);
+    return { success: true, ...result };
+  } catch (error) {
+    console.error('[Photo] Processing error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('photo:delete', (event, { internalId }) => {
+  try {
+    const deleted = deletePhoto(internalId);
+    return { success: true, deleted };
+  } catch (error) {
+    console.error('[Photo] Delete error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('photo:get-path', (event, { internalId }) => {
+  const photoPath = path.join(getPhotosDir(), `${internalId}.jpg`);
+  const exists = fs.existsSync(photoPath);
+  return {
+    photoPath: exists ? photoPath : null,
+    exists
+  };
 });
 
 // IPC handler for renderer responding to data requests

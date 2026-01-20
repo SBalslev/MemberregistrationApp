@@ -3,13 +3,28 @@
  */
 
 import { query, execute, transaction } from './db';
-import type { Member, MemberStatus } from '../types';
+import type { Member, MemberStatus, MemberListItem } from '../types';
+import { deletePhotoFile } from '../utils/photoStorage';
 
 /**
  * Get all members.
  */
 export function getAllMembers(): Member[] {
   return query<Member>('SELECT * FROM Member ORDER BY lastName, firstName');
+}
+
+/**
+ * Get members for list views (lightweight - only essential fields).
+ * Uses photoThumbnail instead of full photoPath for performance.
+ */
+export function getMembersForList(): MemberListItem[] {
+  return query<MemberListItem>(`
+    SELECT
+      internalId, membershipId, memberLifecycleStage, status,
+      firstName, lastName, photoThumbnail, createdAtUtc
+    FROM Member
+    ORDER BY lastName, firstName
+  `);
 }
 
 /**
@@ -191,10 +206,22 @@ export function deleteMemberByInternalId(internalId: string): void {
 
 /**
  * Delete a member by membershipId.
- * @deprecated Use deleteMemberByInternalId for soft delete
+ * @deprecated Use deleteMemberByInternalId for soft delete or hardDeleteMember for permanent delete
  */
 export function deleteMember(membershipId: string): void {
   execute('DELETE FROM Member WHERE membershipId = ?', [membershipId]);
+}
+
+/**
+ * Permanently delete a member and their photo file.
+ * Use with caution - this cannot be undone.
+ */
+export async function hardDeleteMember(internalId: string): Promise<void> {
+  // Delete photo file from disk
+  await deletePhotoFile(internalId);
+
+  // Delete member record
+  execute('DELETE FROM Member WHERE internalId = ?', [internalId]);
 }
 
 /**

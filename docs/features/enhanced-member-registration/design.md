@@ -1,32 +1,48 @@
 # Enhanced Member Registration - Design Document
 
+> **Status:** ✅ IMPLEMENTED (Architecture Changed)
+> **Last Updated:** 2026-01-20
+> **Note:** This feature was implemented as part of the Trial Member Registration feature with a different architecture than originally proposed.
+
 ## Introduction/Overview
 
-This feature enhances the new member registration workflow to ensure complete data capture on tablets and proper synchronization (including photos) to the laptop for approval. The feature clarifies the distinct workflows:
+This feature enhances the new member registration workflow to ensure complete data capture on tablets and proper synchronization (including photos) to the laptop for approval.
 
-1. **Tablet Registration Flow**: Prospective members self-register on tablets → data syncs to laptop → admin approves → Member record created
-2. **Laptop Direct Entry**: Admin creates an approved Member directly (for manual/offline registrations)
+### Architecture Change Notice
 
-**Current State:**
+The original design proposed using `NewMemberRegistration` entities that would be approved on a dedicated `RegistrationsPage`. **The actual implementation uses a different approach:**
 
-- Tablets capture: name, email, phone, birthDate, guardianName/Phone/Email, photo (local file)
-- Registration syncs to laptop but **photo file does not sync** (only path string)
-- Admin must manually add: address, zipCode, city, gender during approval
-- Photo must be recaptured or imported separately on laptop
+| Aspect | Original Design | Actual Implementation |
+|--------|-----------------|----------------------|
+| Tablet creates | `NewMemberRegistration` entity | `Member` entity with `memberType=TRIAL` |
+| Sync entity | `NewMemberRegistration` | `Member` (trial) |
+| Approval UI | `RegistrationsPage` | `MembersPage` (filter by TRIAL) |
+| Approval action | Create new Member | Assign `membershipId` to existing trial Member |
 
-**Proposed State:**
+### Current Workflows
 
-- Tablets capture ALL member data upfront including address and gender
-- **Photo syncs as base64-encoded data** to laptop
-- Approval workflow displays photo and all data
-- Approved registration creates complete Member record with photo
+1. **Tablet Registration Flow**: Prospective members self-register on tablets → `Member(type=TRIAL)` created → syncs to laptop → admin assigns membershipId → becomes FULL member
+2. **Laptop Direct Entry**: Admin creates Member directly (can be TRIAL or FULL)
+3. **Legacy Flow** (backward compatibility): Old tablets send `NewMemberRegistration` → auto-converted to trial Member via FR-7.3
 
-**Problems Solved:**
+### Implementation Status
 
-- Photo not syncing (only file path transferred, which is meaningless on laptop)
-- Incomplete data capture requiring manual admin entry
-- Delayed data collection (address/gender added later)
-- Inconsistent data quality
+| Feature | Status |
+|---------|--------|
+| Photo sync (base64) | ✅ Implemented |
+| Gender capture on tablet | ✅ Implemented |
+| Address capture on tablet | ✅ Implemented |
+| Guardian info capture | ✅ Implemented |
+| Trial member display on laptop | ✅ MembersPage with TRIAL filter |
+| Membership ID assignment | ✅ "Tildel medlemsnummer" button |
+| Photo display on laptop | ✅ Data URL in Member record |
+
+### Problems Solved
+
+- ✅ Photo syncs as base64, stored as data URL on laptop
+- ✅ Complete data capture on tablet (gender, address, guardian)
+- ✅ No manual admin entry required for synced data
+- ✅ Consistent data quality
 
 ## Goals
 

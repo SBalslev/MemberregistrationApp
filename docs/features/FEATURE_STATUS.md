@@ -2,7 +2,7 @@
 
 **Project:** Medlemscheckin (Club Member Check-in System)
 **Last Updated:** January 20, 2026
-**Updated By:** sbalslev
+**Updated By:** Claude
 
 ---
 
@@ -13,15 +13,22 @@
 | **Distributed Membership System** | ✅ Complete | 2026-01-20 | [FEATURE_COMPLETE.md](distributed-membership-system/completion/FEATURE_COMPLETE.md) |
 | **Trial Member Registration** | ✅ Complete | 2026-01-20 | [FEATURE-COMPLETION-SUMMARY.md](trial-member-registration/completion/FEATURE-COMPLETION-SUMMARY.md) |
 | **Equipment Sync** | ✅ Complete | 2026-01-20 | [FEATURE_COMPLETE.md](equipment-sync/completion/FEATURE_COMPLETE.md) |
+| **Enhanced Member Registration** | ✅ Complete | 2026-01-20 | [tasks.md](enhanced-member-registration/tasks.md) |
+
+> **Note:** Enhanced Member Registration was implemented as part of Trial Member Registration with a different architecture (trial Members instead of NewMemberRegistration entities).
 
 ---
 
+## Completed Features (Continued)
+
+| Feature | Status | Completion Date | Documentation |
+|---------|--------|-----------------|---------------|
+| **Photo Storage Optimization** | ✅ Complete | 2026-01-20 | [tasks.md](photo-storage-optimization/tasks.md) |
+| **Financial Transactions** | ✅ Complete | 2026-01-20 | [tasks.md](financial-transactions/tasks.md) |
+
 ## Not Started Features ❌
 
-| Feature | Status | Priority | Documentation |
-|---------|--------|----------|---------------|
-| **Enhanced Member Registration** | ❌ Not Started | Medium | [tasks.md](enhanced-member-registration/tasks.md) |
-| **Financial Transactions** | ❌ Not Started | Medium | [tasks.md](financial-transactions/tasks.md) |
+*No features are currently in the "Not Started" state.*
 
 ---
 
@@ -70,34 +77,67 @@
 - Conflict detection for concurrent checkouts
 - Wall-mounted display variant
 
----
-
-## Planned Feature Details
-
 ### 4. Enhanced Member Registration
 
-**Summary:** Photo sync and additional member fields.
+**Summary:** Photo sync and additional member fields (implemented via Trial Member Registration).
 
-**Planned Capabilities:**
+**Key Capabilities:**
 
-- Photo transfer from tablet to laptop
-- Additional fields: gender, address, zipCode, city
-- Approval workflow with photo review
+- Photo transfer from tablet to laptop (base64 encoded, stored as data URL)
+- Additional fields: gender, address, zipCode, city captured on tablet
+- Trial member workflow on MembersPage (filter by TRIAL, assign membershipId)
+- Photo display in member details
 
-**Status:** Design complete, implementation not started.
+**Architecture Note:** Implemented using `Member(memberType=TRIAL)` instead of `NewMemberRegistration`. Approval workflow is on MembersPage, not a separate RegistrationsPage.
 
-### 5. Financial Transactions
+---
+
+## Completed Feature Details (Continued)
+
+### 5. Photo Storage Optimization
+
+**Summary:** Optimize photo storage for performance while preserving full-quality photos.
+
+**Key Capabilities:**
+
+- Full-resolution photos stored on file system: `{userData}/photos/members/{internalId}.jpg`
+- 150x150 thumbnails in database as data URLs for fast list rendering
+- Async processing with Sharp library via IPC (main process)
+- Photo file lifecycle management (create, update, delete with member)
+- Auto-migration of existing data URLs on app startup
+
+**Implementation Notes:**
+- Photo processing runs in Electron main process (Sharp + IPC)
+- `photoPath` stores file system path, `photoThumbnail` stores data URL
+- `getPhotoSrc()` utility handles file:// URL conversion
+- Migration runs once on startup for existing members with data URL photos
+
+### 6. Financial Transactions (Kassebog)
 
 **Summary:** Club financial transaction recording and reporting.
 
-**Planned Capabilities:**
+**Key Capabilities:**
 
-- Transaction recording with posting categories
-- Fee rate management
-- Fiscal year tracking
-- Financial reports
+- Transaction recording with posting categories (Patroner/skiver, Kapskydning, Kontingent, etc.)
+- Transaction lines with optional member links
+- Fiscal year management with opening/closing balances
+- Running balance calculations (Cash + Bank)
+- Member fee tracking with expected vs. paid amounts
+- Quick fee payment registration
+- Pending payment consolidation (batch MobilePay entries)
+- Excel export matching Kassebog 2025.xlsx format
+- Category totals and year summary
+- Finance charts visualization
+- Print-friendly view
+- Date range and category filtering
 
-**Status:** PRD and tasks defined, implementation not started.
+**Implementation:**
+
+- 11 components in `laptop/src/components/finance/`
+- Repository: `financeRepository.ts` (751 lines)
+- Page: `FinancePage.tsx` (662 lines)
+- Excel export: `excelExport.ts`
+- Types: `finance.ts`
 
 ---
 
@@ -115,6 +155,6 @@
 
 ## Next Steps
 
-1. **Production Deployment:** The distributed sync system is ready for production use.
+1. **Production Deployment:** All features are ready for production use.
 2. **Optional:** Implement HTTPS for sync API (SEC-5) if security requirements increase.
-3. **Future:** Consider Enhanced Member Registration or Financial Transactions based on business priority.
+3. **Future:** Consider additional features based on business priority (e.g., MobilePay integration, bank CSV import).

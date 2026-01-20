@@ -8,6 +8,7 @@ import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemb
 import type { Member, Gender } from '../types';
 import type { MergeResult } from '../database/memberRepository';
 import { useAppStore } from '../store';
+import { getPhotoSrc } from '../utils/photoStorage';
 
 export function MembersPage() {
   const [members, setMembers] = useState<Member[]>(() => getAllMembers());
@@ -188,9 +189,9 @@ export function MembersPage() {
                     }`}
                   >
                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                      {member.photoUri || member.registrationPhotoPath ? (
+                      {(member.photoThumbnail || member.photoUri || member.registrationPhotoPath) ? (
                         <img
-                          src={member.photoUri || member.registrationPhotoPath || ''}
+                          src={getPhotoSrc(member.photoThumbnail || member.photoUri || member.registrationPhotoPath) || ''}
                           alt=""
                           className="w-10 h-10 rounded-full object-cover"
                         />
@@ -381,13 +382,9 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
     : 0;
   const trialWarning = daysSinceRegistration > 90 ? 'error' : daysSinceRegistration > 30 ? 'warning' : 'info';
 
-  // Get photo source - prefer registration photo for trials, add file:// protocol for local paths
-  const photoSource = member.registrationPhotoPath || member.photoUri;
-  const photoSrc = photoSource 
-    ? (photoSource.startsWith('file://') || photoSource.startsWith('http') || photoSource.startsWith('data:')
-        ? photoSource 
-        : `file://${photoSource}`)
-    : null;
+  // Get photo source - prefer full photo (photoPath) for detail view, fallback to older fields
+  const photoSource = member.photoPath || member.registrationPhotoPath || member.photoUri;
+  const photoSrc = getPhotoSrc(photoSource);
 
   return (
     <div className="p-6">
@@ -935,6 +932,8 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
       expiresOn: null,
       photoUri,
       registrationPhotoPath: null,
+      photoPath: null,
+      photoThumbnail: null,
       mergedIntoId: null,
       deviceId: null,
       createdAtUtc: now,

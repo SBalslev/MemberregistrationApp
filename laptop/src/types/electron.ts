@@ -72,9 +72,28 @@ export interface ElectronAPI {
   
   /** Revoke a device from the trusted cache */
   revokeDevice?: (deviceId: string) => Promise<{ success: boolean }>;
-  
+
   /** Listen for successful pairing completion (to save to database) */
   onPairingComplete?: (callback: (deviceData: PairingCompleteData) => void) => void;
+
+  // ===== Photo Processing API =====
+
+  /** Process a photo: save full resolution and generate thumbnail */
+  processPhoto?: (internalId: string, base64Data: string) => Promise<PhotoProcessResult>;
+
+  /** Delete a member's photo file */
+  deletePhoto?: (internalId: string) => Promise<{ success: boolean; deleted?: boolean; error?: string }>;
+
+  /** Get the path to a member's photo file */
+  getPhotoPath?: (internalId: string) => Promise<{ photoPath: string | null; exists: boolean }>;
+}
+
+/** Result of photo processing */
+export interface PhotoProcessResult {
+  success: boolean;
+  photoPath?: string;
+  photoThumbnail?: string;
+  error?: string;
 }
 
 /** Device data for trusted devices cache sync */

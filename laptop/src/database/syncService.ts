@@ -13,6 +13,7 @@
 import { execute, query } from './db';
 import type { NewMemberRegistration } from '../types/entities';
 import { getAllMembers } from './memberRepository';
+import { processPhoto } from '../utils/photoStorage';
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
@@ -341,13 +342,31 @@ async function processRegistration(
       return 'skipped';
     }
     
+    // Process photo if base64 provided
+    let photoPath: string | null = null;
+    let photoThumbnail: string | null = null;
+
+    if (reg.photoBase64) {
+      try {
+        const photoResult = await processPhoto(internalId, reg.photoBase64);
+        photoPath = photoResult.photoPath;
+        photoThumbnail = photoResult.photoThumbnail;
+        console.log(`[SyncService] Processed photo for registration ${reg.id}`);
+      } catch (error) {
+        console.error(`[SyncService] Photo processing failed for ${reg.id}:`, error);
+        // Fall back to data URL if processing fails
+        photoPath = null;
+        photoThumbnail = `data:image/jpeg;base64,${reg.photoBase64}`;
+      }
+    }
+
     // Update existing member with registration data
     execute(
       `UPDATE Member SET
         firstName = ?, lastName = ?, birthday = ?, gender = ?,
         email = ?, phone = ?, address = ?, zipCode = ?, city = ?,
         guardianName = ?, guardianPhone = ?, guardianEmail = ?,
-        photoPath = ?, updatedAtUtc = ?, syncVersion = ?
+        photoPath = ?, photoThumbnail = ?, updatedAtUtc = ?, syncVersion = ?
       WHERE internalId = ?`,
       [
         reg.firstName,
@@ -362,7 +381,8 @@ async function processRegistration(
         reg.guardianName ?? null,
         reg.guardianPhone ?? null,
         reg.guardianEmail ?? null,
-        reg.photoBase64 ? `data:image/jpeg;base64,${reg.photoBase64}` : reg.photoPath,
+        photoPath,
+        photoThumbnail,
         now,
         reg.syncVersion,
         internalId
@@ -390,10 +410,22 @@ async function processRegistration(
     );
   }
   
-  // Convert photo to data URL if base64 is provided
-  const photoPath = reg.photoBase64 
-    ? `data:image/jpeg;base64,${reg.photoBase64}`
-    : reg.photoPath;
+  // Process photo if base64 provided
+  let newPhotoPath: string | null = null;
+  let newPhotoThumbnail: string | null = null;
+
+  if (reg.photoBase64) {
+    try {
+      const photoResult = await processPhoto(internalId, reg.photoBase64);
+      newPhotoPath = photoResult.photoPath;
+      newPhotoThumbnail = photoResult.photoThumbnail;
+      console.log(`[SyncService] Processed photo for new member ${internalId}`);
+    } catch (error) {
+      console.error(`[SyncService] Photo processing failed for ${internalId}:`, error);
+      // Fall back to thumbnail only if processing fails
+      newPhotoThumbnail = `data:image/jpeg;base64,${reg.photoBase64}`;
+    }
+  }
 
   // FR-7.3: Create new trial member from registration data
   execute(
@@ -401,9 +433,9 @@ async function processRegistration(
       internalId, membershipId, firstName, lastName, birthday, gender,
       email, phone, address, zipCode, city,
       guardianName, guardianPhone, guardianEmail,
-      photoPath, memberType, status, registeredByDeviceId,
+      photoPath, photoThumbnail, memberType, status, registeredByDeviceId,
       createdAtUtc, updatedAtUtc, syncVersion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       internalId,
       null, // membershipId - to be assigned later
@@ -419,7 +451,8 @@ async function processRegistration(
       reg.guardianName ?? null,
       reg.guardianPhone ?? null,
       reg.guardianEmail ?? null,
-      photoPath,
+      newPhotoPath,
+      newPhotoThumbnail,
       'TRIAL', // memberType - convert to trial member
       'ACTIVE', // status
       sourceDeviceId,
@@ -451,18 +484,30 @@ async function processMember(
   // Handle memberType from Android or memberLifecycleStage (deprecated)
   const memberLifecycleStage = member.memberType || member.memberLifecycleStage || 'FULL';
   const status = member.status || 'ACTIVE';
-  
-  // Convert photo to data URL if base64 is provided
-  const registrationPhotoPath = member.photoBase64 
-    ? `data:image/jpeg;base64,${member.photoBase64}`
-    : (member.registrationPhotoPath ?? null);
+
+  // Process photo if base64 provided
+  let photoPath: string | null = null;
+  let photoThumbnail: string | null = null;
+
+  if (member.photoBase64) {
+    try {
+      const photoResult = await processPhoto(member.internalId, member.photoBase64);
+      photoPath = photoResult.photoPath;
+      photoThumbnail = photoResult.photoThumbnail;
+      console.log(`[SyncService] Processed photo for member ${member.internalId}`);
+    } catch (error) {
+      console.error(`[SyncService] Photo processing failed for ${member.internalId}:`, error);
+      // Fall back to thumbnail only if processing fails
+      photoThumbnail = `data:image/jpeg;base64,${member.photoBase64}`;
+    }
+  }
 
   if (existing.length > 0) {
     // Member exists - check if we should update
     if (existing[0].syncVersion >= member.syncVersion) {
       return 'skipped'; // Our version is same or newer
     }
-    
+
     // Update existing member
     execute(
       `UPDATE Member SET
@@ -470,7 +515,7 @@ async function processMember(
         firstName = ?, lastName = ?, birthDate = ?, gender = ?,
         email = ?, phone = ?, address = ?, zipCode = ?, city = ?,
         guardianName = ?, guardianPhone = ?, guardianEmail = ?,
-        expiresOn = ?, registrationPhotoPath = ?, mergedIntoId = ?,
+        expiresOn = ?, photoPath = ?, photoThumbnail = ?, mergedIntoId = ?,
         syncVersion = ?, updatedAtUtc = ?, syncedAtUtc = ?
        WHERE internalId = ?`,
       [
@@ -490,7 +535,8 @@ async function processMember(
         member.guardianPhone ?? null,
         member.guardianEmail ?? null,
         member.expiresOn ?? null,
-        registrationPhotoPath,
+        photoPath,
+        photoThumbnail,
         member.mergedIntoId ?? null,
         member.syncVersion,
         member.modifiedAtUtc,
@@ -508,9 +554,9 @@ async function processMember(
       internalId, membershipId, memberLifecycleStage, status,
       firstName, lastName, birthDate, gender, email, phone,
       address, zipCode, city, guardianName, guardianPhone, guardianEmail,
-      expiresOn, registrationPhotoPath, mergedIntoId, memberType,
+      expiresOn, photoPath, photoThumbnail, mergedIntoId, memberType,
       createdAtUtc, updatedAtUtc, deviceId, syncVersion, syncedAtUtc
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       member.internalId,
       member.membershipId ?? null,
@@ -529,7 +575,8 @@ async function processMember(
       member.guardianPhone ?? null,
       member.guardianEmail ?? null,
       member.expiresOn ?? null,
-      registrationPhotoPath,
+      photoPath,
+      photoThumbnail,
       member.mergedIntoId ?? null,
       'ADULT', // memberType for fee tracking
       member.createdAtUtc,

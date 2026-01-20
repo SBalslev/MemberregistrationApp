@@ -15,7 +15,7 @@ import {
   SettingsPage,
   ImportPage
 } from './pages';
-import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, type SyncPayload } from './database';
+import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, runPhotoMigration, isMigrationNeeded, type SyncPayload } from './database';
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
 
@@ -32,7 +32,19 @@ function App() {
       try {
         await initDatabase();
         setDbInitialized(true);
-        
+
+        // Run photo migration if needed (converts data URLs to file storage)
+        if (isElectron() && isMigrationNeeded()) {
+          console.log('[App] Running photo migration...');
+          try {
+            const migrationResult = await runPhotoMigration();
+            console.log('[App] Photo migration complete:', migrationResult);
+          } catch (migrationError) {
+            console.error('[App] Photo migration error:', migrationError);
+            // Don't fail app startup if migration fails
+          }
+        }
+
         // Set up sync listener if running in Electron
         if (isElectron()) {
           const api = getElectronAPI();

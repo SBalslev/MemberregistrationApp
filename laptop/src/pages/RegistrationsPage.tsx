@@ -17,6 +17,7 @@ import {
 import { getPendingRegistrations, getRegistrationsByStatus } from '../database';
 import type { NewMemberRegistration, ApprovalStatus, Gender } from '../types';
 import { useAppStore } from '../store';
+import { getPhotoSrc } from '../utils/photoStorage';
 
 type TabType = 'pending' | 'rejected';
 
@@ -111,9 +112,7 @@ export function RegistrationsPage() {
                     {/* Photo thumbnail or placeholder */}
                     {reg.photoPath ? (
                       <img
-                        src={reg.photoPath.startsWith('data:') || reg.photoPath.startsWith('http') 
-                          ? reg.photoPath 
-                          : `file://${reg.photoPath}`}
+                        src={getPhotoSrc(reg.photoPath) || ''}
                         alt={`${reg.firstName} ${reg.lastName}`}
                         className="w-10 h-10 rounded-full object-cover flex-shrink-0"
                         onError={(e) => {
@@ -273,9 +272,7 @@ function RegistrationDetailPanel({
       <div className="text-center mb-6">
         {registration.photoPath ? (
           <img
-            src={registration.photoPath.startsWith('data:') || registration.photoPath.startsWith('http')
-              ? registration.photoPath
-              : `file://${registration.photoPath}`}
+            src={getPhotoSrc(registration.photoPath) || ''}
             alt={`${registration.firstName} ${registration.lastName}`}
             className="w-24 h-24 rounded-full mx-auto mb-4 object-cover border-4 border-white shadow-lg"
             onError={(e) => {

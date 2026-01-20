@@ -4,3 +4,4 @@ export * from './registrationRepository';
 export * from './financeRepository';
 export * from './syncService';
 export * from './trustManager';
+export * from './photoMigration';

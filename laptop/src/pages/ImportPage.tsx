@@ -431,6 +431,8 @@ export function ImportPage() {
         expiresOn: null,
         photoUri: null,
         registrationPhotoPath: null,
+        photoPath: null,
+        photoThumbnail: null,
         mergedIntoId: null,
         deviceId: null,
         createdAtUtc: parsed.data.createdAtUtc || new Date().toISOString(),

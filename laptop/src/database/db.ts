@@ -180,6 +180,18 @@ async function runMigrations(): Promise<void> {
     db.run('ALTER TABLE Member ADD COLUMN registrationPhotoPath TEXT');
     migrationsRun.push('Member.registrationPhotoPath');
   }
+
+  // Add photoPath for full-resolution photo file path
+  if (!existingMemberColumns.includes('photoPath')) {
+    db.run('ALTER TABLE Member ADD COLUMN photoPath TEXT');
+    migrationsRun.push('Member.photoPath');
+  }
+
+  // Add photoThumbnail for 150x150 thumbnail data URL
+  if (!existingMemberColumns.includes('photoThumbnail')) {
+    db.run('ALTER TABLE Member ADD COLUMN photoThumbnail TEXT');
+    migrationsRun.push('Member.photoThumbnail');
+  }
   
   // Add expiresOn if missing
   if (!existingMemberColumns.includes('expiresOn')) {
@@ -430,6 +442,8 @@ async function createSchema(): Promise<void> {
       guardianEmail TEXT,
       expiresOn TEXT,
       registrationPhotoPath TEXT,
+      photoPath TEXT,
+      photoThumbnail TEXT,
       mergedIntoId TEXT,
       memberType TEXT DEFAULT 'ADULT',
       createdAtUtc TEXT NOT NULL,
