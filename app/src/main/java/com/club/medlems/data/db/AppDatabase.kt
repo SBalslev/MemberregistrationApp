@@ -19,7 +19,7 @@ import com.club.medlems.data.sync.SyncConflictEntity
         EquipmentItem::class,
         EquipmentCheckout::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(AppConverters::class)

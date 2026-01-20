@@ -3,22 +3,33 @@
  */
 
 import { useState, useMemo } from 'react';
-import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2 } from 'lucide-react';
-import { getAllMembers, searchMembers, upsertMember } from '../database';
+import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge } from 'lucide-react';
+import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers } from '../database';
 import type { Member, Gender } from '../types';
+import type { MergeResult } from '../database/memberRepository';
 import { useAppStore } from '../store';
 
 export function MembersPage() {
   const [members, setMembers] = useState<Member[]>(() => getAllMembers());
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ACTIVE' | 'INACTIVE'>('all');
+  const [memberTypeFilter, setMemberTypeFilter] = useState<'all' | 'TRIAL' | 'FULL'>('all');
+  const [viewMode, setViewMode] = useState<'members' | 'duplicates'>('members');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<{ member: Member; duplicate: Member } | null>(null);
   const { selectedMember, setSelectedMember } = useAppStore();
 
   function loadMembers() {
     const allMembers = getAllMembers();
     setMembers(allMembers);
   }
+
+  // Get duplicates data
+  const duplicatesData = useMemo(() => {
+    if (viewMode !== 'duplicates') return [];
+    return getMembersWithDuplicates();
+  }, [viewMode, members]);
 
   const filteredMembers = useMemo(() => {
     let result = members;
@@ -33,8 +44,23 @@ export function MembersPage() {
       result = result.filter((m) => m.status === statusFilter);
     }
 
+    // Apply member type filter
+    if (memberTypeFilter !== 'all') {
+      result = result.filter((m) => m.memberLifecycleStage === memberTypeFilter);
+    }
+
     return result;
-  }, [members, searchQuery, statusFilter]);
+  }, [members, searchQuery, statusFilter, memberTypeFilter]);
+
+  // Count trial members for badge
+  const trialMemberCount = useMemo(() => {
+    return members.filter((m) => m.memberLifecycleStage === 'TRIAL').length;
+  }, [members]);
+
+  // Count duplicates for badge
+  const duplicateCount = useMemo(() => {
+    return getMembersWithDuplicates().length;
+  }, [members]);
 
   return (
     <div className="flex h-full">
@@ -46,19 +72,53 @@ export function MembersPage() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Medlemmer</h1>
               <p className="text-gray-600 mt-1">
-                {filteredMembers.length} medlemmer
+                {viewMode === 'members' ? `${filteredMembers.length} medlemmer` : `${duplicatesData.length} potentielle dubletter`}
               </p>
             </div>
-            <button 
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-            >
-              <Plus className="w-5 h-5" />
-              Tilføj medlem
-            </button>
+            <div className="flex items-center gap-3">
+              {/* View Mode Toggle */}
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                <button
+                  onClick={() => setViewMode('members')}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    viewMode === 'members'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Alle medlemmer
+                </button>
+                <button
+                  onClick={() => setViewMode('duplicates')}
+                  className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
+                    viewMode === 'duplicates'
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                  Dubletter
+                  {duplicateCount > 0 && (
+                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+                      viewMode === 'duplicates' ? 'bg-orange-500' : 'bg-orange-100 text-orange-700'
+                    }`}>
+                      {duplicateCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+              <button 
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                <Plus className="w-5 h-5" />
+                Tilføj medlem
+              </button>
+            </div>
           </div>
 
-          {/* Search and Filter */}
+          {/* Search and Filter - only show in members view */}
+          {viewMode === 'members' && (
           <div className="flex gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -69,6 +129,18 @@ export function MembersPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               />
+            </div>
+            <div className="relative">
+              <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <select
+                value={memberTypeFilter}
+                onChange={(e) => setMemberTypeFilter(e.target.value as 'all' | 'TRIAL' | 'FULL')}
+                className="pl-9 pr-8 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
+              >
+                <option value="all">Alle typer</option>
+                <option value="TRIAL">Prøvemedlemmer ({trialMemberCount})</option>
+                <option value="FULL">Fuldgyldige</option>
+              </select>
             </div>
             <div className="relative">
               <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -83,31 +155,42 @@ export function MembersPage() {
               </select>
             </div>
           </div>
+          )}
         </div>
 
-        {/* Member List */}
+        {/* Content Area */}
         <div className="flex-1 overflow-y-auto">
-          {filteredMembers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500">
-              <User className="w-12 h-12 mb-4 text-gray-300" />
-              <p>Ingen medlemmer fundet</p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {filteredMembers.map((member) => (
-                <li key={member.membershipId}>
+          {viewMode === 'members' ? (
+            // Member List View
+            <>
+              {filteredMembers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                  <User className="w-12 h-12 mb-4 text-gray-300" />
+                  <p>Ingen medlemmer fundet</p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {filteredMembers.map((member) => {
+                    // Calculate days since registration for trial members
+                    const daysSinceRegistration = member.memberLifecycleStage === 'TRIAL' && member.createdAtUtc
+                      ? Math.floor((Date.now() - new Date(member.createdAtUtc).getTime()) / (1000 * 60 * 60 * 24))
+                      : 0;
+                    const trialWarning = daysSinceRegistration > 90 ? 'error' : daysSinceRegistration > 30 ? 'warning' : 'info';
+                
+                return (
+                <li key={member.internalId}>
                   <button
                     onClick={() => setSelectedMember(member)}
                     className={`w-full flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors text-left ${
-                      selectedMember?.membershipId === member.membershipId
+                      selectedMember?.internalId === member.internalId
                         ? 'bg-blue-50'
                         : ''
                     }`}
                   >
                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                      {member.photoUri ? (
+                      {member.photoUri || member.registrationPhotoPath ? (
                         <img
-                          src={member.photoUri}
+                          src={member.photoUri || member.registrationPhotoPath || ''}
                           alt=""
                           className="w-10 h-10 rounded-full object-cover"
                         />
@@ -119,11 +202,22 @@ export function MembersPage() {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 truncate">
-                        {member.firstName} {member.lastName}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-gray-900 truncate">
+                          {member.firstName} {member.lastName}
+                        </p>
+                        {member.memberLifecycleStage === 'TRIAL' && (
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            trialWarning === 'error' ? 'bg-red-100 text-red-700' :
+                            trialWarning === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-purple-100 text-purple-700'
+                          }`}>
+                            Prøve {daysSinceRegistration > 0 && `(${daysSinceRegistration}d)`}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-500 truncate">
-                        {member.membershipId}
+                        {member.membershipId || member.internalId.slice(0, 8)}
                       </p>
                     </div>
                     <span
@@ -138,8 +232,90 @@ export function MembersPage() {
                     <ChevronRight className="w-5 h-5 text-gray-400" />
                   </button>
                 </li>
-              ))}
-            </ul>
+              );
+              })}
+                </ul>
+              )}
+            </>
+          ) : (
+            // Duplicates View
+            <>
+              {duplicatesData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                  <AlertTriangle className="w-12 h-12 mb-4 text-green-300" />
+                  <p className="text-lg font-medium text-green-600">Ingen dubletter fundet</p>
+                  <p className="text-sm mt-1">Alle medlemmer er unikke</p>
+                </div>
+              ) : (
+                <div className="p-4 space-y-4">
+                  {duplicatesData.map(({ member, duplicates }) => (
+                    <div key={member.internalId} className="bg-white rounded-lg border border-orange-200 shadow-sm overflow-hidden">
+                      <div className="p-4 bg-orange-50 border-b border-orange-200">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-orange-200 rounded-full flex items-center justify-center">
+                            <span className="text-orange-700 font-medium">
+                              {member.firstName?.[0]}{member.lastName?.[0]}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{member.firstName} {member.lastName}</p>
+                            <p className="text-sm text-gray-500">{member.membershipId || member.internalId.slice(0, 8)}</p>
+                          </div>
+                          {member.memberLifecycleStage === 'TRIAL' && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                              Prøve
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="p-4">
+                        <p className="text-sm text-gray-600 mb-3">Potentielle dubletter:</p>
+                        <div className="space-y-2">
+                          {duplicates.map((dup) => (
+                            <div key={dup.member.internalId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+                                  <span className="text-gray-600 text-sm font-medium">
+                                    {dup.member.firstName?.[0]}{dup.member.lastName?.[0]}
+                                  </span>
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900 text-sm">{dup.member.firstName} {dup.member.lastName}</p>
+                                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <span className={`px-1.5 py-0.5 rounded ${
+                                      dup.confidence === 'high' ? 'bg-red-100 text-red-700' :
+                                      dup.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                                      'bg-gray-100 text-gray-600'
+                                    }`}>
+                                      {dup.confidence === 'high' ? 'Høj' : dup.confidence === 'medium' ? 'Medium' : 'Lav'}
+                                    </span>
+                                    <span>
+                                      {dup.matchType === 'phone' ? 'Samme telefon' :
+                                       dup.matchType === 'email' ? 'Samme email' :
+                                       'Samme navn'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setMergeTarget({ member, duplicate: dup.member });
+                                  setShowMergeModal(true);
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-sm rounded-lg hover:bg-orange-700 transition-colors"
+                              >
+                                <GitMerge className="w-4 h-4" />
+                                Flet
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -155,6 +331,23 @@ export function MembersPage() {
           </div>
         )}
       </div>
+
+      {/* Merge Modal */}
+      {showMergeModal && mergeTarget && (
+        <MergeModal
+          member1={mergeTarget.member}
+          member2={mergeTarget.duplicate}
+          onClose={() => {
+            setShowMergeModal(false);
+            setMergeTarget(null);
+          }}
+          onMerged={() => {
+            setShowMergeModal(false);
+            setMergeTarget(null);
+            loadMembers();
+          }}
+        />
+      )}
 
       {/* Add Member Modal */}
       {showAddModal && (
@@ -179,13 +372,21 @@ export function MembersPage() {
 
 function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemberUpdated: () => void }) {
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showAssignIdModal, setShowAssignIdModal] = useState(false);
   const { setSelectedMember } = useAppStore();
 
-  // Get photo source - add file:// protocol for local paths
-  const photoSrc = member.photoUri 
-    ? (member.photoUri.startsWith('file://') || member.photoUri.startsWith('http') 
-        ? member.photoUri 
-        : `file://${member.photoUri}`)
+  // Calculate days since registration for trial members
+  const daysSinceRegistration = member.memberLifecycleStage === 'TRIAL' && member.createdAtUtc
+    ? Math.floor((Date.now() - new Date(member.createdAtUtc).getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+  const trialWarning = daysSinceRegistration > 90 ? 'error' : daysSinceRegistration > 30 ? 'warning' : 'info';
+
+  // Get photo source - prefer registration photo for trials, add file:// protocol for local paths
+  const photoSource = member.registrationPhotoPath || member.photoUri;
+  const photoSrc = photoSource 
+    ? (photoSource.startsWith('file://') || photoSource.startsWith('http') || photoSource.startsWith('data:')
+        ? photoSource 
+        : `file://${photoSource}`)
     : null;
 
   return (
@@ -212,16 +413,27 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
         <h2 className="text-xl font-bold text-gray-900">
           {member.firstName} {member.lastName}
         </h2>
-        <p className="text-gray-600">{member.membershipId}</p>
-        <span
-          className={`inline-block mt-2 px-3 py-1 rounded-full text-sm font-medium ${
-            member.status === 'ACTIVE'
-              ? 'bg-green-100 text-green-700'
-              : 'bg-gray-100 text-gray-600'
-          }`}
-        >
-          {member.status === 'ACTIVE' ? 'Aktiv' : 'Inaktiv'}
-        </span>
+        <p className="text-gray-600">{member.membershipId || `ID: ${member.internalId.slice(0, 8)}...`}</p>
+        <div className="flex justify-center gap-2 mt-2">
+          {member.memberLifecycleStage === 'TRIAL' && (
+            <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+              trialWarning === 'error' ? 'bg-red-100 text-red-700' :
+              trialWarning === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+              'bg-purple-100 text-purple-700'
+            }`}>
+              Prøvemedlem {daysSinceRegistration > 0 && `(${daysSinceRegistration} dage)`}
+            </span>
+          )}
+          <span
+            className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+              member.status === 'ACTIVE'
+                ? 'bg-green-100 text-green-700'
+                : 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            {member.status === 'ACTIVE' ? 'Aktiv' : 'Inaktiv'}
+          </span>
+        </div>
       </div>
 
       {/* Details */}
@@ -250,6 +462,15 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
 
       {/* Actions */}
       <div className="mt-8 space-y-3">
+        {/* Assign Member ID button for trial members */}
+        {member.memberLifecycleStage === 'TRIAL' && (
+          <button 
+            onClick={() => setShowAssignIdModal(true)}
+            className="w-full px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+          >
+            Tildel medlemsnummer
+          </button>
+        )}
         <button 
           onClick={() => setShowEditModal(true)}
           className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -263,6 +484,27 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
           Se aktivitet
         </button>
       </div>
+
+      {/* Assign Member ID Modal */}
+      {showAssignIdModal && (
+        <AssignMemberIdModal
+          member={member}
+          onClose={() => setShowAssignIdModal(false)}
+          onAssigned={(membershipId) => {
+            try {
+              assignMembershipId(member.internalId, membershipId);
+              onMemberUpdated();
+              setShowAssignIdModal(false);
+              // Reload member with new data
+              const updatedMember = { ...member, membershipId, memberLifecycleStage: 'FULL' as const };
+              setSelectedMember(updatedMember);
+            } catch (error) {
+              console.error('Failed to assign member ID:', error);
+              alert('Kunne ikke tildele medlemsnummer. Prøv igen.');
+            }
+          }}
+        />
+      )}
 
       {/* Edit Modal */}
       {showEditModal && (
@@ -328,6 +570,302 @@ function formatGender(gender: string | null): string {
   }
 }
 
+// Modal for merging two member records
+interface MergeModalProps {
+  member1: Member;
+  member2: Member;
+  onClose: () => void;
+  onMerged: () => void;
+}
+
+function MergeModal({ member1, member2, onClose, onMerged }: MergeModalProps) {
+  const [keepMemberId, setKeepMemberId] = useState<string>(member1.internalId);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<MergeResult | null>(null);
+
+  const keepMember = keepMemberId === member1.internalId ? member1 : member2;
+  const mergeMember = keepMemberId === member1.internalId ? member2 : member1;
+
+  // Preview merge
+  const preview = useMemo(() => {
+    return previewMerge(keepMemberId, keepMemberId === member1.internalId ? member2.internalId : member1.internalId);
+  }, [keepMemberId, member1.internalId, member2.internalId]);
+
+  function handleMerge() {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const mergeResult = mergeMembers(keepMember.internalId, mergeMember.internalId);
+      if (mergeResult.success) {
+        setResult(mergeResult);
+      } else {
+        setError(mergeResult.error || 'Ukendt fejl under fletning');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ukendt fejl');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  if (result) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="p-6 text-center">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <GitMerge className="w-8 h-8 text-green-600" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Fletning gennemført</h2>
+            <p className="text-gray-600 mb-4">
+              {keepMember.firstName} {keepMember.lastName} er nu det primære medlem.
+            </p>
+            <div className="bg-gray-50 rounded-lg p-4 text-sm text-left mb-6">
+              <p className="font-medium text-gray-900 mb-2">Overførte poster:</p>
+              <ul className="space-y-1 text-gray-600">
+                <li>Check-ins: {result.recordsUpdated.checkIns}</li>
+                <li>Træningssessioner: {result.recordsUpdated.practiceSessions}</li>
+                <li>Scan-events: {result.recordsUpdated.scanEvents}</li>
+                <li>Udlån: {result.recordsUpdated.equipmentCheckouts}</li>
+              </ul>
+            </div>
+            <button
+              onClick={onMerged}
+              className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              Luk
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+              <GitMerge className="w-5 h-5 text-orange-600" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">Flet medlemmer</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          <p className="text-sm text-gray-600">
+            Vælg hvilket medlem der skal beholdes. Alle check-ins, træninger og andet fra det andet medlem overføres.
+          </p>
+
+          {/* Member Selection */}
+          <div className="space-y-3">
+            {[member1, member2].map((m) => (
+              <button
+                key={m.internalId}
+                onClick={() => setKeepMemberId(m.internalId)}
+                className={`w-full flex items-center gap-4 p-4 rounded-lg border-2 transition-colors text-left ${
+                  keepMemberId === m.internalId
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  keepMemberId === m.internalId ? 'bg-blue-200' : 'bg-gray-200'
+                }`}>
+                  <span className={`font-medium ${keepMemberId === m.internalId ? 'text-blue-700' : 'text-gray-600'}`}>
+                    {m.firstName?.[0]}{m.lastName?.[0]}
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">{m.firstName} {m.lastName}</p>
+                  <p className="text-sm text-gray-500">
+                    {m.membershipId || m.internalId.slice(0, 8)} • {m.email || m.phone || 'Ingen kontaktinfo'}
+                  </p>
+                </div>
+                {keepMemberId === m.internalId ? (
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded">Behold</span>
+                ) : (
+                  <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded">Slet</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Preview */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <p className="text-sm font-medium text-gray-900 mb-2">Poster der vil blive overført:</p>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Check-ins:</span>
+                <span className="font-medium">{preview.recordCounts.checkIns}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Træninger:</span>
+                <span className="font-medium">{preview.recordCounts.practiceSessions}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Scan-events:</span>
+                <span className="font-medium">{preview.recordCounts.scanEvents}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Udlån:</span>
+                <span className="font-medium">{preview.recordCounts.equipmentCheckouts}</span>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              disabled={isLoading}
+            >
+              Annuller
+            </button>
+            <button
+              onClick={handleMerge}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50"
+            >
+              {isLoading ? (
+                <>Fletter...</>
+              ) : (
+                <>
+                  <GitMerge className="w-4 h-4" />
+                  Flet medlemmer
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Modal for assigning a membershipId to a trial member
+interface AssignMemberIdModalProps {
+  member: Member;
+  onClose: () => void;
+  onAssigned: (membershipId: string) => void;
+}
+
+function AssignMemberIdModal({ member, onClose, onAssigned }: AssignMemberIdModalProps) {
+  const [membershipId, setMembershipId] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const trimmedId = membershipId.trim();
+    if (!trimmedId) {
+      setError('Medlemsnummer er påkrævet');
+      return;
+    }
+
+    // Check for uniqueness
+    const existing = getMemberByMembershipId(trimmedId);
+    if (existing && existing.internalId !== member.internalId) {
+      setError(`Medlemsnummer "${trimmedId}" er allerede i brug af ${existing.firstName} ${existing.lastName}`);
+      return;
+    }
+
+    onAssigned(trimmedId);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-xl font-bold text-gray-900">Tildel medlemsnummer</h2>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="bg-purple-50 rounded-lg p-4">
+            <p className="text-sm text-purple-800">
+              <span className="font-semibold">Prøvemedlem:</span>{' '}
+              {member.firstName} {member.lastName}
+            </p>
+            <p className="text-xs text-purple-600 mt-1">
+              Registreret: {new Date(member.createdAtUtc).toLocaleDateString('da-DK')}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Medlemsnummer <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={membershipId}
+              onChange={(e) => {
+                setMembershipId(e.target.value);
+                setError(null);
+              }}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
+                error ? 'border-red-300 bg-red-50' : 'border-gray-300'
+              }`}
+              placeholder="Indtast medlemsnummer"
+              autoFocus
+            />
+            {error && (
+              <p className="mt-1 text-sm text-red-600">{error}</p>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-500">
+            Dette vil opgradere medlemmet fra prøvemedlem til fuldt medlem.
+          </p>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              Annuller
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Tildel nummer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 interface AddMemberModalProps {
   onClose: () => void;
   onSave: (member: Member) => void;
@@ -377,7 +915,9 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
 
     const now = new Date().toISOString();
     const newMember: Member = {
+      internalId: crypto.randomUUID(),
       membershipId: membershipId.trim(),
+      memberLifecycleStage: 'FULL', // Has membershipId, so FULL
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       birthday: birthday || null,
@@ -390,9 +930,13 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
       guardianName: isUnder18 ? guardianName.trim() || null : null,
       guardianPhone: isUnder18 ? guardianPhone.trim() || null : null,
       guardianEmail: isUnder18 ? guardianEmail.trim() || null : null,
-      memberType: 'ADULT',
+      feeCategory: 'ADULT',
       status: 'ACTIVE',
+      expiresOn: null,
       photoUri,
+      registrationPhotoPath: null,
+      mergedIntoId: null,
+      deviceId: null,
       createdAtUtc: now,
       updatedAtUtc: now,
       syncedAtUtc: null,
@@ -800,10 +1344,13 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
             </label>
             <input
               type="text"
-              value={member.membershipId}
+              value={member.membershipId || ''}
               disabled
               className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
             />
+            {member.memberLifecycleStage === 'TRIAL' && (
+              <p className="mt-1 text-xs text-amber-600">Prøvemedlem - medlemsnummer ikke tildelt endnu</p>
+            )}
           </div>
 
           <div>

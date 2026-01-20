@@ -6,7 +6,6 @@
 import {
   LayoutDashboard,
   Users,
-  UserPlus,
   Laptop,
   Package,
   Wallet,
@@ -21,13 +20,14 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  badgeKey?: 'registrations' | 'conflicts'; // Key to look up badge count from store
+  badgeKey?: 'conflicts'; // Key to look up badge count from store
 }
 
+// NOTE: 'registrations' page removed - approval workflow deprecated per FR-7.2
+// Trial members are now created directly on tablets and synced as Member entities
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'members', label: 'Medlemmer', icon: Users },
-  { id: 'registrations', label: 'Tilmeldinger', icon: UserPlus, badgeKey: 'registrations' },
   { id: 'equipment', label: 'Udstyr', icon: Package },
   { id: 'finance', label: 'Økonomi', icon: Wallet },
   { id: 'devices', label: 'Enheder', icon: Laptop },
@@ -37,11 +37,11 @@ const navItems: NavItem[] = [
 ];
 
 export function Sidebar() {
-  const { currentPage, setCurrentPage, hasPendingChanges, isSyncing, pendingRegistrationCount, triggerSync } = useAppStore();
+  const { currentPage, setCurrentPage, hasPendingChanges, isSyncing, triggerSync } = useAppStore();
 
   // Get badge count for a nav item
-  function getBadgeCount(badgeKey?: string): number {
-    if (badgeKey === 'registrations') return pendingRegistrationCount;
+  // NOTE: 'registrations' badge removed - approval workflow deprecated per FR-7.2
+  function getBadgeCount(_badgeKey?: string): number {
     return 0;
   }
 

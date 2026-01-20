@@ -8,6 +8,7 @@ import com.club.medlems.data.dao.ScanEventDao
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberStatus
+import com.club.medlems.data.entity.MemberType
 import com.club.medlems.data.entity.ScanEvent
 import com.club.medlems.data.entity.ScanEventType
 import com.club.medlems.ui.ready.ScanOutcome
@@ -55,7 +56,7 @@ class AdminActionsViewModel @Inject constructor(
         val tz = TimeZone.currentSystemDefault()
         val localDate = now.toLocalDateTime(tz).date
         val birth = member.birthDate
-        val lastCheck = checkInDao.lastCheckDate(id)
+        val lastCheck = checkInDao.lastCheckDate(member.internalId)
         val birthdayTodayOrSince = if (birth != null) {
             val thisYear = localDate.year
             val thisBirthday = runCatching { kotlinx.datetime.LocalDate(thisYear, birth.monthNumber, birth.dayOfMonth) }.getOrElse {
@@ -69,10 +70,11 @@ class AdminActionsViewModel @Inject constructor(
                 (lastOccurrence > lastCheck) && (lastOccurrence <= localDate)
             }
         } else false
-        val existingCheckIn = checkInDao.firstForDate(id, localDate)
+        val existingCheckIn = checkInDao.firstForDate(member.internalId, localDate)
         return@withContext if (existingCheckIn == null) {
             val checkIn = CheckIn(
                 id = UUID.randomUUID().toString(),
+                internalMemberId = member.internalId,
                 membershipId = id,
                 createdAtUtc = now,
                 localDate = localDate,
@@ -83,24 +85,28 @@ class AdminActionsViewModel @Inject constructor(
             scanEventDao.insert(
                 ScanEvent(
                     id = scanEventId,
+                    internalMemberId = member.internalId,
                     membershipId = id,
                     createdAtUtc = now,
                     type = ScanEventType.FIRST_SCAN,
                     linkedCheckInId = checkIn.id
                 )
             )
-            ScanOutcome.First(id, scanEventId, birthday = birthdayTodayOrSince)
+            val isTrial = member.memberType == MemberType.TRIAL
+            ScanOutcome.First(id, scanEventId, birthday = birthdayTodayOrSince, isTrial = isTrial)
         } else {
             val scanEventId = UUID.randomUUID().toString()
             scanEventDao.insert(
                 ScanEvent(
                     id = scanEventId,
+                    internalMemberId = member.internalId,
                     membershipId = id,
                     createdAtUtc = now,
                     type = ScanEventType.REPEAT_SCAN
                 )
             )
-            ScanOutcome.Repeat(id, scanEventId, birthday = birthdayTodayOrSince)
+            val isTrial = member.memberType == MemberType.TRIAL
+            ScanOutcome.Repeat(id, scanEventId, birthday = birthdayTodayOrSince, isTrial = isTrial)
         }
     }
 
@@ -113,7 +119,7 @@ class AdminActionsViewModel @Inject constructor(
         if (all.isEmpty()) return@withContext
         // Ensure at least 10 members from the current import list get data if available.
         // Prefer stable selection: take first 10 by membershipId ordering, then fill randomly up to maxMembers.
-        val preferred = all.sortedBy { it.membershipId }.take(10)
+        val preferred = all.sortedBy { it.membershipId ?: it.internalId }.take(10)
         val remaining = (all - preferred.toSet()).shuffled().take((maxMembers - preferred.size).coerceAtLeast(0))
         val selected = (preferred + remaining).distinct()
         val now = Clock.System.now()
@@ -138,11 +144,12 @@ class AdminActionsViewModel @Inject constructor(
 
             // Ensure check-in exists for each chosen date
             dates.forEach { d ->
-                val existing = checkInDao.firstForDate(m.membershipId, d)
+                val existing = checkInDao.firstForDate(m.internalId, d)
                 if (existing == null) {
                     val createdTs = randomInstantForDate(d)
                     val ci = CheckIn(
                         id = UUID.randomUUID().toString(),
+                        internalMemberId = m.internalId,
                         membershipId = m.membershipId,
                         createdAtUtc = createdTs,
                         localDate = d,
@@ -153,6 +160,7 @@ class AdminActionsViewModel @Inject constructor(
                     scanEventDao.insert(
                         ScanEvent(
                             id = scanEventId,
+                            internalMemberId = m.internalId,
                             membershipId = m.membershipId,
                             createdAtUtc = createdTs,
                             type = ScanEventType.FIRST_SCAN,
@@ -166,6 +174,7 @@ class AdminActionsViewModel @Inject constructor(
                         scanEventDao.insert(
                             ScanEvent(
                                 id = UUID.randomUUID().toString(),
+                                internalMemberId = m.internalId,
                                 membershipId = m.membershipId,
                                 createdAtUtc = repeatTs,
                                 type = ScanEventType.REPEAT_SCAN
@@ -200,6 +209,7 @@ class AdminActionsViewModel @Inject constructor(
                         }
                         val session = PracticeSession(
                             id = UUID.randomUUID().toString(),
+                            internalMemberId = m.internalId,
                             membershipId = m.membershipId,
                             createdAtUtc = createdTs,
                             localDate = d,
@@ -217,6 +227,7 @@ class AdminActionsViewModel @Inject constructor(
                             val krydser2 = krydser?.let { (it + Random.nextInt(-1, 2)).coerceIn(0, 10) }
                             val session2 = PracticeSession(
                                 id = UUID.randomUUID().toString(),
+                                internalMemberId = m.internalId,
                                 membershipId = m.membershipId,
                                 createdAtUtc = createdTs2,
                                 localDate = d,

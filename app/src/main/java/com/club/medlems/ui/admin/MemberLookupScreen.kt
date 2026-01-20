@@ -186,13 +186,14 @@ fun MemberLookupScreen(
                         checkInResult = state.checkInResult,
                         onCheckIn = { viewModel.performAssistedCheckIn() },
                         onAddSession = { scanEventId ->
-                            onNavigateToPracticeSession(
-                                state.selectedMember!!.membershipId,
-                                scanEventId
-                            )
+                            // Use membershipId if available, otherwise internalId (for trial members)
+                            val memberId = state.selectedMember!!.membershipId ?: state.selectedMember!!.internalId
+                            onNavigateToPracticeSession(memberId, scanEventId)
                         },
                         onEquipmentCheckout = {
-                            onNavigateToEquipmentCheckout(state.selectedMember!!.membershipId)
+                            // Use membershipId if available, otherwise internalId (for trial members)
+                            val memberId = state.selectedMember!!.membershipId ?: state.selectedMember!!.internalId
+                            onNavigateToEquipmentCheckout(memberId)
                         }
                     )
                 } else {

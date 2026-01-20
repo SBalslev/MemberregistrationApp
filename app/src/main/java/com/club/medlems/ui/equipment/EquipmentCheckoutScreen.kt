@@ -218,7 +218,7 @@ fun EquipmentCheckoutScreen(
                     modifier = Modifier.height(150.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(memberSearchResults, key = { it.membershipId }) { member ->
+                    items(memberSearchResults, key = { it.internalId }) { member ->
                         MemberSelectionCard(
                             member = member,
                             onSelect = { selectedMember = member }
@@ -253,7 +253,7 @@ fun EquipmentCheckoutScreen(
                 onClick = {
                     viewModel.checkoutEquipment(
                         equipmentId = selectedEquipment!!.id,
-                        membershipId = selectedMember!!.membershipId,
+                        membershipId = selectedMember!!.membershipId ?: selectedMember!!.internalId,
                         notes = notes.ifEmpty { null }
                     )
                 },
@@ -382,7 +382,7 @@ private fun SelectedMemberCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "ID: ${member.membershipId}",
+                        text = "ID: ${member.membershipId ?: member.internalId.take(8)}",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -425,7 +425,7 @@ private fun MemberSelectionCard(
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "ID: ${member.membershipId}",
+                    text = "ID: ${member.membershipId ?: member.internalId.take(8)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

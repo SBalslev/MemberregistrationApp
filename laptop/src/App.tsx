@@ -3,12 +3,11 @@
  * Sets up the app shell with sidebar navigation and page routing.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { 
   DashboardPage, 
   MembersPage, 
-  RegistrationsPage, 
   EquipmentPage, 
   FinancePage,
   DevicesPage, 
@@ -16,28 +15,23 @@ import {
   SettingsPage,
   ImportPage
 } from './pages';
-import { initDatabase, getPendingRegistrations, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getRegistrationsForSync, getEquipmentForSync, type SyncPayload } from './database';
+import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, type SyncPayload } from './database';
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
 
 function App() {
-  const { isDbInitialized, setDbInitialized, currentPage, setPendingRegistrationCount } = useAppStore();
+  const { isDbInitialized, setDbInitialized, currentPage } = useAppStore();
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
-  // Refresh pending count (called after sync receives new registrations)
-  const refreshPendingCount = useCallback(() => {
-    const pending = getPendingRegistrations();
-    setPendingRegistrationCount(pending.length);
-  }, [setPendingRegistrationCount]);
+  // NOTE: Pending registration count removed - approval workflow deprecated per FR-7.2
+  // Trial members are now created directly on tablets and synced as Member entities
 
   useEffect(() => {
     async function init() {
       try {
         await initDatabase();
         setDbInitialized(true);
-        // Load pending registration count for sidebar badge
-        refreshPendingCount();
         
         // Set up sync listener if running in Electron
         if (isElectron()) {
@@ -51,9 +45,6 @@ function App() {
             try {
               const result = await processSyncPayload(payload as SyncPayload);
               console.log('[App] Sync result:', result);
-              
-              // Refresh the pending count after sync
-              refreshPendingCount();
               
               if (result.registrationsAdded > 0) {
                 setSyncStatus(`${result.registrationsAdded} nye registreringer modtaget`);
@@ -90,9 +81,6 @@ function App() {
                 errors: result.errors
               });
               
-              // Refresh pending count
-              refreshPendingCount();
-              
               const msg = `Modtaget: ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessioner`;
               setSyncStatus(msg);
               setTimeout(() => setSyncStatus(null), 5000);
@@ -126,11 +114,13 @@ function App() {
           api?.onGetMembersRequest?.(() => {
             console.log('[App] IPC get-members request');
             const members = getMemberDataForFullSync();
-            // Also include approved/rejected registrations for sync back to tablets
-            const registrations = getRegistrationsForSync();
+            // NOTE: NewMemberRegistration sync deprecated per FR-7.3
+            // Trial members now sync as Member entities with memberType = TRIAL
+            // Keeping empty array for backward compatibility with older tablets
+            const registrations: never[] = [];
             // Include equipment data
             const { equipmentItems, equipmentCheckouts } = getEquipmentForSync();
-            console.log(`[App] Returning ${members.length} members, ${registrations.length} registrations, ${equipmentItems.length} equipment items for sync`);
+            console.log(`[App] Returning ${members.length} members, ${equipmentItems.length} equipment items for sync`);
             return {
               members,
               registrations,
@@ -153,9 +143,6 @@ function App() {
             
             try {
               const result = await processSyncPayload(payload as SyncPayload);
-              
-              // Refresh pending count after sync
-              refreshPendingCount();
               
               const accepted = 
                 (result.registrationsAdded || 0) + 
@@ -193,7 +180,7 @@ function App() {
       }
     }
     init();
-  }, [setDbInitialized, refreshPendingCount]);
+  }, [setDbInitialized]);
 
   if (error) {
     return (
@@ -241,8 +228,10 @@ function PageRouter({ currentPage }: { currentPage: string }) {
       return <DashboardPage />;
     case 'members':
       return <MembersPage />;
+    // NOTE: 'registrations' page removed - approval workflow deprecated per FR-7.2
+    // Legacy route redirects to members page (trial members managed there now)
     case 'registrations':
-      return <RegistrationsPage />;
+      return <MembersPage />;
     case 'equipment':
       return <EquipmentPage />;
     case 'finance':

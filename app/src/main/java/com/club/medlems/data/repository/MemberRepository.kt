@@ -15,6 +15,14 @@ class MemberRepository @Inject constructor(
     private val memberDao: MemberDao
 ) {
     /**
+     * Gets a member by their internal ID (primary key).
+     */
+    suspend fun getMemberByInternalId(internalId: String): Member? = 
+        withContext(Dispatchers.IO) {
+            memberDao.getByInternalId(internalId)
+        }
+    
+    /**
      * Gets a member by their membership ID.
      */
     suspend fun getMemberByMembershipId(membershipId: String): Member? = 

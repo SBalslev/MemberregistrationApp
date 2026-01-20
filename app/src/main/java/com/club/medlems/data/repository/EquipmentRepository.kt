@@ -196,7 +196,7 @@ class EquipmentRepository @Inject constructor(
             }
             
             // Check if member already has equipment checked out (FR-5.4)
-            val existingCheckout = equipmentCheckoutDao.getActiveCheckoutForMember(membershipId)
+            val existingCheckout = equipmentCheckoutDao.getActiveCheckoutForMember(member.internalId)
             if (existingCheckout != null) {
                 return@withContext Result.failure(
                     IllegalStateException("Member already has equipment checked out")
@@ -209,6 +209,7 @@ class EquipmentRepository @Inject constructor(
             val checkout = EquipmentCheckout(
                 id = UUID.randomUUID().toString(),
                 equipmentId = equipmentId,
+                internalMemberId = member.internalId,
                 membershipId = membershipId,
                 checkedOutAtUtc = now,
                 checkedOutByDeviceId = deviceId,

@@ -1,6 +1,7 @@
 package com.club.medlems.data.sync
 
 import com.club.medlems.data.entity.MemberStatus
+import com.club.medlems.data.entity.MemberType
 import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.entity.ScanEventType
 import com.club.medlems.data.entity.SessionSource
@@ -17,19 +18,47 @@ import kotlinx.serialization.Serializable
 
 /**
  * Syncable wrapper for Member entity.
- * Master data - only editable on laptop.
+ * Bidirectional sync - trial members created on tablet, IDs assigned on laptop.
  */
 @Serializable
 data class SyncableMember(
-    val membershipId: String,
+    /** Immutable UUID, primary key across all devices */
+    val internalId: String,
+    
+    /** Club-assigned ID, null for trial members */
+    val membershipId: String? = null,
+    
+    /** Lifecycle stage: TRIAL or FULL */
+    val memberType: MemberType = MemberType.TRIAL,
+    
+    /** Operational status: ACTIVE or INACTIVE */
+    val status: MemberStatus = MemberStatus.ACTIVE,
+    
+    // === Personal Information ===
     val firstName: String,
     val lastName: String,
+    val birthDate: LocalDate? = null,
+    val gender: String? = null,
     val email: String? = null,
     val phone: String? = null,
-    val status: MemberStatus = MemberStatus.ACTIVE,
+    val address: String? = null,
+    val zipCode: String? = null,
+    val city: String? = null,
+    
+    // === Guardian Information (for minors) ===
+    val guardianName: String? = null,
+    val guardianPhone: String? = null,
+    val guardianEmail: String? = null,
+    
+    // === Membership Details ===
     val expiresOn: String? = null,
-    val birthDate: LocalDate? = null,
-    val registrationId: String? = null,
+    val registrationPhotoPath: String? = null,
+    
+    /** Base64 encoded photo data for sync transfer */
+    val photoBase64: String? = null,
+    
+    // === Merge Tracking (per DD-10) ===
+    val mergedIntoId: String? = null,
     
     // Sync metadata
     override val deviceId: String,
@@ -46,7 +75,10 @@ data class SyncableMember(
 @Serializable
 data class SyncableCheckIn(
     val id: String,
-    val membershipId: String,
+    /** FK to Member.internalId - the primary member reference */
+    val internalMemberId: String,
+    /** @deprecated Kept for backward compatibility with older sync payloads. */
+    val membershipId: String? = null,
     val localDate: LocalDate,
     val firstOfDayFlag: Boolean = true,
     
@@ -65,7 +97,10 @@ data class SyncableCheckIn(
 @Serializable
 data class SyncablePracticeSession(
     val id: String,
-    val membershipId: String,
+    /** FK to Member.internalId - the primary member reference */
+    val internalMemberId: String,
+    /** @deprecated Kept for backward compatibility with older sync payloads. */
+    val membershipId: String? = null,
     val localDate: LocalDate,
     val practiceType: PracticeType,
     val points: Int,
@@ -87,7 +122,10 @@ data class SyncablePracticeSession(
 @Serializable
 data class SyncableScanEvent(
     val id: String,
-    val membershipId: String,
+    /** FK to Member.internalId - the primary member reference */
+    val internalMemberId: String,
+    /** @deprecated Kept for backward compatibility with older sync payloads. */
+    val membershipId: String? = null,
     val type: ScanEventType,
     val linkedCheckInId: String? = null,
     val linkedSessionId: String? = null,
@@ -236,7 +274,10 @@ data class SyncableEquipmentItem(
 data class SyncableEquipmentCheckout(
     val id: String,
     val equipmentId: String,
-    val membershipId: String,
+    /** FK to Member.internalId - the primary member reference */
+    val internalMemberId: String,
+    /** @deprecated Kept for backward compatibility with older sync payloads. */
+    val membershipId: String? = null,
     val checkedOutAtUtc: Instant,
     val checkedInAtUtc: Instant? = null,
     val checkedOutByDeviceId: String,

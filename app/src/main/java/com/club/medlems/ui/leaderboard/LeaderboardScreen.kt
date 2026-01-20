@@ -66,8 +66,8 @@ fun LeaderboardScreen(onBack: () -> Unit, vm: LeaderboardViewModel = hiltViewMod
                                 val label = if (cls.isBlank()) "Uklassificeret" else cls
                                 item { Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp)) }
                                 item { Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) { Text("Medlem", Modifier.weight(1f)); Text("Points/Krydser") } }
-                                items(list, key = { it.practiceType.name + ":" + (it.classification ?: "") + ":" + it.membershipId }) { entry ->
-                                    val key = entry.practiceType.name + ":" + entry.membershipId
+                                items(list, key = { it.practiceType.name + ":" + (it.classification ?: "") + ":" + it.internalMemberId }) { entry ->
+                                    val key = entry.practiceType.name + ":" + entry.internalMemberId
                                     val isNew = state.justAddedKeys.contains(key)
                                     val targetColor = if (isNew) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.background
                                     val bg by animateColorAsState(targetValue = targetColor, label = "lbItemBg")
@@ -76,7 +76,7 @@ fun LeaderboardScreen(onBack: () -> Unit, vm: LeaderboardViewModel = hiltViewMod
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         val name = entry.memberName
-                                        val left = if (name.isNullOrBlank()) entry.membershipId else "${entry.membershipId} – ${name}"
+                                        val left = if (name.isNullOrBlank()) entry.displayMemberId else "${entry.displayMemberId} - ${name}"
                                         Text(left, Modifier.weight(1f))
                                         Text("${entry.points}${entry.krydser?.let { "/$it" } ?: ""}")
                                     }

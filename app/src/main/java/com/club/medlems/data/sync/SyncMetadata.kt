@@ -87,7 +87,7 @@ data class DeviceInfo(
  */
 object SyncSchemaVersion {
     const val MAJOR = 1
-    const val MINOR = 0
+    const val MINOR = 1
     const val PATCH = 0
     
     val version: String get() = "$MAJOR.$MINOR.$PATCH"

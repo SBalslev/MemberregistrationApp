@@ -3,8 +3,7 @@
  */
 
 import { query, execute, transaction } from './db';
-import type { Member, MemberStatus, MemberForTabletSync } from '../types';
-import { toTabletMember } from '../types';
+import type { Member, MemberStatus } from '../types';
 
 /**
  * Get all members.
@@ -24,14 +23,33 @@ export function getMembersByStatus(status: MemberStatus): Member[] {
 }
 
 /**
- * Get a member by ID.
+ * Get a member by internalId (UUID primary key).
  */
-export function getMemberById(membershipId: string): Member | null {
+export function getMemberByInternalId(internalId: string): Member | null {
+  const results = query<Member>(
+    'SELECT * FROM Member WHERE internalId = ?',
+    [internalId]
+  );
+  return results[0] || null;
+}
+
+/**
+ * Get a member by membershipId (club-assigned ID).
+ * Note: membershipId can be null for trial members.
+ */
+export function getMemberByMembershipId(membershipId: string): Member | null {
   const results = query<Member>(
     'SELECT * FROM Member WHERE membershipId = ?',
     [membershipId]
   );
   return results[0] || null;
+}
+
+/**
+ * @deprecated Use getMemberByMembershipId or getMemberByInternalId
+ */
+export function getMemberById(membershipId: string): Member | null {
+  return getMemberByMembershipId(membershipId);
 }
 
 /**
@@ -41,26 +59,57 @@ export function searchMembers(searchQuery: string): Member[] {
   const pattern = `%${searchQuery}%`;
   return query<Member>(
     `SELECT * FROM Member 
-     WHERE firstName LIKE ? OR lastName LIKE ? OR membershipId LIKE ?
+     WHERE firstName LIKE ? OR lastName LIKE ? OR membershipId LIKE ? OR internalId LIKE ?
      ORDER BY lastName, firstName
      LIMIT 50`,
-    [pattern, pattern, pattern]
+    [pattern, pattern, pattern, pattern]
+  );
+}
+
+/**
+ * Get all trial members (those without a membershipId assigned).
+ */
+export function getTrialMembers(): Member[] {
+  return query<Member>(
+    `SELECT * FROM Member 
+     WHERE memberLifecycleStage = 'TRIAL' 
+     ORDER BY createdAtUtc DESC`
+  );
+}
+
+/**
+ * Assign a membershipId to a trial member.
+ * This also transitions them to FULL lifecycle stage.
+ */
+export function assignMembershipId(internalId: string, membershipId: string): void {
+  const now = new Date().toISOString();
+  execute(
+    `UPDATE Member 
+     SET membershipId = ?, memberLifecycleStage = 'FULL', updatedAtUtc = ?, syncVersion = syncVersion + 1 
+     WHERE internalId = ?`,
+    [membershipId, now, internalId]
   );
 }
 
 /**
  * Insert or update a member.
+ * Uses internalId as the primary key for upsert.
  */
 export function upsertMember(member: Member): void {
   const now = new Date().toISOString();
   
   execute(
     `INSERT INTO Member (
-      membershipId, firstName, lastName, birthday, gender, email, phone, address,
+      internalId, membershipId, memberLifecycleStage, status,
+      firstName, lastName, birthday, gender, email, phone, address,
       zipCode, city, guardianName, guardianPhone, guardianEmail,
-      status, photoUri, createdAtUtc, updatedAtUtc, syncedAtUtc, syncVersion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(membershipId) DO UPDATE SET
+      feeCategory, expiresOn, photoUri, mergedIntoId,
+      createdAtUtc, updatedAtUtc, deviceId, syncedAtUtc, syncVersion
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(internalId) DO UPDATE SET
+      membershipId = excluded.membershipId,
+      memberLifecycleStage = excluded.memberLifecycleStage,
+      status = excluded.status,
       firstName = excluded.firstName,
       lastName = excluded.lastName,
       birthday = excluded.birthday,
@@ -73,12 +122,18 @@ export function upsertMember(member: Member): void {
       guardianName = excluded.guardianName,
       guardianPhone = excluded.guardianPhone,
       guardianEmail = excluded.guardianEmail,
-      status = excluded.status,
+      feeCategory = excluded.feeCategory,
+      expiresOn = excluded.expiresOn,
       photoUri = excluded.photoUri,
+      mergedIntoId = excluded.mergedIntoId,
       updatedAtUtc = excluded.updatedAtUtc,
+      deviceId = excluded.deviceId,
       syncVersion = syncVersion + 1`,
     [
+      member.internalId,
       member.membershipId,
+      member.memberLifecycleStage,
+      member.status,
       member.firstName,
       member.lastName,
       member.birthday,
@@ -91,10 +146,13 @@ export function upsertMember(member: Member): void {
       member.guardianName,
       member.guardianPhone,
       member.guardianEmail,
-      member.status,
+      member.feeCategory,
+      member.expiresOn,
       member.photoUri,
+      member.mergedIntoId,
       member.createdAtUtc || now,
       now,
+      member.deviceId,
       member.syncedAtUtc,
       member.syncVersion || 0
     ]
@@ -102,7 +160,19 @@ export function upsertMember(member: Member): void {
 }
 
 /**
- * Update member status.
+ * Update member status by internalId.
+ */
+export function updateMemberStatusByInternalId(internalId: string, status: MemberStatus): void {
+  const now = new Date().toISOString();
+  execute(
+    'UPDATE Member SET status = ?, updatedAtUtc = ?, syncVersion = syncVersion + 1 WHERE internalId = ?',
+    [status, now, internalId]
+  );
+}
+
+/**
+ * Update member status by membershipId.
+ * @deprecated Use updateMemberStatusByInternalId
  */
 export function updateMemberStatus(membershipId: string, status: MemberStatus): void {
   const now = new Date().toISOString();
@@ -113,7 +183,15 @@ export function updateMemberStatus(membershipId: string, status: MemberStatus): 
 }
 
 /**
- * Delete a member.
+ * Soft delete a member by internalId (sets status to INACTIVE).
+ */
+export function deleteMemberByInternalId(internalId: string): void {
+  updateMemberStatusByInternalId(internalId, 'INACTIVE');
+}
+
+/**
+ * Delete a member by membershipId.
+ * @deprecated Use deleteMemberByInternalId for soft delete
  */
 export function deleteMember(membershipId: string): void {
   execute('DELETE FROM Member WHERE membershipId = ?', [membershipId]);
@@ -140,7 +218,19 @@ export function getUnsyncedMembers(): Member[] {
 }
 
 /**
- * Mark member as synced.
+ * Mark member as synced by internalId.
+ */
+export function markMemberSyncedByInternalId(internalId: string): void {
+  const now = new Date().toISOString();
+  execute(
+    'UPDATE Member SET syncedAtUtc = ? WHERE internalId = ?',
+    [now, internalId]
+  );
+}
+
+/**
+ * Mark member as synced by membershipId.
+ * @deprecated Use markMemberSyncedByInternalId
  */
 export function markMemberSynced(membershipId: string): void {
   const now = new Date().toISOString();
@@ -166,21 +256,332 @@ export function getMemberCountByStatus(): Record<MemberStatus, number> {
 }
 
 /**
- * Get all members formatted for tablet sync.
- * Strips sensitive personal data (email, phone, address, guardian info).
+ * Get all members for tablet sync.
+ * Per DD-9: All member fields are now synced (no filtering).
  */
-export function getMembersForTabletSync(): MemberForTabletSync[] {
-  const members = getAllMembers();
-  return members.map(toTabletMember);
+export function getMembersForTabletSync(): Member[] {
+  return getAllMembers();
 }
 
 /**
- * Get members updated since a specific time, formatted for tablet sync.
+ * Get members updated since a specific time for tablet sync.
+ * Per DD-9: All member fields are now synced (no filtering).
  */
-export function getMembersForTabletSyncSince(sinceUtc: string): MemberForTabletSync[] {
-  const members = query<Member>(
+export function getMembersForTabletSyncSince(sinceUtc: string): Member[] {
+  return query<Member>(
     'SELECT * FROM Member WHERE updatedAtUtc > ? ORDER BY updatedAtUtc',
     [sinceUtc]
   );
-  return members.map(toTabletMember);
+}
+
+// ===== Duplicate Detection (FR-9.1) =====
+
+/**
+ * Potential duplicate match result.
+ */
+export interface DuplicateMatch {
+  member: Member;
+  matchType: 'phone' | 'email' | 'name';
+  confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Find potential duplicates for a given member.
+ * Matches based on:
+ * - Same phone number (high confidence)
+ * - Same email (high confidence)
+ * - Similar names registered within 30 days (medium/low confidence)
+ * 
+ * @param targetMember The member to find duplicates for
+ * @returns Array of potential duplicate matches
+ */
+export function findPotentialDuplicates(targetMember: Member): DuplicateMatch[] {
+  const duplicates: DuplicateMatch[] = [];
+  
+  // Skip if member is already merged
+  if (targetMember.mergedIntoId) {
+    return [];
+  }
+  
+  // Match by phone number (high confidence)
+  if (targetMember.phone) {
+    const phoneMatches = query<Member>(
+      `SELECT * FROM Member 
+       WHERE phone = ? AND internalId != ? AND mergedIntoId IS NULL AND status = 'ACTIVE'`,
+      [targetMember.phone, targetMember.internalId]
+    );
+    for (const match of phoneMatches) {
+      duplicates.push({
+        member: match,
+        matchType: 'phone',
+        confidence: 'high'
+      });
+    }
+  }
+  
+  // Match by email (high confidence)
+  if (targetMember.email) {
+    const emailMatches = query<Member>(
+      `SELECT * FROM Member 
+       WHERE email = ? AND internalId != ? AND mergedIntoId IS NULL AND status = 'ACTIVE'`,
+      [targetMember.email, targetMember.internalId]
+    );
+    for (const match of emailMatches) {
+      // Avoid duplicating if already matched by phone
+      if (!duplicates.some(d => d.member.internalId === match.internalId)) {
+        duplicates.push({
+          member: match,
+          matchType: 'email',
+          confidence: 'high'
+        });
+      }
+    }
+  }
+  
+  // Match by similar name (medium/low confidence)
+  // Only check trial members registered within 30 days
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const nameMatches = query<Member>(
+    `SELECT * FROM Member 
+     WHERE internalId != ? 
+       AND mergedIntoId IS NULL 
+       AND status = 'ACTIVE'
+       AND LOWER(firstName) = LOWER(?) 
+       AND LOWER(lastName) = LOWER(?)
+       AND createdAtUtc > ?`,
+    [targetMember.internalId, targetMember.firstName, targetMember.lastName, thirtyDaysAgo]
+  );
+  for (const match of nameMatches) {
+    // Avoid duplicating if already matched by phone/email
+    if (!duplicates.some(d => d.member.internalId === match.internalId)) {
+      // High confidence if birthday also matches
+      const confidence = match.birthday && match.birthday === targetMember.birthday 
+        ? 'high' 
+        : 'medium';
+      duplicates.push({
+        member: match,
+        matchType: 'name',
+        confidence
+      });
+    }
+  }
+  
+  return duplicates;
+}
+
+/**
+ * Get all members with potential duplicates.
+ * Returns members that have at least one potential duplicate.
+ */
+export function getMembersWithDuplicates(): Array<{ member: Member; duplicates: DuplicateMatch[] }> {
+  const allMembers = query<Member>(
+    `SELECT * FROM Member WHERE mergedIntoId IS NULL AND status = 'ACTIVE' ORDER BY createdAtUtc DESC`
+  );
+  
+  const results: Array<{ member: Member; duplicates: DuplicateMatch[] }> = [];
+  const processedPairs = new Set<string>(); // Track which pairs we've already reported
+  
+  for (const member of allMembers) {
+    const duplicates = findPotentialDuplicates(member);
+    if (duplicates.length > 0) {
+      // Create a sorted pair key to avoid reporting A->B and B->A
+      const filteredDuplicates = duplicates.filter(d => {
+        const pairKey = [member.internalId, d.member.internalId].sort().join(':');
+        if (processedPairs.has(pairKey)) {
+          return false;
+        }
+        processedPairs.add(pairKey);
+        return true;
+      });
+      
+      if (filteredDuplicates.length > 0) {
+        results.push({ member, duplicates: filteredDuplicates });
+      }
+    }
+  }
+  
+  return results;
+}
+
+// ===== Member Merge (FR-9.2 - FR-9.6) =====
+
+/**
+ * Result of a merge operation.
+ */
+export interface MergeResult {
+  success: boolean;
+  survivingMemberId: string;
+  mergedMemberId: string;
+  recordsUpdated: {
+    checkIns: number;
+    practiceSessions: number;
+    scanEvents: number;
+    equipmentCheckouts: number;
+  };
+  error?: string;
+}
+
+/**
+ * Preview what will happen if two members are merged.
+ * Does not modify any data.
+ */
+export function previewMerge(keepMemberId: string, mergeMemberId: string): {
+  keepMember: Member | null;
+  mergeMember: Member | null;
+  recordCounts: {
+    checkIns: number;
+    practiceSessions: number;
+    scanEvents: number;
+    equipmentCheckouts: number;
+  };
+} {
+  const keepMember = getMemberByInternalId(keepMemberId);
+  const mergeMember = getMemberByInternalId(mergeMemberId);
+  
+  const checkIns = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM CheckIn WHERE internalMemberId = ?',
+    [mergeMemberId]
+  )[0]?.count || 0;
+  
+  const practiceSessions = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM PracticeSession WHERE internalMemberId = ?',
+    [mergeMemberId]
+  )[0]?.count || 0;
+  
+  const scanEvents = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM ScanEvent WHERE internalMemberId = ?',
+    [mergeMemberId]
+  )[0]?.count || 0;
+  
+  const equipmentCheckouts = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM EquipmentCheckout WHERE internalMemberId = ?',
+    [mergeMemberId]
+  )[0]?.count || 0;
+  
+  return {
+    keepMember,
+    mergeMember,
+    recordCounts: {
+      checkIns,
+      practiceSessions,
+      scanEvents,
+      equipmentCheckouts
+    }
+  };
+}
+
+/**
+ * Merge two member records.
+ * All history from mergeMember is transferred to keepMember.
+ * mergeMember is marked with mergedIntoId and set to INACTIVE.
+ * 
+ * Per FR-9.3, FR-9.4, FR-9.5, FR-9.6
+ * 
+ * @param keepMemberId The internalId of the member to keep (survivor)
+ * @param mergeMemberId The internalId of the member to merge (will be marked merged)
+ * @returns MergeResult with operation details
+ */
+export function mergeMembers(keepMemberId: string, mergeMemberId: string): MergeResult {
+  const now = new Date().toISOString();
+  
+  // Validate both members exist
+  const keepMember = getMemberByInternalId(keepMemberId);
+  const mergeMember = getMemberByInternalId(mergeMemberId);
+  
+  if (!keepMember) {
+    return {
+      success: false,
+      survivingMemberId: keepMemberId,
+      mergedMemberId: mergeMemberId,
+      recordsUpdated: { checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0 },
+      error: `Keep member not found: ${keepMemberId}`
+    };
+  }
+  
+  if (!mergeMember) {
+    return {
+      success: false,
+      survivingMemberId: keepMemberId,
+      mergedMemberId: mergeMemberId,
+      recordsUpdated: { checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0 },
+      error: `Merge member not found: ${mergeMemberId}`
+    };
+  }
+  
+  if (mergeMember.mergedIntoId) {
+    return {
+      success: false,
+      survivingMemberId: keepMemberId,
+      mergedMemberId: mergeMemberId,
+      recordsUpdated: { checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0 },
+      error: `Member ${mergeMemberId} is already merged into ${mergeMember.mergedIntoId}`
+    };
+  }
+  
+  // Get record counts before merge (for reporting)
+  const preview = previewMerge(keepMemberId, mergeMemberId);
+  
+  try {
+    // Use transaction for atomic operation (FR-9.6)
+    transaction(() => {
+      // Update CheckIn records
+      execute(
+        `UPDATE CheckIn SET internalMemberId = ? WHERE internalMemberId = ?`,
+        [keepMemberId, mergeMemberId]
+      );
+      
+      // Update PracticeSession records
+      execute(
+        `UPDATE PracticeSession SET internalMemberId = ? WHERE internalMemberId = ?`,
+        [keepMemberId, mergeMemberId]
+      );
+      
+      // Update ScanEvent records
+      execute(
+        `UPDATE ScanEvent SET internalMemberId = ? WHERE internalMemberId = ?`,
+        [keepMemberId, mergeMemberId]
+      );
+      
+      // Update EquipmentCheckout records
+      execute(
+        `UPDATE EquipmentCheckout SET internalMemberId = ? WHERE internalMemberId = ?`,
+        [keepMemberId, mergeMemberId]
+      );
+      
+      // Mark merged member as INACTIVE with mergedIntoId reference (FR-9.5)
+      execute(
+        `UPDATE Member SET 
+           status = 'INACTIVE', 
+           mergedIntoId = ?, 
+           updatedAtUtc = ?, 
+           syncVersion = syncVersion + 1 
+         WHERE internalId = ?`,
+        [keepMemberId, now, mergeMemberId]
+      );
+      
+      // Update surviving member's syncVersion to trigger sync
+      execute(
+        `UPDATE Member SET 
+           updatedAtUtc = ?, 
+           syncVersion = syncVersion + 1 
+         WHERE internalId = ?`,
+        [now, keepMemberId]
+      );
+    });
+    
+    return {
+      success: true,
+      survivingMemberId: keepMemberId,
+      mergedMemberId: mergeMemberId,
+      recordsUpdated: preview.recordCounts
+    };
+  } catch (error) {
+    return {
+      success: false,
+      survivingMemberId: keepMemberId,
+      mergedMemberId: mergeMemberId,
+      recordsUpdated: { checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0 },
+      error: error instanceof Error ? error.message : 'Unknown error during merge'
+    };
+  }
 }

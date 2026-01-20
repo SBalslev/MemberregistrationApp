@@ -96,8 +96,8 @@ data class ScanDiagnostics(
 
 @Composable
 fun ReadyScreen(
-    onFirstScan: (String, String) -> Unit,
-    onRepeatScan: (String, String) -> Unit,
+    onFirstScan: (String, String, Boolean) -> Unit,
+    onRepeatScan: (String, String, Boolean) -> Unit,
     openAttendant: () -> Unit,
     openLeaderboard: () -> Unit,
     vm: ReadyViewModel = hiltViewModel(),
@@ -143,14 +143,14 @@ fun ReadyScreen(
                         runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
             scope.launch { snackHost.showSnackbar("Tillykke med fødselsdagen!") }
                     }
-                    onFirstScan(outcome.membershipId, outcome.scanEventId)
+                    onFirstScan(outcome.membershipId, outcome.scanEventId, outcome.isTrial)
                 }
                 is ScanOutcome.Repeat -> {
                     if (outcome.birthday) {
                         runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
             scope.launch { snackHost.showSnackbar("Tillykke med fødselsdagen!") }
                     }
-                    onRepeatScan(outcome.membershipId, outcome.scanEventId)
+                    onRepeatScan(outcome.membershipId, outcome.scanEventId, outcome.isTrial)
                 }
                 is ScanOutcome.Error -> snackHost.showSnackbar(outcome.message)
                 is ScanOutcome.AttendantUnlocked -> {
@@ -521,7 +521,7 @@ private fun CompactLeaderboardGrid(groupedRecent: Map<PracticeType, Map<String, 
                             list.take(3).forEach { entry ->
                                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                     val name = entry.memberName
-                                    val left = if (name.isNullOrBlank()) entry.membershipId else "${entry.membershipId} – ${name}"
+                                    val left = if (name.isNullOrBlank()) entry.displayMemberId else "${entry.displayMemberId} - ${name}"
                                     Text(left, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text("${entry.points}${entry.krydser?.let { "/$it" } ?: ""}", style = MaterialTheme.typography.bodySmall)
                                 }

@@ -32,8 +32,10 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.club.medlems.data.dao.NewMemberRegistrationDao
-import com.club.medlems.data.entity.NewMemberRegistration
+import com.club.medlems.data.dao.MemberDao
+import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.MemberStatus
+import com.club.medlems.data.entity.MemberType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
+import kotlinx.datetime.LocalDate
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -67,13 +70,16 @@ data class RegistrationState(
     val isTakingPhoto: Boolean = false,
     val showGuardianFields: Boolean = false,
     val saveSuccess: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // Created member info for confirmation display
+    val createdMemberName: String? = null,
+    val createdMemberInternalId: String? = null
 )
 
 @HiltViewModel
 class RegistrationViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val registrationDao: NewMemberRegistrationDao
+    private val memberDao: MemberDao
 ) : ViewModel() {
     
     private val _state = MutableStateFlow(RegistrationState())
@@ -180,36 +186,63 @@ class RegistrationViewModel @Inject constructor(
                     return@launch
                 }
                 
-                val timestamp = System.currentTimeMillis()
-                val tempId = "NYT-$timestamp"
+                val now = Clock.System.now()
+                val internalId = UUID.randomUUID().toString()
                 
-                val registration = NewMemberRegistration(
-                    id = UUID.randomUUID().toString(),
-                    temporaryId = tempId,
-                    createdAtUtc = Clock.System.now(),
-                    photoPath = photoPath,
-                    firstName = _state.value.firstName,
-                    lastName = _state.value.lastName,
+                // Parse birthDate string to LocalDate if provided
+                val birthDateLocal = _state.value.birthDate.takeIf { it.isNotBlank() }?.let {
+                    try {
+                        LocalDate.parse(it)
+                    } catch (e: Exception) {
+                        // Try parsing DD-MM-YYYY format
+                        val parts = it.split("-", "/", ".")
+                        if (parts.size == 3) {
+                            try {
+                                LocalDate(parts[2].toInt(), parts[1].toInt(), parts[0].toInt())
+                            } catch (e2: Exception) { null }
+                        } else null
+                    }
+                }
+                
+                // Create trial member directly (no NewMemberRegistration)
+                val member = Member(
+                    internalId = internalId,
+                    membershipId = null, // Trial member has no club ID yet
+                    memberType = MemberType.TRIAL,
+                    status = MemberStatus.ACTIVE,
+                    firstName = _state.value.firstName.trim(),
+                    lastName = _state.value.lastName.trim(),
+                    birthDate = birthDateLocal,
+                    gender = _state.value.gender.takeIf { it.isNotBlank() },
                     email = _state.value.email.takeIf { it.isNotBlank() },
                     phone = _state.value.phone.takeIf { it.isNotBlank() },
-                    birthDate = _state.value.birthDate.takeIf { it.isNotBlank() },
-                    gender = _state.value.gender.takeIf { it.isNotBlank() },
                     address = _state.value.address.takeIf { it.isNotBlank() },
                     zipCode = _state.value.zipCode.takeIf { it.isNotBlank() },
                     city = _state.value.city.takeIf { it.isNotBlank() },
                     guardianName = _state.value.guardianName.takeIf { it.isNotBlank() },
                     guardianPhone = _state.value.guardianPhone.takeIf { it.isNotBlank() },
-                    guardianEmail = _state.value.guardianEmail.takeIf { it.isNotBlank() }
+                    guardianEmail = _state.value.guardianEmail.takeIf { it.isNotBlank() },
+                    registrationPhotoPath = photoPath,
+                    expiresOn = null,
+                    mergedIntoId = null,
+                    createdAtUtc = now,
+                    updatedAtUtc = now,
+                    deviceId = null,
+                    syncVersion = 0L,
+                    syncedAtUtc = null
                 )
                 
                 withContext(Dispatchers.IO) {
-                    registrationDao.insert(registration)
-                    saveGuardianInfo(tempId, photoPath)
+                    memberDao.upsert(member)
+                    saveRegistrationInfo(internalId, photoPath)
                 }
                 
+                val fullName = "${_state.value.firstName.trim()} ${_state.value.lastName.trim()}"
                 _state.value = _state.value.copy(
                     isSaving = false,
-                    saveSuccess = true
+                    saveSuccess = true,
+                    createdMemberName = fullName,
+                    createdMemberInternalId = internalId
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
@@ -220,7 +253,7 @@ class RegistrationViewModel @Inject constructor(
         }
     }
     
-    private suspend fun saveGuardianInfo(tempId: String, photoPath: String) {
+    private suspend fun saveRegistrationInfo(internalId: String, photoPath: String) {
         val state = _state.value
         
         try {
@@ -232,9 +265,9 @@ class RegistrationViewModel @Inject constructor(
                                  state.guardianEmail.isNotBlank()
             
             val info = buildString {
-                appendLine("Nyt medlem tilmelding")
+                appendLine("Prøvemedlem oprettet")
                 appendLine("Dato: ${SimpleDateFormat("dd-MM-yyyy HH:mm", Locale("da", "DK")).format(Date())}")
-                appendLine("Midlertidigt ID: $tempId")
+                appendLine("Intern ID: $internalId")
                 appendLine()
                 appendLine("Fornavn: ${state.firstName}")
                 appendLine("Efternavn: ${state.lastName}")
@@ -739,13 +772,31 @@ fun RegistrationForm(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             ) {
-                Row(
+                Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.CheckCircle, "Succes")
-                    Text("Tilmelding gemt!")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, "Succes")
+                        Text(
+                            "Prøvemedlem oprettet!",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    if (state.createdMemberName != null) {
+                        Text(
+                            state.createdMemberName,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                    Text(
+                        "Kan tjekke ind nu",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
         }

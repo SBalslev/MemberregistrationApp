@@ -4,7 +4,10 @@ import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.PracticeType
 
 data class LeaderboardEntry(
-    val membershipId: String,
+    /** FK to Member.internalId - the primary member reference */
+    val internalMemberId: String,
+    /** Display-friendly ID (membershipId if available, else internalMemberId) */
+    val displayMemberId: String,
     val practiceType: PracticeType,
     val classification: String?,
     val points: Int,
@@ -17,7 +20,8 @@ data class LeaderboardEntry(
 object LeaderboardCalculator {
     fun bestPerMember(sessions: List<PracticeSession>): List<PracticeSession> {
         // sessions already filtered by type & points>0
-        val grouped = sessions.groupBy { it.membershipId }
+        // Group by internalMemberId to handle both trial and full members
+        val grouped = sessions.groupBy { it.internalMemberId }
         return grouped.values.map { list ->
             list.sortedWith(
                 compareByDescending<PracticeSession> { it.points }

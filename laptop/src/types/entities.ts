@@ -7,11 +7,30 @@
 
 // ===== Member Types =====
 
+/** Member lifecycle stage: TRIAL (no membershipId) or FULL (has membershipId) */
+export type MemberLifecycleStage = 'TRIAL' | 'FULL';
+
+/** Member operational status */
 export type MemberStatus = 'ACTIVE' | 'INACTIVE';
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
+/** Fee category for membership dues calculation */
+export type FeeCategoryType = 'ADULT' | 'CHILD' | 'CHILD_PLUS';
+
 export interface Member {
-  membershipId: string;
+  /** Immutable UUID, primary key across all devices */
+  internalId: string;
+  
+  /** Club-assigned ID, null for trial members */
+  membershipId: string | null;
+  
+  /** Lifecycle stage: TRIAL or FULL */
+  memberLifecycleStage: MemberLifecycleStage;
+  
+  /** Operational status: ACTIVE or INACTIVE */
+  status: MemberStatus;
+  
+  // Personal Information
   firstName: string;
   lastName: string;
   birthday: string | null; // ISO date string YYYY-MM-DD
@@ -21,63 +40,44 @@ export interface Member {
   address: string | null;
   zipCode: string | null;
   city: string | null;
+  
   // Guardian info for members under 18
   guardianName: string | null;
   guardianPhone: string | null;
   guardianEmail: string | null;
-  // Member type for fee calculation
-  memberType: 'ADULT' | 'CHILD' | 'CHILD_PLUS';
-  status: MemberStatus;
+  
+  // Member type for fee calculation (ADULT/CHILD/CHILD_PLUS)
+  feeCategory: FeeCategoryType;
+  
+  // Membership details
+  expiresOn: string | null;
   photoUri: string | null;
+  /** Path or data URL to registration photo (for trial members) */
+  registrationPhotoPath: string | null;
+  
+  // Merge tracking (per DD-10)
+  mergedIntoId: string | null;
+  
+  // Timestamps
   createdAtUtc: string; // ISO datetime
   updatedAtUtc: string; // ISO datetime
+  
+  // Sync metadata
+  deviceId: string | null;
   syncedAtUtc: string | null;
   syncVersion: number;
 }
 
-/**
- * Member data that is safe to sync to tablets.
- * Excludes sensitive personal contact info and guardian details.
- */
-export interface MemberForTabletSync {
-  membershipId: string;
-  firstName: string;
-  lastName: string;
-  birthday: string | null;
-  gender: Gender | null;
-  status: MemberStatus;
-  photoUri: string | null;
-  createdAtUtc: string;
-  updatedAtUtc: string;
-  syncedAtUtc: string | null;
-  syncVersion: number;
-}
-
-/**
- * Strip sensitive fields from a member for tablet sync.
- * Removes: email, phone, address, zipCode, city, guardian info
- */
-export function toTabletMember(member: Member): MemberForTabletSync {
-  return {
-    membershipId: member.membershipId,
-    firstName: member.firstName,
-    lastName: member.lastName,
-    birthday: member.birthday,
-    gender: member.gender,
-    status: member.status,
-    photoUri: member.photoUri,
-    createdAtUtc: member.createdAtUtc,
-    updatedAtUtc: member.updatedAtUtc,
-    syncedAtUtc: member.syncedAtUtc,
-    syncVersion: member.syncVersion,
-  };
-}
+// NOTE: MemberForTabletSync removed per DD-9
+// All sync operations now use full Member type directly
 
 // ===== Check-in Types =====
 
 export interface CheckIn {
   id: string;
-  membershipId: string;
+  internalMemberId: string; // FK to Member.internalId
+  /** @deprecated Use internalMemberId. Retained for backward compatibility. */
+  membershipId: string | null;
   localDate: string; // ISO date YYYY-MM-DD
   createdAtUtc: string;
   syncedAtUtc: string | null;
@@ -90,7 +90,9 @@ export type PracticeType = 'RIFLE' | 'PISTOL';
 
 export interface PracticeSession {
   id: string;
-  membershipId: string;
+  internalMemberId: string; // FK to Member.internalId
+  /** @deprecated Use internalMemberId. Retained for backward compatibility. */
+  membershipId: string | null;
   localDate: string;
   practiceType: PracticeType;
   classification: string;
@@ -108,7 +110,9 @@ export type ScanType = 'FIRST_SCAN' | 'REPEAT_SCAN';
 
 export interface ScanEvent {
   id: string;
-  membershipId: string;
+  internalMemberId: string; // FK to Member.internalId
+  /** @deprecated Use internalMemberId. Retained for backward compatibility. */
+  membershipId: string | null;
   scanType: ScanType;
   linkedCheckInId: string | null;
   linkedSessionId: string | null;
@@ -183,7 +187,9 @@ export interface EquipmentItem {
 export interface EquipmentCheckout {
   id: string;
   equipmentId: string;
-  membershipId: string;
+  internalMemberId: string; // FK to Member.internalId
+  /** @deprecated Use internalMemberId. Retained for backward compatibility. */
+  membershipId: string | null;
   checkedOutAtUtc: string;
   checkedInAtUtc: string | null;
   checkedOutByDeviceId: string;
@@ -257,8 +263,8 @@ export interface SyncPayloadIncoming {
 }
 
 /**
- * Payload for outgoing sync to tablets (filtered member data).
- * Members array uses MemberForTabletSync to exclude sensitive info.
+ * Payload for outgoing sync to tablets (full member data per DD-9).
+ * All member fields are now synced bidirectionally.
  */
 export interface SyncPayloadOutgoing {
   deviceId: string;
@@ -266,7 +272,7 @@ export interface SyncPayloadOutgoing {
   deviceType: DeviceType;
   schemaVersion: string;
   timestamp: string;
-  members?: MemberForTabletSync[];
+  members?: Member[];
   checkIns?: CheckIn[];
   practiceSessions?: PracticeSession[];
   scanEvents?: ScanEvent[];

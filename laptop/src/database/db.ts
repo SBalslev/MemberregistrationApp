@@ -8,7 +8,7 @@
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 
 // Schema version matching Android app
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 // SQL.js instance (singleton)
 let SQL: SqlJsStatic | null = null;
@@ -136,10 +136,61 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('Member.guardianEmail');
   }
   
-  // Add memberType column if missing (for fee tracking)
+  // Add memberType column if missing (for fee tracking - now renamed to feeCategory)
   if (!existingMemberColumns.includes('memberType')) {
     db.run("ALTER TABLE Member ADD COLUMN memberType TEXT DEFAULT 'ADULT'");
     migrationsRun.push('Member.memberType');
+  }
+  
+  // ===== Migration: Schema v10 - Trial Member Registration =====
+  // Add internalId column for UUID-based primary key support
+  if (!existingMemberColumns.includes('internalId')) {
+    db.run('ALTER TABLE Member ADD COLUMN internalId TEXT');
+    // Generate deterministic UUIDs from membershipId for existing members
+    // Using a simple hex-based approach similar to Android migration
+    db.run(`
+      UPDATE Member 
+      SET internalId = lower(hex(substr(membershipId || '00000000', 1, 4))) || '-' ||
+                       lower(hex(substr(membershipId || '0000', 1, 2))) || '-3' ||
+                       lower(hex(substr(membershipId || '000', 1, 1))) || '0' || '-8' ||
+                       lower(hex(substr(membershipId || '00', 1, 1))) || '00-' ||
+                       lower(hex(substr(membershipId || '000000', 1, 6)))
+      WHERE internalId IS NULL
+    `);
+    // Create unique index on internalId
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_Member_internalId ON Member(internalId)');
+    migrationsRun.push('Member.internalId');
+  }
+  
+  // Add memberLifecycleStage column (TRIAL or FULL)
+  if (!existingMemberColumns.includes('memberLifecycleStage')) {
+    // Existing members with membershipId are FULL members
+    db.run("ALTER TABLE Member ADD COLUMN memberLifecycleStage TEXT DEFAULT 'FULL'");
+    migrationsRun.push('Member.memberLifecycleStage');
+  }
+  
+  // Add mergedIntoId for merge tracking (DD-10)
+  if (!existingMemberColumns.includes('mergedIntoId')) {
+    db.run('ALTER TABLE Member ADD COLUMN mergedIntoId TEXT');
+    migrationsRun.push('Member.mergedIntoId');
+  }
+  
+  // Add registrationPhotoPath if missing
+  if (!existingMemberColumns.includes('registrationPhotoPath')) {
+    db.run('ALTER TABLE Member ADD COLUMN registrationPhotoPath TEXT');
+    migrationsRun.push('Member.registrationPhotoPath');
+  }
+  
+  // Add expiresOn if missing
+  if (!existingMemberColumns.includes('expiresOn')) {
+    db.run('ALTER TABLE Member ADD COLUMN expiresOn TEXT');
+    migrationsRun.push('Member.expiresOn');
+  }
+  
+  // Rename birthday to birthDate if needed (for consistency with Android)
+  if (existingMemberColumns.includes('birthday') && !existingMemberColumns.includes('birthDate')) {
+    db.run('ALTER TABLE Member RENAME COLUMN birthday TO birthDate');
+    migrationsRun.push('Member.birthday->birthDate');
   }
 
   // ===== Migration: Finance tables =====
@@ -257,6 +308,79 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('PendingFeePayment table created');
   }
 
+  // ===== Migration: Schema v11 - Foreign Key Migration for Trial Members =====
+  // Add internalMemberId column to CheckIn table
+  const checkInColumns = db.exec("PRAGMA table_info(CheckIn)");
+  const existingCheckInColumns = checkInColumns[0]?.values.map(row => row[1] as string) || [];
+  
+  if (!existingCheckInColumns.includes('internalMemberId')) {
+    db.run("ALTER TABLE CheckIn ADD COLUMN internalMemberId TEXT NOT NULL DEFAULT ''");
+    // Populate from Member.internalId using membershipId
+    db.run(`
+      UPDATE CheckIn 
+      SET internalMemberId = (
+        SELECT m.internalId FROM Member m WHERE m.membershipId = CheckIn.membershipId
+      )
+      WHERE internalMemberId = '' AND membershipId IS NOT NULL
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_CheckIn_internalMemberId ON CheckIn(internalMemberId)');
+    migrationsRun.push('CheckIn.internalMemberId');
+  }
+
+  // Add internalMemberId column to PracticeSession table
+  const sessionColumns = db.exec("PRAGMA table_info(PracticeSession)");
+  const existingSessionColumns = sessionColumns[0]?.values.map(row => row[1] as string) || [];
+  
+  if (!existingSessionColumns.includes('internalMemberId')) {
+    db.run("ALTER TABLE PracticeSession ADD COLUMN internalMemberId TEXT NOT NULL DEFAULT ''");
+    // Populate from Member.internalId using membershipId
+    db.run(`
+      UPDATE PracticeSession 
+      SET internalMemberId = (
+        SELECT m.internalId FROM Member m WHERE m.membershipId = PracticeSession.membershipId
+      )
+      WHERE internalMemberId = '' AND membershipId IS NOT NULL
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_PracticeSession_internalMemberId ON PracticeSession(internalMemberId)');
+    migrationsRun.push('PracticeSession.internalMemberId');
+  }
+
+  // Add internalMemberId column to ScanEvent table
+  const scanColumns = db.exec("PRAGMA table_info(ScanEvent)");
+  const existingScanColumns = scanColumns[0]?.values.map(row => row[1] as string) || [];
+  
+  if (!existingScanColumns.includes('internalMemberId')) {
+    db.run("ALTER TABLE ScanEvent ADD COLUMN internalMemberId TEXT NOT NULL DEFAULT ''");
+    // Populate from Member.internalId using membershipId
+    db.run(`
+      UPDATE ScanEvent 
+      SET internalMemberId = (
+        SELECT m.internalId FROM Member m WHERE m.membershipId = ScanEvent.membershipId
+      )
+      WHERE internalMemberId = '' AND membershipId IS NOT NULL
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_ScanEvent_internalMemberId ON ScanEvent(internalMemberId)');
+    migrationsRun.push('ScanEvent.internalMemberId');
+  }
+
+  // Add internalMemberId column to EquipmentCheckout table
+  const checkoutColumns = db.exec("PRAGMA table_info(EquipmentCheckout)");
+  const existingCheckoutColumns = checkoutColumns[0]?.values.map(row => row[1] as string) || [];
+  
+  if (!existingCheckoutColumns.includes('internalMemberId')) {
+    db.run("ALTER TABLE EquipmentCheckout ADD COLUMN internalMemberId TEXT NOT NULL DEFAULT ''");
+    // Populate from Member.internalId using membershipId
+    db.run(`
+      UPDATE EquipmentCheckout 
+      SET internalMemberId = (
+        SELECT m.internalId FROM Member m WHERE m.membershipId = EquipmentCheckout.membershipId
+      )
+      WHERE internalMemberId = '' AND membershipId IS NOT NULL
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_EquipmentCheckout_internalMemberId ON EquipmentCheckout(internalMemberId)');
+    migrationsRun.push('EquipmentCheckout.internalMemberId');
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -270,12 +394,15 @@ async function createSchema(): Promise<void> {
   if (!db) throw new Error('Database not initialized');
 
   db.run(`
-    -- Members table
+    -- Members table (Schema v10 - Trial Member Registration)
     CREATE TABLE IF NOT EXISTS Member (
-      membershipId TEXT PRIMARY KEY NOT NULL,
+      internalId TEXT PRIMARY KEY NOT NULL,
+      membershipId TEXT UNIQUE,
+      memberLifecycleStage TEXT NOT NULL DEFAULT 'FULL',
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
       firstName TEXT NOT NULL,
       lastName TEXT NOT NULL,
-      birthday TEXT,
+      birthDate TEXT,
       gender TEXT,
       email TEXT,
       phone TEXT,
@@ -285,29 +412,39 @@ async function createSchema(): Promise<void> {
       guardianName TEXT,
       guardianPhone TEXT,
       guardianEmail TEXT,
-      status TEXT NOT NULL DEFAULT 'ACTIVE',
-      photoUri TEXT,
+      expiresOn TEXT,
+      registrationPhotoPath TEXT,
+      mergedIntoId TEXT,
+      memberType TEXT DEFAULT 'ADULT',
       createdAtUtc TEXT NOT NULL,
       updatedAtUtc TEXT NOT NULL,
       syncedAtUtc TEXT,
       syncVersion INTEGER NOT NULL DEFAULT 0
     );
+    
+    -- Index for member lookups
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_Member_internalId ON Member(internalId);
+    CREATE INDEX IF NOT EXISTS idx_Member_memberLifecycleStage ON Member(memberLifecycleStage);
+    CREATE INDEX IF NOT EXISTS idx_Member_status ON Member(status);
+    CREATE INDEX IF NOT EXISTS idx_Member_lastName_firstName ON Member(lastName, firstName);
 
     -- Check-ins table
     CREATE TABLE IF NOT EXISTS CheckIn (
       id TEXT PRIMARY KEY NOT NULL,
-      membershipId TEXT NOT NULL,
+      internalMemberId TEXT NOT NULL,
+      membershipId TEXT,
       localDate TEXT NOT NULL,
       createdAtUtc TEXT NOT NULL,
       syncedAtUtc TEXT,
-      syncVersion INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY (membershipId) REFERENCES Member(membershipId)
+      syncVersion INTEGER NOT NULL DEFAULT 0
     );
+    CREATE INDEX IF NOT EXISTS idx_CheckIn_internalMemberId ON CheckIn(internalMemberId);
 
     -- Practice sessions table
     CREATE TABLE IF NOT EXISTS PracticeSession (
       id TEXT PRIMARY KEY NOT NULL,
-      membershipId TEXT NOT NULL,
+      internalMemberId TEXT NOT NULL,
+      membershipId TEXT,
       localDate TEXT NOT NULL,
       practiceType TEXT NOT NULL,
       classification TEXT NOT NULL,
@@ -319,11 +456,13 @@ async function createSchema(): Promise<void> {
       syncVersion INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (membershipId) REFERENCES Member(membershipId)
     );
+    CREATE INDEX IF NOT EXISTS idx_PracticeSession_internalMemberId ON PracticeSession(internalMemberId);
 
     -- Scan events table
     CREATE TABLE IF NOT EXISTS ScanEvent (
       id TEXT PRIMARY KEY NOT NULL,
-      membershipId TEXT NOT NULL,
+      internalMemberId TEXT NOT NULL,
+      membershipId TEXT,
       scanType TEXT NOT NULL,
       linkedCheckInId TEXT,
       linkedSessionId TEXT,
@@ -333,6 +472,7 @@ async function createSchema(): Promise<void> {
       syncVersion INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (membershipId) REFERENCES Member(membershipId)
     );
+    CREATE INDEX IF NOT EXISTS idx_ScanEvent_internalMemberId ON ScanEvent(internalMemberId);
 
     -- New member registrations table
     CREATE TABLE IF NOT EXISTS NewMemberRegistration (
@@ -383,7 +523,8 @@ async function createSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS EquipmentCheckout (
       id TEXT PRIMARY KEY NOT NULL,
       equipmentId TEXT NOT NULL,
-      membershipId TEXT NOT NULL,
+      internalMemberId TEXT NOT NULL,
+      membershipId TEXT,
       checkedOutAtUtc TEXT NOT NULL,
       checkedOutByDeviceId TEXT NOT NULL,
       expectedReturnAtUtc TEXT,
@@ -401,6 +542,7 @@ async function createSchema(): Promise<void> {
       FOREIGN KEY (equipmentId) REFERENCES EquipmentItem(id),
       FOREIGN KEY (membershipId) REFERENCES Member(membershipId)
     );
+    CREATE INDEX IF NOT EXISTS idx_EquipmentCheckout_internalMemberId ON EquipmentCheckout(internalMemberId);
 
     -- Trusted devices table
     CREATE TABLE IF NOT EXISTS TrustedDevice (

@@ -10,6 +10,7 @@ import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.ScanEvent
 import com.club.medlems.data.entity.ScanEventType
 import com.club.medlems.data.entity.PracticeSession
+import com.club.medlems.data.entity.MemberType
 import com.club.medlems.domain.QrParser
 import com.club.medlems.domain.security.AttendantModeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,8 +25,8 @@ import javax.inject.Inject
 import kotlinx.datetime.toLocalDate
 
 sealed class ScanOutcome {
-    data class First(val membershipId: String, val scanEventId: String, val birthday: Boolean = false): ScanOutcome()
-    data class Repeat(val membershipId: String, val scanEventId: String, val birthday: Boolean = false): ScanOutcome()
+    data class First(val membershipId: String, val scanEventId: String, val birthday: Boolean = false, val isTrial: Boolean = false): ScanOutcome()
+    data class Repeat(val membershipId: String, val scanEventId: String, val birthday: Boolean = false, val isTrial: Boolean = false): ScanOutcome()
     data class Error(val message: String): ScanOutcome()
     data object AttendantUnlocked: ScanOutcome()
 }
@@ -48,10 +49,10 @@ class ReadyViewModel @Inject constructor(
     private var lastId: String? = null
 
     fun onRawQr(raw: String) {
-        val id = QrParser.extractMembershipId(raw)
+        val id = QrParser.extractMemberId(raw)
         if (id == null) {
             val hint = raw.take(80)
-            viewModelScope.launch { _events.send(ScanOutcome.Error("Ugyldigt QR – kunne ikke finde 'id='. Læste: $hint")) }
+            viewModelScope.launch { _events.send(ScanOutcome.Error("Ugyldigt QR – kunne ikke finde medlems-ID. Læste: $hint")) }
             return
         }
         // Special attendant auto-unlock badge bypasses member lookup
@@ -80,7 +81,7 @@ class ReadyViewModel @Inject constructor(
             val localDate = now.toLocalDateTime(tz).date
             // Birthday check: if member has birthDate and last check date < this year's birthday <= today
             val birth = member.birthDate
-            val lastCheck = checkInDao.lastCheckDate(id)
+            val lastCheck = checkInDao.lastCheckDate(member.internalId)
             val birthdayTodayOrSince = if (birth != null) {
                 // compute the most recent birthday occurrence (this year or previous if not yet this year)
                 val thisYear = localDate.year
@@ -97,11 +98,12 @@ class ReadyViewModel @Inject constructor(
                     (lastOccurrence > lastCheck) && (lastOccurrence <= localDate)
                 }
             } else false
-            val existingCheckIn = checkInDao.firstForDate(id, localDate)
+            val existingCheckIn = checkInDao.firstForDate(member.internalId, localDate)
             if (existingCheckIn == null) {
                 // First scan
                 val checkIn = CheckIn(
                     id = UUID.randomUUID().toString(),
+                    internalMemberId = member.internalId,
                     membershipId = id,
                     createdAtUtc = now,
                     localDate = localDate,
@@ -112,24 +114,28 @@ class ReadyViewModel @Inject constructor(
                 scanEventDao.insert(
                     ScanEvent(
                         id = scanEventId,
+                        internalMemberId = member.internalId,
                         membershipId = id,
                         createdAtUtc = now,
                         type = ScanEventType.FIRST_SCAN,
                         linkedCheckInId = checkIn.id
                     )
                 )
-                _events.send(ScanOutcome.First(id, scanEventId, birthday = birthdayTodayOrSince))
+                val isTrial = member.memberType == MemberType.TRIAL
+                _events.send(ScanOutcome.First(id, scanEventId, birthday = birthdayTodayOrSince, isTrial = isTrial))
             } else {
                 val scanEventId = UUID.randomUUID().toString()
                 scanEventDao.insert(
                     ScanEvent(
                         id = scanEventId,
+                        internalMemberId = member.internalId,
                         membershipId = id,
                         createdAtUtc = now,
                         type = ScanEventType.REPEAT_SCAN
                     )
                 )
-                _events.send(ScanOutcome.Repeat(id, scanEventId, birthday = birthdayTodayOrSince))
+                val isTrial = member.memberType == MemberType.TRIAL
+                _events.send(ScanOutcome.Repeat(id, scanEventId, birthday = birthdayTodayOrSince, isTrial = isTrial))
             }
         }
     }

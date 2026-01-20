@@ -8,7 +8,16 @@ import kotlinx.datetime.LocalDate
 
 @Dao
 interface MemberDao {
-    @Query("SELECT * FROM Member WHERE membershipId = :id")
+    /** Get member by internalId (primary key) */
+    @Query("SELECT * FROM Member WHERE internalId = :internalId")
+    suspend fun getByInternalId(internalId: String): Member?
+    
+    /** Get member by membershipId (club-assigned ID, may be null for trials) */
+    @Query("SELECT * FROM Member WHERE membershipId = :membershipId")
+    suspend fun getByMembershipId(membershipId: String): Member?
+    
+    /** @deprecated Use getByInternalId or getByMembershipId */
+    @Query("SELECT * FROM Member WHERE membershipId = :id OR internalId = :id")
     suspend fun get(id: String): Member?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -17,13 +26,17 @@ interface MemberDao {
     @Query("SELECT * FROM Member WHERE status = :status")
     fun membersByStatus(status: MemberStatus = MemberStatus.ACTIVE): Flow<List<Member>>
 
-    @Query("UPDATE Member SET status = :status WHERE membershipId IN (:ids)")
+    @Query("UPDATE Member SET status = :status WHERE internalId IN (:ids)")
     suspend fun updateStatus(ids: List<String>, status: MemberStatus)
 
     @Query("SELECT * FROM Member")
     suspend fun allMembers(): List<Member>
+    
+    /** Get trial members (those without membershipId assigned) */
+    @Query("SELECT * FROM Member WHERE memberType = 'TRIAL' ORDER BY createdAtUtc DESC")
+    suspend fun getTrialMembers(): List<Member>
 
-    @Query("SELECT membershipId, firstName, lastName FROM Member WHERE membershipId IN (:ids)")
+    @Query("SELECT internalId, membershipId, firstName, lastName FROM Member WHERE internalId IN (:ids)")
     suspend fun getMemberNames(ids: List<String>): List<MemberNameProjection>
 
     @Query("DELETE FROM Member")
@@ -33,19 +46,20 @@ interface MemberDao {
     @Query("SELECT * FROM Member WHERE updatedAtUtc > :since ORDER BY updatedAtUtc ASC")
     suspend fun getModifiedSince(since: Instant): List<Member>
     
-    @Query("UPDATE Member SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE membershipId = :id")
-    suspend fun markSynced(id: String, syncedAt: Instant)
+    @Query("UPDATE Member SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE internalId = :internalId")
+    suspend fun markSynced(internalId: String, syncedAt: Instant)
     
     @Query("SELECT * FROM Member WHERE syncedAtUtc IS NULL OR syncedAtUtc < updatedAtUtc")
     suspend fun getUnsynced(): List<Member>
     
-    // Search queries for equipment checkout
+    // Search queries for equipment checkout and check-in
     @Query("""
         SELECT * FROM Member 
         WHERE status = 'ACTIVE' 
         AND (firstName LIKE '%' || :query || '%' 
              OR lastName LIKE '%' || :query || '%'
-             OR membershipId LIKE '%' || :query || '%')
+             OR membershipId LIKE '%' || :query || '%'
+             OR internalId LIKE '%' || :query || '%')
         ORDER BY lastName, firstName
         LIMIT 20
     """)
@@ -53,7 +67,8 @@ interface MemberDao {
 }
 
 data class MemberNameProjection(
-    val membershipId: String,
+    val internalId: String,
+    val membershipId: String?,
     val firstName: String,
     val lastName: String
 ) {
@@ -62,8 +77,9 @@ data class MemberNameProjection(
 
 @Dao
 interface CheckInDao {
-    @Query("SELECT * FROM CheckIn WHERE membershipId = :membershipId AND localDate = :date LIMIT 1")
-    suspend fun firstForDate(membershipId: String, date: LocalDate): CheckIn?
+    /** Get first check-in for member on date using internalMemberId */
+    @Query("SELECT * FROM CheckIn WHERE internalMemberId = :internalMemberId AND localDate = :date LIMIT 1")
+    suspend fun firstForDate(internalMemberId: String, date: LocalDate): CheckIn?
 
     @Insert
     suspend fun insert(ci: CheckIn)
@@ -71,8 +87,9 @@ interface CheckInDao {
     @Delete
     suspend fun delete(ci: CheckIn)
 
-    @Query("SELECT MAX(localDate) FROM CheckIn WHERE membershipId = :membershipId")
-    suspend fun lastCheckDate(membershipId: String): LocalDate?
+    /** Get last check-in date for member using internalMemberId */
+    @Query("SELECT MAX(localDate) FROM CheckIn WHERE internalMemberId = :internalMemberId")
+    suspend fun lastCheckDate(internalMemberId: String): LocalDate?
 
     @Query("DELETE FROM CheckIn")
     suspend fun deleteAll()
@@ -108,39 +125,44 @@ interface PracticeSessionDao {
     @Delete
     suspend fun delete(session: PracticeSession)
 
-    @Query("SELECT * FROM PracticeSession WHERE localDate = :date AND membershipId = :memberId")
-    suspend fun sessionsForMemberOnDate(memberId: String, date: LocalDate): List<PracticeSession>
+    /** Get sessions for member on date using internalMemberId */
+    @Query("SELECT * FROM PracticeSession WHERE localDate = :date AND internalMemberId = :internalMemberId")
+    suspend fun sessionsForMemberOnDate(internalMemberId: String, date: LocalDate): List<PracticeSession>
 
     @Query("SELECT * FROM PracticeSession WHERE localDate BETWEEN :start AND :end AND practiceType = :practiceType AND points > 0 ORDER BY points DESC, krydser DESC, createdAtUtc DESC")
     suspend fun rangeForType(start: LocalDate, end: LocalDate, practiceType: PracticeType): List<PracticeSession>
 
-    @Query("SELECT * FROM PracticeSession WHERE membershipId = :memberId AND localDate BETWEEN :start AND :end AND practiceType = :practiceType AND classification = :classification AND points > 0 ORDER BY createdAtUtc DESC")
+    /** Get history for member using internalMemberId */
+    @Query("SELECT * FROM PracticeSession WHERE internalMemberId = :internalMemberId AND localDate BETWEEN :start AND :end AND practiceType = :practiceType AND classification = :classification AND points > 0 ORDER BY createdAtUtc DESC")
     suspend fun historyForMember(
-        memberId: String,
+        internalMemberId: String,
         start: LocalDate,
         end: LocalDate,
         practiceType: PracticeType,
         classification: String
     ): List<PracticeSession>
 
-    @Query("SELECT * FROM PracticeSession WHERE membershipId = :memberId AND localDate BETWEEN :start AND :end ORDER BY createdAtUtc DESC")
+    /** Get sessions for member in range using internalMemberId */
+    @Query("SELECT * FROM PracticeSession WHERE internalMemberId = :internalMemberId AND localDate BETWEEN :start AND :end ORDER BY createdAtUtc DESC")
     suspend fun sessionsForMemberInRange(
-        memberId: String,
+        internalMemberId: String,
         start: LocalDate,
         end: LocalDate
     ): List<PracticeSession>
 
-    @Query("SELECT * FROM PracticeSession WHERE membershipId = :memberId AND localDate BETWEEN :start AND :end AND practiceType = :practiceType AND points > 0 ORDER BY createdAtUtc DESC")
+    /** Get history for member all classifications using internalMemberId */
+    @Query("SELECT * FROM PracticeSession WHERE internalMemberId = :internalMemberId AND localDate BETWEEN :start AND :end AND practiceType = :practiceType AND points > 0 ORDER BY createdAtUtc DESC")
     suspend fun historyForMemberAllClassifications(
-        memberId: String,
+        internalMemberId: String,
         start: LocalDate,
         end: LocalDate,
         practiceType: PracticeType
     ): List<PracticeSession>
 
-    @Query("SELECT COUNT(*) FROM PracticeSession WHERE membershipId = :memberId AND localDate BETWEEN :start AND :end AND practiceType = :practiceType AND points > 0")
+    /** Get history count for member using internalMemberId */
+    @Query("SELECT COUNT(*) FROM PracticeSession WHERE internalMemberId = :internalMemberId AND localDate BETWEEN :start AND :end AND practiceType = :practiceType AND points > 0")
     suspend fun historyCountForMemberAllClassifications(
-        memberId: String,
+        internalMemberId: String,
         start: LocalDate,
         end: LocalDate,
         practiceType: PracticeType
@@ -183,8 +205,9 @@ interface ScanEventDao {
     @Query("SELECT * FROM ScanEvent")
     suspend fun allScanEvents(): List<ScanEvent>
 
-    @Query("SELECT createdAtUtc FROM ScanEvent WHERE membershipId = :membershipId ORDER BY createdAtUtc DESC LIMIT 1")
-    suspend fun lastEventInstant(membershipId: String): kotlinx.datetime.Instant?
+    /** Get last event instant for member using internalMemberId */
+    @Query("SELECT createdAtUtc FROM ScanEvent WHERE internalMemberId = :internalMemberId ORDER BY createdAtUtc DESC LIMIT 1")
+    suspend fun lastEventInstant(internalMemberId: String): kotlinx.datetime.Instant?
 
         @Query("DELETE FROM ScanEvent")
         suspend fun deleteAllEvents()
@@ -320,9 +343,9 @@ interface EquipmentCheckoutDao {
     @Query("SELECT * FROM EquipmentCheckout WHERE equipmentId = :equipmentId AND checkedInAtUtc IS NULL LIMIT 1")
     suspend fun getActiveCheckoutForEquipment(equipmentId: String): EquipmentCheckout?
     
-    /** Get active checkout for a member (not yet returned) */
-    @Query("SELECT * FROM EquipmentCheckout WHERE membershipId = :membershipId AND checkedInAtUtc IS NULL LIMIT 1")
-    suspend fun getActiveCheckoutForMember(membershipId: String): EquipmentCheckout?
+    /** Get active checkout for a member using internalMemberId (not yet returned) */
+    @Query("SELECT * FROM EquipmentCheckout WHERE internalMemberId = :internalMemberId AND checkedInAtUtc IS NULL LIMIT 1")
+    suspend fun getActiveCheckoutForMember(internalMemberId: String): EquipmentCheckout?
     
     /** Get all active (non-returned) checkouts */
     @Query("SELECT * FROM EquipmentCheckout WHERE checkedInAtUtc IS NULL ORDER BY checkedOutAtUtc DESC")
@@ -336,9 +359,9 @@ interface EquipmentCheckoutDao {
     @Query("SELECT * FROM EquipmentCheckout WHERE equipmentId = :equipmentId ORDER BY checkedOutAtUtc DESC")
     suspend fun checkoutHistoryForEquipment(equipmentId: String): List<EquipmentCheckout>
     
-    /** Get checkout history for a member */
-    @Query("SELECT * FROM EquipmentCheckout WHERE membershipId = :membershipId ORDER BY checkedOutAtUtc DESC")
-    suspend fun checkoutHistoryForMember(membershipId: String): List<EquipmentCheckout>
+    /** Get checkout history for a member using internalMemberId */
+    @Query("SELECT * FROM EquipmentCheckout WHERE internalMemberId = :internalMemberId ORDER BY checkedOutAtUtc DESC")
+    suspend fun checkoutHistoryForMember(internalMemberId: String): List<EquipmentCheckout>
     
     /** Check in equipment (record return) */
     @Query("UPDATE EquipmentCheckout SET checkedInAtUtc = :checkedInAt, checkedInByDeviceId = :deviceId, checkinNotes = :notes, modifiedAtUtc = :modifiedAt WHERE id = :id")

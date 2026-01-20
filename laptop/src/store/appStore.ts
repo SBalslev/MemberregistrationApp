@@ -45,6 +45,8 @@ interface AppState {
   selectedMember: Member | null;
   setSelectedMember: (member: Member | null) => void;
 
+  // @deprecated - Approval workflow removed per FR-7.2
+  // Kept for backward compatibility, will be removed in future release
   selectedRegistration: NewMemberRegistration | null;
   setSelectedRegistration: (reg: NewMemberRegistration | null) => void;
 
@@ -59,7 +61,8 @@ interface AppState {
   setLastSyncTime: (time: string | null) => void;
   triggerSync: () => Promise<void>;
 
-  // Pending registrations count (for sidebar badge)
+  // @deprecated - Approval workflow removed per FR-7.2
+  // Kept for backward compatibility, will be removed in future release
   pendingRegistrationCount: number;
   setPendingRegistrationCount: (count: number) => void;
 }

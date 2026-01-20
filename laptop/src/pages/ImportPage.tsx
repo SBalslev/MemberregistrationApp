@@ -406,8 +406,14 @@ export function ImportPage() {
     const members: Member[] = [];
 
     for (const parsed of membersToImport) {
+      // Generate internalId from membershipId for imported members
+      const membershipId = parsed.data.membershipId || '';
+      const internalId = crypto.randomUUID();
+      
       const member: Member = {
-        membershipId: parsed.data.membershipId || '',
+        internalId,
+        membershipId: membershipId || null,
+        memberLifecycleStage: membershipId ? 'FULL' : 'TRIAL',
         firstName: parsed.data.firstName || '',
         lastName: parsed.data.lastName || '',
         birthday: parsed.data.birthday || null,
@@ -420,9 +426,13 @@ export function ImportPage() {
         guardianName: parsed.data.guardianName || null,
         guardianPhone: parsed.data.guardianPhone || null,
         guardianEmail: parsed.data.guardianEmail || null,
-        memberType: 'ADULT',
+        feeCategory: 'ADULT',
         status: parsed.data.status || 'ACTIVE',
+        expiresOn: null,
         photoUri: null,
+        registrationPhotoPath: null,
+        mergedIntoId: null,
+        deviceId: null,
         createdAtUtc: parsed.data.createdAtUtc || new Date().toISOString(),
         updatedAtUtc: parsed.data.updatedAtUtc || new Date().toISOString(),
         syncedAtUtc: null,

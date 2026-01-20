@@ -58,10 +58,18 @@ class PracticeSessionViewModel @javax.inject.Inject constructor(
         saving = true
         error = null
         viewModelScope.launch {
+            // Look up member to get internalId
+            val member = memberDao.get(memberId)
+            if (member == null) {
+                error = "Medlem ikke fundet"
+                saving = false
+                return@launch
+            }
             val now = Clock.System.now()
             val date = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
             val session = PracticeSession(
                 id = UUID.randomUUID().toString(),
+                internalMemberId = member.internalId,
                 membershipId = memberId,
                 createdAtUtc = now,
                 localDate = date,

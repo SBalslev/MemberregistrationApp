@@ -140,14 +140,40 @@ export interface MemberDataPayload {
 }
 
 export interface SyncableMemberData {
-  membershipId: string;
+  /** Immutable UUID, primary key across all devices */
+  internalId: string;
+  /** Club-assigned ID, null for trial members */
+  membershipId?: string | null;
+  /** Lifecycle stage: TRIAL or FULL (Android sends as memberType) */
+  memberType?: 'TRIAL' | 'FULL';
+  /** @deprecated Use memberType. Kept for backward compatibility. */
+  memberLifecycleStage?: 'TRIAL' | 'FULL';
+  /** Operational status */
+  status?: string;
+  // Personal Information
   firstName: string;
   lastName: string;
+  birthDate?: string | null;
+  gender?: string | null;
   email?: string | null;
   phone?: string | null;
-  status?: string;
-  birthDate?: string | null;
+  address?: string | null;
+  zipCode?: string | null;
+  city?: string | null;
+  // Guardian Information
+  guardianName?: string | null;
+  guardianPhone?: string | null;
+  guardianEmail?: string | null;
+  // Membership
+  expiresOn?: string | null;
+  registrationPhotoPath?: string | null;
+  photoBase64?: string | null;
+  mergedIntoId?: string | null;
+  // Sync metadata
+  deviceId?: string | null;
   syncVersion: number;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
 }
 
 export interface Platform {

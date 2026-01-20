@@ -11,6 +11,7 @@ import com.club.medlems.data.dao.ScanEventDao
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberStatus
+import com.club.medlems.data.entity.MemberType
 import com.club.medlems.data.entity.NewMemberRegistration
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.domain.prefs.DeviceConfigPreferences
@@ -114,7 +115,7 @@ class SyncRepository @Inject constructor(
         // Process members (laptop is master, tablets only receive)
         payload.entities.members.forEach { syncMember ->
             try {
-                val existing = memberDao.get(syncMember.membershipId)
+                val existing = memberDao.getByInternalId(syncMember.internalId)
                 if (existing == null || shouldAcceptMemberUpdate(existing, syncMember, payload.deviceType)) {
                     memberDao.upsert(syncMember.toEntity())
                     membersProcessed++
@@ -123,7 +124,7 @@ class SyncRepository @Inject constructor(
                     conflicts.add(conflictDetector.createConflictRecord(
                         conflictType = ConflictType.MEMBER_DATA,
                         entityType = "Member",
-                        entityId = syncMember.membershipId,
+                        entityId = syncMember.internalId,
                         localDeviceId = sourceDeviceId,
                         localTimestamp = existing.updatedAtUtc,
                         localSyncVersion = 0L,
@@ -135,7 +136,7 @@ class SyncRepository @Inject constructor(
                     ))
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing member ${syncMember.membershipId}", e)
+                Log.e(TAG, "Error processing member ${syncMember.internalId}", e)
             }
         }
         
@@ -143,7 +144,7 @@ class SyncRepository @Inject constructor(
         payload.entities.checkIns.forEach { syncCheckIn ->
             try {
                 val existing = checkInDao.firstForDate(
-                    syncCheckIn.membershipId,
+                    syncCheckIn.internalMemberId,
                     syncCheckIn.localDate
                 )
                 if (existing == null) {
@@ -152,7 +153,7 @@ class SyncRepository @Inject constructor(
                 }
                 // If exists for same date, skip (idempotent)
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing check-in for ${syncCheckIn.membershipId}", e)
+                Log.e(TAG, "Error processing check-in for ${syncCheckIn.internalMemberId}", e)
             }
         }
         
@@ -160,7 +161,7 @@ class SyncRepository @Inject constructor(
         payload.entities.practiceSessions.forEach { syncSession ->
             try {
                 val existingSessions = practiceSessionDao.sessionsForMemberOnDate(
-                    syncSession.membershipId,
+                    syncSession.internalMemberId,
                     syncSession.localDate
                 )
                 val isDuplicate = existingSessions.any { 
@@ -367,7 +368,7 @@ class SyncRepository @Inject constructor(
      * @param syncedAt The timestamp to use
      */
     suspend fun markEntitiesSynced(entities: SyncEntities, syncedAt: Instant) = withContext(Dispatchers.IO) {
-        entities.members.forEach { memberDao.markSynced(it.membershipId, syncedAt) }
+        entities.members.forEach { memberDao.markSynced(it.internalId, syncedAt) }
         entities.checkIns.forEach { checkInDao.markSynced(it.id, syncedAt) }
         entities.practiceSessions.forEach { practiceSessionDao.markSynced(it.id, syncedAt) }
         entities.newMemberRegistrations.forEach { newMemberRegistrationDao.markSynced(it.id, syncedAt) }
@@ -398,37 +399,79 @@ class SyncRepository @Inject constructor(
     
     // Extension functions to convert between entity and syncable types
     
-    private fun Member.toSyncable(deviceId: String) = SyncableMember(
-        membershipId = membershipId,
-        firstName = firstName,
-        lastName = lastName,
-        email = email,
-        phone = phone,
-        status = status,
-        expiresOn = expiresOn,
-        birthDate = birthDate,
-        registrationId = null,
-        deviceId = deviceId,
-        syncVersion = 1,
-        createdAtUtc = updatedAtUtc,
-        modifiedAtUtc = updatedAtUtc,
-        syncedAtUtc = null
-    )
+    private fun Member.toSyncable(deviceId: String): SyncableMember {
+        // Encode photo to base64 for trial members (they may have registration photos)
+        val photoBase64 = if (memberType == MemberType.TRIAL && !registrationPhotoPath.isNullOrEmpty()) {
+            try {
+                val photoFile = java.io.File(registrationPhotoPath)
+                if (photoFile.exists()) {
+                    android.util.Base64.encodeToString(photoFile.readBytes(), android.util.Base64.NO_WRAP)
+                } else null
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to encode member photo for sync: ${e.message}")
+                null
+            }
+        } else null
+        
+        return SyncableMember(
+            internalId = internalId,
+            membershipId = membershipId,
+            memberType = memberType,
+            status = status,
+            firstName = firstName,
+            lastName = lastName,
+            birthDate = birthDate,
+            gender = gender,
+            email = email,
+            phone = phone,
+            address = address,
+            zipCode = zipCode,
+            city = city,
+            guardianName = guardianName,
+            guardianPhone = guardianPhone,
+            guardianEmail = guardianEmail,
+            expiresOn = expiresOn,
+            registrationPhotoPath = registrationPhotoPath,
+            photoBase64 = photoBase64,
+            mergedIntoId = mergedIntoId,
+            deviceId = deviceId,
+            syncVersion = syncVersion,
+            createdAtUtc = createdAtUtc,
+            modifiedAtUtc = updatedAtUtc,
+            syncedAtUtc = syncedAtUtc
+        )
+    }
     
     private fun SyncableMember.toEntity() = Member(
+        internalId = internalId,
         membershipId = membershipId,
+        memberType = memberType,
+        status = status,
         firstName = firstName,
         lastName = lastName,
+        birthDate = birthDate,
+        gender = gender,
         email = email,
         phone = phone,
-        status = status,
+        address = address,
+        zipCode = zipCode,
+        city = city,
+        guardianName = guardianName,
+        guardianPhone = guardianPhone,
+        guardianEmail = guardianEmail,
         expiresOn = expiresOn,
-        birthDate = birthDate,
-        updatedAtUtc = modifiedAtUtc
+        registrationPhotoPath = registrationPhotoPath,
+        mergedIntoId = mergedIntoId,
+        createdAtUtc = createdAtUtc,
+        updatedAtUtc = modifiedAtUtc,
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        syncedAtUtc = syncedAtUtc
     )
     
     private fun CheckIn.toSyncable(deviceId: String) = SyncableCheckIn(
         id = id,
+        internalMemberId = internalMemberId,
         membershipId = membershipId,
         localDate = localDate,
         firstOfDayFlag = firstOfDayFlag,
@@ -441,6 +484,7 @@ class SyncRepository @Inject constructor(
     
     private fun SyncableCheckIn.toEntity() = CheckIn(
         id = id,
+        internalMemberId = internalMemberId,
         membershipId = membershipId,
         localDate = localDate,
         firstOfDayFlag = firstOfDayFlag,
@@ -449,6 +493,7 @@ class SyncRepository @Inject constructor(
     
     private fun PracticeSession.toSyncable(deviceId: String) = SyncablePracticeSession(
         id = id,
+        internalMemberId = internalMemberId,
         membershipId = membershipId,
         localDate = localDate,
         practiceType = practiceType,
@@ -465,6 +510,7 @@ class SyncRepository @Inject constructor(
     
     private fun SyncablePracticeSession.toEntity() = PracticeSession(
         id = id,
+        internalMemberId = internalMemberId,
         membershipId = membershipId,
         localDate = localDate,
         practiceType = practiceType,
@@ -588,6 +634,7 @@ class SyncRepository @Inject constructor(
     private fun EntityEquipmentCheckout.toSyncable(deviceId: String) = SyncableEquipmentCheckout(
         id = id,
         equipmentId = equipmentId,
+        internalMemberId = internalMemberId,
         membershipId = membershipId,
         checkedOutAtUtc = checkedOutAtUtc,
         checkedInAtUtc = checkedInAtUtc,
@@ -612,6 +659,7 @@ class SyncRepository @Inject constructor(
     private fun SyncableEquipmentCheckout.toEntity() = EntityEquipmentCheckout(
         id = id,
         equipmentId = equipmentId,
+        internalMemberId = internalMemberId,
         membershipId = membershipId,
         checkedOutAtUtc = checkedOutAtUtc,
         checkedInAtUtc = checkedInAtUtc,

@@ -69,7 +69,8 @@ class EquipmentViewModel @Inject constructor(
             activeCheckouts.collect { checkouts ->
                 val details = checkouts.mapNotNull { checkout ->
                     val equipment = equipmentRepository.getEquipmentById(checkout.equipmentId)
-                    val member = memberRepository.getMemberByMembershipId(checkout.membershipId)
+                    // Use internalMemberId for lookup (primary FK)
+                    val member = memberRepository.getMemberByInternalId(checkout.internalMemberId)
                     if (equipment != null && member != null) {
                         CheckoutWithDetails(checkout, equipment, member)
                     } else null

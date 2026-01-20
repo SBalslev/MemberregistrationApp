@@ -53,10 +53,10 @@ export function MemberFeeStatusTable({
     return members
       .filter((m) => m.status === 'ACTIVE')
       .map((member) => {
-        // Find expected fee based on member type
-        const memberType = member.memberType || 'ADULT';
+        // Find expected fee based on fee category
+        const feeCategory = member.feeCategory || 'ADULT';
         const feeRate = feeRates.find(
-          (fr) => fr.fiscalYear === year && fr.memberType === memberType
+          (fr) => fr.fiscalYear === year && fr.memberType === feeCategory
         );
         const expectedAmount = feeRate?.feeAmount ?? 0;
 
@@ -89,9 +89,9 @@ export function MemberFeeStatusTable({
         const hasPending = pendingAmount > 0;
 
         return {
-          memberId: member.membershipId,
+          memberId: member.membershipId || member.internalId, // Use internalId for trials
           memberName: `${member.firstName} ${member.lastName}`,
-          memberType,
+          memberType: feeCategory,
           expectedAmount,
           paidAmount,
           pendingAmount,

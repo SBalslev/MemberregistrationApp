@@ -39,7 +39,7 @@ class CsvService @Inject constructor(
             members.forEach { m ->
                 appendLine(listOf(
                     version,
-                    m.membershipId,
+                    m.membershipId.orEmpty(),
                     m.firstName,
                     m.lastName,
                     m.email.orEmpty(),
@@ -180,14 +180,19 @@ class CsvService @Inject constructor(
         val errors = mutableListOf<String>()
         var imported = 0
         var skippedDup = 0
-        val allIdsBefore = memberDao.allMembers().map { it.membershipId }.toSet()
-        val incomingIds = mutableSetOf<String>()
+        // Map membershipId -> internalId for existing members (for marking inactive)
+        val allMembersBefore = memberDao.allMembers()
+        val membershipIdToInternalId = allMembersBefore
+            .filter { it.membershipId != null }
+            .associateBy({ it.membershipId!! }, { it.internalId })
+        val allMembershipIdsBefore = membershipIdToInternalId.keys
+        val incomingMembershipIds = mutableSetOf<String>()
         val rows = lines.drop(1)
         rows.forEachIndexed { lineIdx, row ->
-            val id = row.getOrNull(idx["membership_id"] ?: -1).orEmpty()
-            if (id.isBlank()) { errors += "Line ${lineIdx+2}: blank membership_id"; return@forEachIndexed }
-            if (!seen.add(id)) { skippedDup++; return@forEachIndexed }
-            incomingIds += id
+            val membershipId = row.getOrNull(idx["membership_id"] ?: -1).orEmpty()
+            if (membershipId.isBlank()) { errors += "Line ${lineIdx+2}: blank membership_id"; return@forEachIndexed }
+            if (!seen.add(membershipId)) { skippedDup++; return@forEachIndexed }
+            incomingMembershipIds += membershipId
             try {
                 val fn = row.getOrNull(idx["first_name"] ?: -1).orEmpty()
                 val ln = row.getOrNull(idx["last_name"] ?: -1).orEmpty()
@@ -199,17 +204,32 @@ class CsvService @Inject constructor(
                 val birthRaw = row.getOrNull(idx["birth_date"] ?: -1).orEmpty().ifBlank { null }
                 val birth = birthRaw?.let { runCatching { kotlinx.datetime.LocalDate.parse(it) }.getOrNull() }
                 // existing fetch to preserve fields when blank (rule A)
-                val existing = memberDao.get(id)
+                val existing = memberDao.getByMembershipId(membershipId)
+                val now = Clock.System.now()
                 val merged = Member(
-                    membershipId = id,
+                    // Use existing internalId or generate deterministic one from membershipId
+                    internalId = existing?.internalId ?: java.util.UUID.nameUUIDFromBytes(membershipId.toByteArray()).toString(),
+                    membershipId = membershipId,
+                    memberType = existing?.memberType ?: MemberType.FULL, // CSV imports are full members
+                    status = status,
                     firstName = if (fn.isNotBlank()) fn else existing?.firstName ?: "",
                     lastName = if (ln.isNotBlank()) ln else existing?.lastName ?: "",
                     email = if (email != null) email else existing?.email,
                     phone = if (phone != null) phone else existing?.phone,
-                    status = status,
                     expiresOn = if (expiresOn != null) expiresOn else existing?.expiresOn,
                     birthDate = birth ?: existing?.birthDate,
-                    updatedAtUtc = Clock.System.now()
+                    // Preserve existing fields
+                    gender = existing?.gender,
+                    address = existing?.address,
+                    zipCode = existing?.zipCode,
+                    city = existing?.city,
+                    guardianName = existing?.guardianName,
+                    guardianPhone = existing?.guardianPhone,
+                    guardianEmail = existing?.guardianEmail,
+                    registrationPhotoPath = existing?.registrationPhotoPath,
+                    mergedIntoId = existing?.mergedIntoId,
+                    createdAtUtc = existing?.createdAtUtc ?: now,
+                    updatedAtUtc = now
                 )
                 memberDao.upsert(merged)
                 imported++
@@ -217,9 +237,10 @@ class CsvService @Inject constructor(
                 errors += "Line ${lineIdx+2}: ${e.message}"
             }
         }
-        // Mark missing as inactive
-        val missing = allIdsBefore - incomingIds
-        if (missing.isNotEmpty()) memberDao.updateStatus(missing.toList(), MemberStatus.INACTIVE)
-        ImportResult(imported, skippedDup, missing.size, errors)
+        // Mark missing as inactive (use internalIds for the update)
+        val missingMembershipIds = allMembershipIdsBefore - incomingMembershipIds
+        val missingInternalIds = missingMembershipIds.mapNotNull { membershipIdToInternalId[it] }
+        if (missingInternalIds.isNotEmpty()) memberDao.updateStatus(missingInternalIds, MemberStatus.INACTIVE)
+        ImportResult(imported, skippedDup, missingInternalIds.size, errors)
     }
 }

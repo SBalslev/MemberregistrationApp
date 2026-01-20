@@ -131,7 +131,9 @@ class MemberLookupViewModel @Inject constructor(
             )
             
             // Load member's recent activity
-            loadMemberDetails(member.membershipId)
+            // Use membershipId if available, otherwise internalId for trial members
+            val lookupId = member.membershipId ?: member.internalId
+            loadMemberDetails(lookupId)
         }
     }
     
@@ -203,7 +205,7 @@ class MemberLookupViewModel @Inject constructor(
                 val tz = TimeZone.currentSystemDefault()
                 val localDate = now.toLocalDateTime(tz).date
                 
-                val existingCheckIn = checkInDao.firstForDate(member.membershipId, localDate)
+                val existingCheckIn = checkInDao.firstForDate(member.internalId, localDate)
                 val isFirstScan = existingCheckIn == null
                 
                 val scanEventId = UUID.randomUUID().toString()
@@ -212,6 +214,7 @@ class MemberLookupViewModel @Inject constructor(
                     // Create check-in record
                     val checkIn = CheckIn(
                         id = UUID.randomUUID().toString(),
+                        internalMemberId = member.internalId,
                         membershipId = member.membershipId,
                         createdAtUtc = now,
                         localDate = localDate,
@@ -223,6 +226,7 @@ class MemberLookupViewModel @Inject constructor(
                     scanEventDao.insert(
                         ScanEvent(
                             id = scanEventId,
+                            internalMemberId = member.internalId,
                             membershipId = member.membershipId,
                             createdAtUtc = now,
                             type = ScanEventType.FIRST_SCAN,
@@ -234,6 +238,7 @@ class MemberLookupViewModel @Inject constructor(
                     scanEventDao.insert(
                         ScanEvent(
                             id = scanEventId,
+                            internalMemberId = member.internalId,
                             membershipId = member.membershipId,
                             createdAtUtc = now,
                             type = ScanEventType.REPEAT_SCAN
@@ -241,15 +246,17 @@ class MemberLookupViewModel @Inject constructor(
                     )
                 }
                 
+                // Display membershipId if available, otherwise internalId
+                val displayId = member.membershipId ?: member.internalId
                 val memberName = listOfNotNull(member.firstName, member.lastName)
                     .joinToString(" ")
-                    .ifEmpty { member.membershipId }
+                    .ifEmpty { displayId }
                 
                 _state.value = _state.value.copy(
                     checkInInProgress = false,
                     todayCheckedIn = true,
                     checkInResult = AssistedCheckInResult.Success(
-                        memberId = member.membershipId,
+                        memberId = displayId,
                         scanEventId = scanEventId,
                         isFirstScan = isFirstScan,
                         memberName = memberName

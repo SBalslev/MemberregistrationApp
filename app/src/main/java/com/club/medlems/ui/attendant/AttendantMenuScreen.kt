@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Sync
+import com.club.medlems.data.entity.MemberType
 import androidx.compose.material.icons.filled.Wifi
 // Single-page admin menu (flattened for kiosk)
 
@@ -96,7 +97,8 @@ fun AttendantMenuScreen(
     val filtered by remember {
         derivedStateOf {
             if (query.isBlank()) activeMembers else activeMembers.filter {
-                it.membershipId.contains(query, ignoreCase = true) ||
+                (it.membershipId?.contains(query, ignoreCase = true) == true) ||
+                it.internalId.contains(query, ignoreCase = true) ||
                 it.firstName.contains(query, ignoreCase = true) ||
                 it.lastName.contains(query, ignoreCase = true)
             }.take(50)
@@ -291,19 +293,39 @@ fun AttendantMenuScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedTextField(value = q, onValueChange = { q = it }, label = { Text("Søg (navn eller ID)") }, singleLine = true)
                                     val itemsList = if (q.isBlank()) activeMembers else activeMembers.filter {
-                                        it.membershipId.contains(q, true) || it.firstName.contains(q, true) || it.lastName.contains(q, true)
+                                        (it.membershipId?.contains(q, true) == true) || it.internalId.contains(q, true) || it.firstName.contains(q, true) || it.lastName.contains(q, true)
                                     }.take(50)
                                     if (itemsList.isNotEmpty()) {
                                         LazyColumn(Modifier.heightIn(max = 300.dp)) {
                                             items(itemsList) { m ->
                                                 ListItem(
-                                                    headlineContent = { Text("${m.firstName} ${m.lastName}") },
-                                                    supportingContent = { Text(m.membershipId) },
+                                                    headlineContent = { 
+                                                        Row(
+                                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text("${m.firstName} ${m.lastName}")
+                                                            if (m.memberType == MemberType.TRIAL) {
+                                                                Surface(
+                                                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                                                    shape = MaterialTheme.shapes.small
+                                                                ) {
+                                                                    Text(
+                                                                        "Prøve",
+                                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                        style = MaterialTheme.typography.labelSmall,
+                                                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    supportingContent = { Text(m.membershipId ?: m.internalId.take(8)) },
                                                     trailingContent = {
                                                         TextButton(onClick = {
                                                             attendant.registerInteraction();
                                                             showEditPicker = false;
-                                                            openEditSessions(m.membershipId)
+                                                            openEditSessions(m.membershipId ?: m.internalId)
                                                         }) { Text("Vælg") }
                                                     }
                                                 )
@@ -409,9 +431,9 @@ fun AttendantMenuScreen(
                                 items(itemsList) { m ->
                                     ListItem(
                                         headlineContent = { Text("${m.firstName} ${m.lastName}") },
-                                        supportingContent = { Text(m.membershipId) },
+                                        supportingContent = { Text(m.membershipId ?: m.internalId.take(8)) },
                                         trailingContent = {
-                                            TextButton(onClick = { manualId = m.membershipId }) { Text("Vælg") }
+                                            TextButton(onClick = { manualId = m.membershipId ?: m.internalId }) { Text("Vælg") }
                                         }
                                     )
                                     HorizontalDivider()

@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { X, CreditCard, Banknote, Building2 } from 'lucide-react';
 import type { Member } from '../../types/entities';
-import type { PaymentMethod, MemberType, FeeRate } from '../../types';
+import type { PaymentMethod, FeeRate } from '../../types';
 import { PAYMENT_METHOD_LABELS, MEMBER_TYPE_LABELS } from '../../types';
 
 interface QuickFeePaymentDialogProps {
@@ -39,8 +39,8 @@ export function QuickFeePaymentDialog({
     if (!selectedMemberId) return 0;
     const member = members.find(m => m.membershipId === selectedMemberId);
     if (!member) return 0;
-    const memberType = (member.memberType as MemberType) ?? 'ADULT';
-    const feeRate = feeRates.find(r => r.memberType === memberType && r.fiscalYear === year);
+    const feeCategory = member.feeCategory ?? 'ADULT';
+    const feeRate = feeRates.find(r => r.memberType === feeCategory && r.fiscalYear === year);
     return feeRate?.feeAmount ?? 0;
   };
 
@@ -88,7 +88,7 @@ export function QuickFeePaymentDialog({
   };
 
   const selectedMember = members.find(m => m.membershipId === memberId);
-  const selectedMemberType = (selectedMember?.memberType as MemberType) ?? 'ADULT';
+  const selectedMemberType = selectedMember?.feeCategory ?? 'ADULT';
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -135,8 +135,9 @@ export function QuickFeePaymentDialog({
                   .filter(m => m.status === 'ACTIVE')
                   .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
                   .map((member) => (
-                    <option key={member.membershipId} value={member.membershipId}>
+                    <option key={member.internalId} value={member.membershipId || member.internalId}>
                       {member.firstName} {member.lastName}
+                      {member.memberLifecycleStage === 'TRIAL' ? ' (Prøvemedlem)' : ''}
                     </option>
                   ))}
               </select>

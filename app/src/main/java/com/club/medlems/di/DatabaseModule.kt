@@ -201,13 +201,192 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * MIGRATION_10_11: Trial Member Registration - Data Model Foundation
+     * 
+     * This migration transforms the Member table to support trial members:
+     * - Changes primary key from membershipId to internalId (UUID)
+     * - Makes membershipId nullable (trial members don't have one yet)
+     * - Adds memberType (TRIAL/FULL) to track lifecycle stage
+     * - Adds guardian fields and other registration data
+     * - Adds merge tracking (mergedIntoId) per DD-10
+     * - Adds createdAtUtc timestamp
+     * 
+     * Existing members get:
+     * - internalId generated as deterministic UUID from membershipId
+     * - memberType = FULL (they already have membershipId)
+     * - createdAtUtc = updatedAtUtc (best approximation)
+     */
+    private val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Step 1: Rename existing Member table
+            db.execSQL("ALTER TABLE Member RENAME TO Member_old")
+            
+            // Step 2: Create new Member table with new schema
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS Member (
+                    internalId TEXT NOT NULL PRIMARY KEY,
+                    membershipId TEXT,
+                    memberType TEXT NOT NULL DEFAULT 'FULL',
+                    status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    firstName TEXT NOT NULL,
+                    lastName TEXT NOT NULL,
+                    birthDate TEXT,
+                    gender TEXT,
+                    email TEXT,
+                    phone TEXT,
+                    address TEXT,
+                    zipCode TEXT,
+                    city TEXT,
+                    guardianName TEXT,
+                    guardianPhone TEXT,
+                    guardianEmail TEXT,
+                    expiresOn TEXT,
+                    registrationPhotoPath TEXT,
+                    mergedIntoId TEXT,
+                    createdAtUtc TEXT NOT NULL,
+                    updatedAtUtc TEXT NOT NULL,
+                    deviceId TEXT,
+                    syncVersion INTEGER NOT NULL DEFAULT 0,
+                    syncedAtUtc TEXT
+                )
+            """.trimIndent())
+            
+            // Step 3: Migrate data from old table
+            // Generate deterministic UUID from membershipId using a simple hash approach
+            // SQLite doesn't have UUID functions, so we create a pseudo-UUID from membershipId
+            // Format: xxxxxxxx-xxxx-3xxx-yxxx-xxxxxxxxxxxx where digits come from hex(md5(membershipId))
+            // For simplicity, we'll use substr of hex representation of membershipId padded
+            db.execSQL("""
+                INSERT INTO Member (
+                    internalId,
+                    membershipId,
+                    memberType,
+                    status,
+                    firstName,
+                    lastName,
+                    birthDate,
+                    gender,
+                    email,
+                    phone,
+                    address,
+                    zipCode,
+                    city,
+                    guardianName,
+                    guardianPhone,
+                    guardianEmail,
+                    expiresOn,
+                    registrationPhotoPath,
+                    mergedIntoId,
+                    createdAtUtc,
+                    updatedAtUtc,
+                    deviceId,
+                    syncVersion,
+                    syncedAtUtc
+                )
+                SELECT 
+                    -- Generate UUID v3-style from membershipId: deterministic mapping
+                    lower(hex(substr(membershipId || '00000000', 1, 4))) || '-' ||
+                    lower(hex(substr(membershipId || '0000', 1, 2))) || '-3' ||
+                    lower(hex(substr(membershipId || '000', 1, 1))) ||
+                    substr('0123456789abcdef', (abs(unicode(membershipId)) % 16) + 1, 1) || '-' ||
+                    substr('89ab', (abs(unicode(substr(membershipId, 2, 1) || '0')) % 4) + 1, 1) ||
+                    lower(hex(substr(membershipId || '000', 1, 1))) ||
+                    substr('0123456789abcdef', (abs(unicode(substr(membershipId, 3, 1) || '0')) % 16) + 1, 1) ||
+                    substr('0123456789abcdef', (abs(unicode(substr(membershipId, 4, 1) || '0')) % 16) + 1, 1) || '-' ||
+                    lower(hex(substr(membershipId || '000000', 1, 6))) as internalId,
+                    membershipId,
+                    'FULL' as memberType,
+                    status,
+                    firstName,
+                    lastName,
+                    birthDate,
+                    NULL as gender,
+                    email,
+                    phone,
+                    NULL as address,
+                    NULL as zipCode,
+                    NULL as city,
+                    NULL as guardianName,
+                    NULL as guardianPhone,
+                    NULL as guardianEmail,
+                    expiresOn,
+                    NULL as registrationPhotoPath,
+                    NULL as mergedIntoId,
+                    COALESCE(updatedAtUtc, datetime('now')) as createdAtUtc,
+                    COALESCE(updatedAtUtc, datetime('now')) as updatedAtUtc,
+                    deviceId,
+                    syncVersion,
+                    syncedAtUtc
+                FROM Member_old
+            """.trimIndent())
+            
+            // Step 4: Drop old table
+            db.execSQL("DROP TABLE Member_old")
+            
+            // Step 5: Create indices for new table
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_Member_membershipId ON Member(membershipId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_Member_memberType ON Member(memberType)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_Member_status ON Member(status)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_Member_lastName_firstName ON Member(lastName, firstName)")
+            
+            // ===== Phase 2: Foreign Key Migration for related tables =====
+            // Add internalMemberId column to CheckIn, PracticeSession, ScanEvent, EquipmentCheckout
+            // and populate it by joining with Member table
+            
+            // --- CheckIn table migration ---
+            db.execSQL("ALTER TABLE CheckIn ADD COLUMN internalMemberId TEXT NOT NULL DEFAULT ''")
+            // Populate internalMemberId from Member table using membershipId lookup
+            db.execSQL("""
+                UPDATE CheckIn SET internalMemberId = (
+                    SELECT m.internalId FROM Member m WHERE m.membershipId = CheckIn.membershipId
+                ) WHERE membershipId IS NOT NULL
+            """.trimIndent())
+            // For any records that couldn't be matched, use membershipId as fallback
+            db.execSQL("UPDATE CheckIn SET internalMemberId = membershipId WHERE internalMemberId = '' AND membershipId IS NOT NULL")
+            // Create new indices
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_CheckIn_internalMemberId_localDate ON CheckIn(internalMemberId, localDate)")
+            
+            // --- PracticeSession table migration ---
+            db.execSQL("ALTER TABLE PracticeSession ADD COLUMN internalMemberId TEXT NOT NULL DEFAULT ''")
+            db.execSQL("""
+                UPDATE PracticeSession SET internalMemberId = (
+                    SELECT m.internalId FROM Member m WHERE m.membershipId = PracticeSession.membershipId
+                ) WHERE membershipId IS NOT NULL
+            """.trimIndent())
+            db.execSQL("UPDATE PracticeSession SET internalMemberId = membershipId WHERE internalMemberId = '' AND membershipId IS NOT NULL")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_PracticeSession_internalMemberId ON PracticeSession(internalMemberId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_PracticeSession_internalMemberId_practiceType_classification ON PracticeSession(internalMemberId, practiceType, classification)")
+            
+            // --- ScanEvent table migration ---
+            db.execSQL("ALTER TABLE ScanEvent ADD COLUMN internalMemberId TEXT NOT NULL DEFAULT ''")
+            db.execSQL("""
+                UPDATE ScanEvent SET internalMemberId = (
+                    SELECT m.internalId FROM Member m WHERE m.membershipId = ScanEvent.membershipId
+                ) WHERE membershipId IS NOT NULL
+            """.trimIndent())
+            db.execSQL("UPDATE ScanEvent SET internalMemberId = membershipId WHERE internalMemberId = '' AND membershipId IS NOT NULL")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_ScanEvent_internalMemberId ON ScanEvent(internalMemberId)")
+            
+            // --- EquipmentCheckout table migration ---
+            db.execSQL("ALTER TABLE EquipmentCheckout ADD COLUMN internalMemberId TEXT NOT NULL DEFAULT ''")
+            db.execSQL("""
+                UPDATE EquipmentCheckout SET internalMemberId = (
+                    SELECT m.internalId FROM Member m WHERE m.membershipId = EquipmentCheckout.membershipId
+                ) WHERE membershipId IS NOT NULL
+            """.trimIndent())
+            db.execSQL("UPDATE EquipmentCheckout SET internalMemberId = membershipId WHERE internalMemberId = '' AND membershipId IS NOT NULL")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_EquipmentCheckout_internalMemberId ON EquipmentCheckout(internalMemberId)")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).fallbackToDestructiveMigration().build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11).fallbackToDestructiveMigration().build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()

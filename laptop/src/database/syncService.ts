@@ -3,13 +3,33 @@
  * Handles registration sync with photo storage.
  * Implements initial full sync for first-time device pairing.
  * 
+ * FR-7.3: NewMemberRegistration sync deprecated - incoming registrations
+ * are auto-converted to trial members for backward compatibility.
+ * 
  * @see [design.md FR-18] - Sync Protocol Specification
  * @see [design.md FR-23] - Initial Data Migration Strategy
  */
 
 import { execute, query } from './db';
-import type { NewMemberRegistration, ApprovalStatus } from '../types/entities';
+import type { NewMemberRegistration } from '../types/entities';
 import { getAllMembers } from './memberRepository';
+
+// ===== Sync Schema Version =====
+// Must match Android SyncSchemaVersion (same major = compatible)
+export const SYNC_SCHEMA_VERSION = '1.1.0';
+export const SYNC_SCHEMA_MAJOR = 1;
+
+/**
+ * Check if a schema version is compatible with ours.
+ * Same major version = compatible (backward compatible within major).
+ */
+export function isSchemaCompatible(otherVersion: string): boolean {
+  const parts = otherVersion.split('.');
+  if (parts.length < 1) return false;
+  const otherMajor = parseInt(parts[0], 10);
+  if (isNaN(otherMajor)) return false;
+  return otherMajor === SYNC_SCHEMA_MAJOR;
+}
 
 /**
  * Incoming sync payload from tablet/admin devices.
@@ -30,13 +50,36 @@ export interface SyncPayload {
 }
 
 interface SyncableMember {
-  membershipId: string;
+  /** Immutable UUID, primary key across all devices */
+  internalId: string;
+  /** Club-assigned ID, null for trial members */
+  membershipId?: string | null;
+  /** Lifecycle stage: TRIAL or FULL (Android sends as memberType) */
+  memberType?: 'TRIAL' | 'FULL';
+  /** @deprecated Use memberType. Kept for backward compatibility. */
+  memberLifecycleStage?: 'TRIAL' | 'FULL';
+  /** Operational status: ACTIVE or INACTIVE */
+  status?: string;
+  // Personal Information
   firstName: string;
   lastName: string;
+  birthDate?: string | null;
+  gender?: string | null;
   email?: string | null;
   phone?: string | null;
-  status?: string;
-  birthDate?: string | null;
+  address?: string | null;
+  zipCode?: string | null;
+  city?: string | null;
+  // Guardian Information
+  guardianName?: string | null;
+  guardianPhone?: string | null;
+  guardianEmail?: string | null;
+  // Membership
+  expiresOn?: string | null;
+  registrationPhotoPath?: string | null;
+  photoBase64?: string | null;
+  mergedIntoId?: string | null;
+  // Sync metadata
   deviceId: string;
   syncVersion: number;
   createdAtUtc: string;
@@ -45,7 +88,8 @@ interface SyncableMember {
 
 interface SyncableCheckIn {
   id: string;
-  membershipId: string;
+  internalMemberId: string; // FK to Member.internalId
+  membershipId?: string | null; // Deprecated, retained for backward compatibility
   localDate: string;
   firstOfDayFlag: boolean;
   deviceId: string;
@@ -55,7 +99,8 @@ interface SyncableCheckIn {
 
 interface SyncablePracticeSession {
   id: string;
-  membershipId: string;
+  internalMemberId: string; // FK to Member.internalId
+  membershipId?: string | null; // Deprecated, retained for backward compatibility
   localDate: string;
   practiceType: string;
   points: number;
@@ -107,7 +152,8 @@ interface SyncableEquipmentItem {
 interface SyncableEquipmentCheckout {
   id: string;
   equipmentId: string;
-  membershipId: string;
+  internalMemberId: string; // FK to Member.internalId
+  membershipId?: string | null; // Deprecated, retained for backward compatibility
   checkedOutAtUtc: string;
   checkedInAtUtc?: string | null;
   checkedOutByDeviceId: string;
@@ -123,6 +169,8 @@ interface SyncableEquipmentCheckout {
 }
 
 export interface SyncResult {
+  membersAdded: number;
+  membersUpdated: number;
   registrationsAdded: number;
   registrationsUpdated: number;
   checkInsAdded: number;
@@ -139,6 +187,8 @@ export interface SyncResult {
  */
 export async function processSyncPayload(payload: SyncPayload): Promise<SyncResult> {
   const result: SyncResult = {
+    membersAdded: 0,
+    membersUpdated: 0,
     registrationsAdded: 0,
     registrationsUpdated: 0,
     checkInsAdded: 0,
@@ -150,6 +200,29 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
   };
 
   console.log(`[SyncService] Processing payload from ${payload.deviceId}`);
+  
+  // Process members (especially trial members from tablets)
+  if (payload.entities.members) {
+    console.log(`[SyncService] Processing ${payload.entities.members.length} members`);
+    for (const member of payload.entities.members) {
+      try {
+        const processed = await processMember(member);
+        if (processed === 'added') {
+          result.membersAdded++;
+          if (member.photoBase64) {
+            result.photosStored++;
+          }
+        } else if (processed === 'updated') {
+          result.membersUpdated++;
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`Member ${member.internalId}: ${msg}`);
+        console.error(`[SyncService] Error processing member ${member.internalId}:`, error);
+      }
+    }
+  }
+  
   console.log(`[SyncService] Registrations: ${payload.entities.newMemberRegistrations?.length || 0}`);
 
   // Process new member registrations
@@ -233,43 +306,49 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
-  console.log(`[SyncService] Sync complete: ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts`);
+  console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts`);
   return result;
 }
 
 /**
  * Process a single registration from sync payload.
- * Stores photo as base64 data URL in the database.
+ * 
+ * FR-7.3: NewMemberRegistration is deprecated. Incoming registrations are now
+ * auto-converted to trial members (Member with memberType = TRIAL).
+ * 
+ * This maintains backward compatibility with older tablets that still send
+ * NewMemberRegistration entities instead of Member entities.
  */
 async function processRegistration(
   reg: SyncableNewMemberRegistration,
   sourceDeviceId: string
 ): Promise<'added' | 'updated' | 'skipped'> {
-  // Check if registration already exists
-  const existing = query<{ id: string }>(
-    'SELECT id FROM NewMemberRegistration WHERE id = ?',
-    [reg.id]
+  const now = new Date().toISOString();
+  
+  // FR-7.3: Convert incoming registration to trial member
+  // Use registration ID as the member's internalId for continuity
+  const internalId = reg.id;
+  
+  // Check if a member already exists with this internalId (already converted)
+  const existingMember = query<{ internalId: string; syncVersion: number }>(
+    'SELECT internalId, syncVersion FROM Member WHERE internalId = ?',
+    [internalId]
   );
-
-  if (existing.length > 0) {
-    // Check if we should update (newer sync version)
-    const current = query<{ syncVersion: number }>(
-      'SELECT syncVersion FROM NewMemberRegistration WHERE id = ?',
-      [reg.id]
-    );
-    
-    if (current[0]?.syncVersion >= reg.syncVersion) {
-      return 'skipped'; // Our version is same or newer
+  
+  if (existingMember.length > 0) {
+    // Member already exists - check syncVersion
+    if (existingMember[0].syncVersion >= reg.syncVersion) {
+      return 'skipped';
     }
-
-    // Update existing registration
+    
+    // Update existing member with registration data
     execute(
-      `UPDATE NewMemberRegistration SET
+      `UPDATE Member SET
         firstName = ?, lastName = ?, birthday = ?, gender = ?,
         email = ?, phone = ?, address = ?, zipCode = ?, city = ?,
         guardianName = ?, guardianPhone = ?, guardianEmail = ?,
-        photoPath = ?, sourceDeviceId = ?, syncVersion = ?, syncedAtUtc = ?
-      WHERE id = ?`,
+        photoPath = ?, updatedAtUtc = ?, syncVersion = ?
+      WHERE internalId = ?`,
       [
         reg.firstName,
         reg.lastName,
@@ -284,37 +363,50 @@ async function processRegistration(
         reg.guardianPhone ?? null,
         reg.guardianEmail ?? null,
         reg.photoBase64 ? `data:image/jpeg;base64,${reg.photoBase64}` : reg.photoPath,
-        sourceDeviceId,
+        now,
         reg.syncVersion,
-        new Date().toISOString(),
-        reg.id
+        internalId
       ]
     );
+    console.log(`[SyncService] FR-7.3: Updated trial member from registration ${reg.id}`);
     return 'updated';
   }
-
-  // Map approval status
-  let approvalStatus: ApprovalStatus = 'PENDING';
-  if (reg.approvalStatus === 'APPROVED') approvalStatus = 'APPROVED';
-  if (reg.approvalStatus === 'REJECTED') approvalStatus = 'REJECTED';
-
+  
+  // Also check if we still have the old NewMemberRegistration record
+  const existingReg = query<{ id: string }>(
+    'SELECT id FROM NewMemberRegistration WHERE id = ?',
+    [reg.id]
+  );
+  
+  // If old registration exists, mark it as converted (for cleanup later)
+  if (existingReg.length > 0) {
+    execute(
+      `UPDATE NewMemberRegistration SET 
+        approvalStatus = 'APPROVED', 
+        createdMemberId = ?,
+        syncedAtUtc = ?
+      WHERE id = ?`,
+      [internalId, now, reg.id]
+    );
+  }
+  
   // Convert photo to data URL if base64 is provided
   const photoPath = reg.photoBase64 
     ? `data:image/jpeg;base64,${reg.photoBase64}`
     : reg.photoPath;
 
-  // Insert new registration
+  // FR-7.3: Create new trial member from registration data
   execute(
-    `INSERT INTO NewMemberRegistration (
-      id, firstName, lastName, birthday, gender, email, phone,
-      address, zipCode, city, notes, photoPath,
+    `INSERT INTO Member (
+      internalId, membershipId, firstName, lastName, birthday, gender,
+      email, phone, address, zipCode, city,
       guardianName, guardianPhone, guardianEmail,
-      sourceDeviceId, sourceDeviceName, approvalStatus,
-      approvedAtUtc, rejectedAtUtc, rejectionReason, createdMemberId,
-      createdAtUtc, syncedAtUtc, syncVersion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      photoPath, memberType, status, registeredByDeviceId,
+      createdAtUtc, updatedAtUtc, syncVersion
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      reg.id,
+      internalId,
+      null, // membershipId - to be assigned later
       reg.firstName,
       reg.lastName,
       reg.birthDate ?? null,
@@ -324,24 +416,131 @@ async function processRegistration(
       reg.address ?? null,
       reg.zipCode ?? null,
       reg.city ?? null,
-      null, // notes
-      photoPath,
       reg.guardianName ?? null,
       reg.guardianPhone ?? null,
       reg.guardianEmail ?? null,
+      photoPath,
+      'TRIAL', // memberType - convert to trial member
+      'ACTIVE', // status
       sourceDeviceId,
-      null, // sourceDeviceName - we don't have it in the payload
-      approvalStatus,
-      null, // approvedAtUtc
-      null, // rejectedAtUtc
-      null, // rejectionReason
-      null, // createdMemberId
       reg.createdAtUtc,
-      new Date().toISOString(),
+      now,
       reg.syncVersion
     ]
   );
 
+  console.log(`[SyncService] FR-7.3: Converted registration ${reg.id} to trial member`);
+  return 'added';
+}
+
+/**
+ * Process a member from sync payload.
+ * Handles trial members from tablets - upserts by internalId.
+ * For existing members, only updates if incoming syncVersion is higher.
+ */
+async function processMember(
+  member: SyncableMember
+): Promise<'added' | 'updated' | 'skipped'> {
+  // Check if member already exists by internalId
+  const existing = query<{ internalId: string; syncVersion: number }>(
+    'SELECT internalId, syncVersion FROM Member WHERE internalId = ?',
+    [member.internalId]
+  );
+
+  const now = new Date().toISOString();
+  // Handle memberType from Android or memberLifecycleStage (deprecated)
+  const memberLifecycleStage = member.memberType || member.memberLifecycleStage || 'FULL';
+  const status = member.status || 'ACTIVE';
+  
+  // Convert photo to data URL if base64 is provided
+  const registrationPhotoPath = member.photoBase64 
+    ? `data:image/jpeg;base64,${member.photoBase64}`
+    : (member.registrationPhotoPath ?? null);
+
+  if (existing.length > 0) {
+    // Member exists - check if we should update
+    if (existing[0].syncVersion >= member.syncVersion) {
+      return 'skipped'; // Our version is same or newer
+    }
+    
+    // Update existing member
+    execute(
+      `UPDATE Member SET
+        membershipId = ?, memberLifecycleStage = ?, status = ?,
+        firstName = ?, lastName = ?, birthDate = ?, gender = ?,
+        email = ?, phone = ?, address = ?, zipCode = ?, city = ?,
+        guardianName = ?, guardianPhone = ?, guardianEmail = ?,
+        expiresOn = ?, registrationPhotoPath = ?, mergedIntoId = ?,
+        syncVersion = ?, updatedAtUtc = ?, syncedAtUtc = ?
+       WHERE internalId = ?`,
+      [
+        member.membershipId ?? null,
+        memberLifecycleStage,
+        status,
+        member.firstName,
+        member.lastName,
+        member.birthDate ?? null,
+        member.gender ?? null,
+        member.email ?? null,
+        member.phone ?? null,
+        member.address ?? null,
+        member.zipCode ?? null,
+        member.city ?? null,
+        member.guardianName ?? null,
+        member.guardianPhone ?? null,
+        member.guardianEmail ?? null,
+        member.expiresOn ?? null,
+        registrationPhotoPath,
+        member.mergedIntoId ?? null,
+        member.syncVersion,
+        member.modifiedAtUtc,
+        now,
+        member.internalId
+      ]
+    );
+    console.log(`[SyncService] Updated member ${member.internalId}: ${member.firstName} ${member.lastName}`);
+    return 'updated';
+  }
+
+  // Insert new member
+  execute(
+    `INSERT INTO Member (
+      internalId, membershipId, memberLifecycleStage, status,
+      firstName, lastName, birthDate, gender, email, phone,
+      address, zipCode, city, guardianName, guardianPhone, guardianEmail,
+      expiresOn, registrationPhotoPath, mergedIntoId, memberType,
+      createdAtUtc, updatedAtUtc, deviceId, syncVersion, syncedAtUtc
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      member.internalId,
+      member.membershipId ?? null,
+      memberLifecycleStage,
+      status,
+      member.firstName,
+      member.lastName,
+      member.birthDate ?? null,
+      member.gender ?? null,
+      member.email ?? null,
+      member.phone ?? null,
+      member.address ?? null,
+      member.zipCode ?? null,
+      member.city ?? null,
+      member.guardianName ?? null,
+      member.guardianPhone ?? null,
+      member.guardianEmail ?? null,
+      member.expiresOn ?? null,
+      registrationPhotoPath,
+      member.mergedIntoId ?? null,
+      'ADULT', // memberType for fee tracking
+      member.createdAtUtc,
+      member.modifiedAtUtc,
+      member.deviceId,
+      member.syncVersion,
+      now
+    ]
+  );
+  
+  console.log(`[SyncService] Added member ${member.internalId}: ${member.firstName} ${member.lastName} (${memberLifecycleStage})`);
   return 'added';
 }
 
@@ -395,14 +594,28 @@ export function getMemberDataForFullSync(): SyncableMember[] {
   const members = getAllMembers();
   
   return members.map(m => ({
+    internalId: m.internalId,
     membershipId: m.membershipId,
+    memberType: m.memberLifecycleStage as 'TRIAL' | 'FULL', // Android expects memberType
+    memberLifecycleStage: m.memberLifecycleStage as 'TRIAL' | 'FULL', // Keep for backward compat
+    status: m.status,
     firstName: m.firstName,
     lastName: m.lastName,
+    birthDate: m.birthday,
+    gender: m.gender,
     email: m.email,
     phone: m.phone,
-    status: m.status,
-    birthDate: m.birthday,
-    deviceId: 'laptop-master',
+    address: m.address,
+    zipCode: m.zipCode,
+    city: m.city,
+    guardianName: m.guardianName,
+    guardianPhone: m.guardianPhone,
+    guardianEmail: m.guardianEmail,
+    expiresOn: m.expiresOn,
+    registrationPhotoPath: m.registrationPhotoPath,
+    // Don't send photoBase64 from laptop - photos are stored as data URLs already
+    mergedIntoId: m.mergedIntoId,
+    deviceId: m.deviceId || 'laptop-master',
     syncVersion: m.syncVersion,
     createdAtUtc: m.createdAtUtc,
     modifiedAtUtc: m.updatedAtUtc
@@ -472,15 +685,16 @@ export async function processInitialSyncPayload(payload: SyncPayload): Promise<I
   result.membersReceived = payload.entities.members?.length || 0;
   
   // Log any member conflicts (where tablet has different data)
+  // Now uses internalId as the primary key
   if (payload.entities.members) {
     for (const tabletMember of payload.entities.members) {
-      const existing = query<{ membershipId: string }>(
-        'SELECT membershipId FROM Member WHERE membershipId = ?',
-        [tabletMember.membershipId]
+      const existing = query<{ internalId: string }>(
+        'SELECT internalId FROM Member WHERE internalId = ?',
+        [tabletMember.internalId]
       );
       if (existing.length > 0) {
         result.memberConflicts++;
-        console.log(`[InitialSync] Member conflict: ${tabletMember.membershipId} - laptop version kept`);
+        console.log(`[InitialSync] Member conflict: ${tabletMember.internalId} - laptop version kept`);
       }
     }
   }
@@ -518,11 +732,12 @@ async function processCheckIn(checkIn: SyncableCheckIn): Promise<boolean> {
   }
 
   execute(
-    `INSERT INTO CheckIn (id, membershipId, localDate, createdAtUtc, syncedAtUtc, syncVersion)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO CheckIn (id, internalMemberId, membershipId, localDate, createdAtUtc, syncedAtUtc, syncVersion)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
       checkIn.id,
-      checkIn.membershipId,
+      checkIn.internalMemberId,
+      checkIn.membershipId ?? null,
       checkIn.localDate,
       checkIn.createdAtUtc,
       new Date().toISOString(),
@@ -550,12 +765,13 @@ async function processPracticeSession(session: SyncablePracticeSession): Promise
 
   execute(
     `INSERT INTO PracticeSession (
-      id, membershipId, localDate, practiceType, classification, 
+      id, internalMemberId, membershipId, localDate, practiceType, classification, 
       points, krydser, notes, createdAtUtc, syncedAtUtc, syncVersion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       session.id,
-      session.membershipId,
+      session.internalMemberId,
+      session.membershipId ?? null,
       session.localDate,
       session.practiceType,
       session.classification || '',
@@ -662,14 +878,15 @@ async function processEquipmentCheckout(checkout: SyncableEquipmentCheckout): Pr
     // Update existing checkout - map sync fields to DB schema
     execute(
       `UPDATE EquipmentCheckout SET
-        equipmentId = ?, membershipId = ?, checkedOutAtUtc = ?,
+        equipmentId = ?, internalMemberId = ?, membershipId = ?, checkedOutAtUtc = ?,
         checkedInAtUtc = ?, checkedOutByDeviceId = ?, checkedInByDeviceId = ?,
         checkoutNotes = ?, checkinNotes = ?, conflictStatus = ?,
         syncVersion = ?, modifiedAtUtc = ?, syncedAtUtc = ?
        WHERE id = ?`,
       [
         checkout.equipmentId,
-        checkout.membershipId,
+        checkout.internalMemberId,
+        checkout.membershipId ?? null,
         checkout.checkedOutAtUtc,
         checkout.checkedInAtUtc ?? null,
         checkout.checkedOutByDeviceId,
@@ -690,14 +907,15 @@ async function processEquipmentCheckout(checkout: SyncableEquipmentCheckout): Pr
   // Insert new checkout - map sync fields to DB schema
   execute(
     `INSERT INTO EquipmentCheckout (
-      id, equipmentId, membershipId, checkedOutAtUtc, checkedInAtUtc,
+      id, equipmentId, internalMemberId, membershipId, checkedOutAtUtc, checkedInAtUtc,
       checkedOutByDeviceId, checkedInByDeviceId, checkoutNotes, checkinNotes,
       conflictStatus, syncVersion, createdAtUtc, modifiedAtUtc, syncedAtUtc
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       checkout.id,
       checkout.equipmentId,
-      checkout.membershipId,
+      checkout.internalMemberId,
+      checkout.membershipId ?? null,
       checkout.checkedOutAtUtc,
       checkout.checkedInAtUtc ?? null,
       checkout.checkedOutByDeviceId,
@@ -753,7 +971,7 @@ export function getEquipmentForSync(): { equipmentItems: SyncableEquipmentItem[]
   }));
   
   const checkouts = query<SyncableEquipmentCheckout>(
-    `SELECT id, equipmentId, membershipId, checkedOutAtUtc, checkedInAtUtc,
+    `SELECT id, equipmentId, internalMemberId, membershipId, checkedOutAtUtc, checkedInAtUtc,
             checkedOutByDeviceId, checkedInByDeviceId, checkoutNotes, checkinNotes,
             conflictStatus, checkedOutByDeviceId as deviceId, syncVersion, createdAtUtc, modifiedAtUtc, syncedAtUtc
      FROM EquipmentCheckout`
@@ -771,7 +989,7 @@ export function getFullSyncPayload(): SyncPayload {
   const { equipmentItems, equipmentCheckouts } = getEquipmentForSync();
   
   return {
-    schemaVersion: '9.0.0',
+    schemaVersion: SYNC_SCHEMA_VERSION,
     deviceId: 'laptop-master',
     deviceType: 'LAPTOP', // Must match Android DeviceType enum
     timestamp: new Date().toISOString(),

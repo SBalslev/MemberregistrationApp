@@ -557,11 +557,11 @@ export function TransactionDialog({
                               <option value="">Ingen medlem</option>
                               {activeMembers.map((member) => (
                                 <option
-                                  key={member.membershipId}
-                                  value={member.membershipId}
+                                  key={member.internalId}
+                                  value={member.membershipId || member.internalId}
                                 >
-                                  {member.firstName} {member.lastName} (
-                                  {member.membershipId})
+                                  {member.firstName} {member.lastName}
+                                  {member.membershipId ? ` (${member.membershipId})` : ' (Prøvemedlem)'}
                                 </option>
                               ))}
                             </select>
