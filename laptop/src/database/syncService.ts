@@ -17,7 +17,7 @@ import { processPhoto } from '../utils/photoStorage';
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
-export const SYNC_SCHEMA_VERSION = '1.1.0';
+export const SYNC_SCHEMA_VERSION = '1.2.0'; // 1.2.0: Added memberPreferences for preference sync
 export const SYNC_SCHEMA_MAJOR = 1;
 
 /**
@@ -47,6 +47,9 @@ export interface SyncPayload {
     newMemberRegistrations?: SyncableNewMemberRegistration[];
     equipmentItems?: SyncableEquipmentItem[];
     equipmentCheckouts?: SyncableEquipmentCheckout[];
+    memberPreferences?: SyncableMemberPreference[];
+    trainerInfos?: SyncableTrainerInfo[];
+    trainerDisciplines?: SyncableTrainerDiscipline[];
   };
 }
 
@@ -169,6 +172,50 @@ interface SyncableEquipmentCheckout {
   syncedAtUtc?: string | null;
 }
 
+/**
+ * Member practice preferences for sync between tablets via laptop.
+ * Allows preferences to transfer when replacing a member tablet.
+ */
+interface SyncableMemberPreference {
+  memberId: string; // FK to Member.internalId
+  lastPracticeType?: string | null; // PracticeType enum name
+  lastClassification?: string | null;
+  updatedAtUtc: string;
+}
+
+/**
+ * Trainer info for sync between devices.
+ * Tracks trainer designations and certifications.
+ */
+interface SyncableTrainerInfo {
+  memberId: string; // FK to Member.internalId
+  isTrainer: boolean;
+  hasSkydelederCertificate: boolean;
+  certifiedDate?: string | null;
+  deviceId: string;
+  syncVersion: number;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
+  syncedAtUtc?: string | null;
+}
+
+/**
+ * Trainer discipline qualification for sync between devices.
+ * Tracks which disciplines a trainer is qualified to supervise.
+ */
+interface SyncableTrainerDiscipline {
+  id: string;
+  memberId: string; // FK to Member.internalId
+  discipline: string; // PracticeType enum name
+  level: string; // TrainerLevel enum name: FULL or ASSISTANT
+  certifiedDate?: string | null;
+  deviceId: string;
+  syncVersion: number;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
+  syncedAtUtc?: string | null;
+}
+
 export interface SyncResult {
   membersAdded: number;
   membersUpdated: number;
@@ -179,6 +226,9 @@ export interface SyncResult {
   photosStored: number;
   equipmentItemsProcessed: number;
   equipmentCheckoutsProcessed: number;
+  memberPreferencesProcessed: number;
+  trainerInfosProcessed: number;
+  trainerDisciplinesProcessed: number;
   errors: string[];
 }
 
@@ -197,6 +247,9 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     photosStored: 0,
     equipmentItemsProcessed: 0,
     equipmentCheckoutsProcessed: 0,
+    memberPreferencesProcessed: 0,
+    trainerInfosProcessed: 0,
+    trainerDisciplinesProcessed: 0,
     errors: []
   };
 
@@ -307,7 +360,52 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
-  console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts`);
+  // Process member preferences (from member tablets)
+  if (payload.entities.memberPreferences) {
+    console.log(`[SyncService] Processing ${payload.entities.memberPreferences.length} member preferences`);
+    for (const pref of payload.entities.memberPreferences) {
+      try {
+        const processed = await processMemberPreference(pref);
+        if (processed) result.memberPreferencesProcessed++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`MemberPreference ${pref.memberId}: ${msg}`);
+        console.error(`[SyncService] Error processing member preference ${pref.memberId}:`, error);
+      }
+    }
+  }
+
+  // Process trainer infos
+  if (payload.entities.trainerInfos) {
+    console.log(`[SyncService] Processing ${payload.entities.trainerInfos.length} trainer infos`);
+    for (const trainerInfo of payload.entities.trainerInfos) {
+      try {
+        const processed = await processTrainerInfo(trainerInfo);
+        if (processed) result.trainerInfosProcessed++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`TrainerInfo ${trainerInfo.memberId}: ${msg}`);
+        console.error(`[SyncService] Error processing trainer info ${trainerInfo.memberId}:`, error);
+      }
+    }
+  }
+
+  // Process trainer disciplines
+  if (payload.entities.trainerDisciplines) {
+    console.log(`[SyncService] Processing ${payload.entities.trainerDisciplines.length} trainer disciplines`);
+    for (const discipline of payload.entities.trainerDisciplines) {
+      try {
+        const processed = await processTrainerDiscipline(discipline);
+        if (processed) result.trainerDisciplinesProcessed++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`TrainerDiscipline ${discipline.id}: ${msg}`);
+        console.error(`[SyncService] Error processing trainer discipline ${discipline.id}:`, error);
+      }
+    }
+  }
+
+  console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts, ${result.memberPreferencesProcessed} preferences, ${result.trainerInfosProcessed} trainer infos, ${result.trainerDisciplinesProcessed} trainer disciplines`);
   return result;
 }
 
@@ -1028,13 +1126,232 @@ export function getEquipmentForSync(): { equipmentItems: SyncableEquipmentItem[]
 }
 
 /**
+ * Process a member preference from sync payload.
+ * Upserts preferences - newer updatedAtUtc wins.
+ */
+async function processMemberPreference(pref: SyncableMemberPreference): Promise<boolean> {
+  // Check if already exists
+  const existing = query<{ memberId: string; updatedAtUtc: string }>(
+    'SELECT memberId, updatedAtUtc FROM MemberPreference WHERE memberId = ?',
+    [pref.memberId]
+  );
+
+  if (existing.length > 0) {
+    // Only update if incoming is newer
+    if (existing[0].updatedAtUtc >= pref.updatedAtUtc) {
+      return false; // Our version is same or newer
+    }
+
+    // Update existing preference
+    execute(
+      `UPDATE MemberPreference SET
+        lastPracticeType = ?, lastClassification = ?, updatedAtUtc = ?
+       WHERE memberId = ?`,
+      [
+        pref.lastPracticeType ?? null,
+        pref.lastClassification ?? null,
+        pref.updatedAtUtc,
+        pref.memberId
+      ]
+    );
+    console.log(`[SyncService] Updated member preference for ${pref.memberId}`);
+    return true;
+  }
+
+  // Insert new preference
+  execute(
+    `INSERT INTO MemberPreference (memberId, lastPracticeType, lastClassification, updatedAtUtc)
+     VALUES (?, ?, ?, ?)`,
+    [
+      pref.memberId,
+      pref.lastPracticeType ?? null,
+      pref.lastClassification ?? null,
+      pref.updatedAtUtc
+    ]
+  );
+
+  console.log(`[SyncService] Added member preference for ${pref.memberId}`);
+  return true;
+}
+
+/**
+ * Get member preferences for sync to member tablets.
+ * Used to transfer preferences when a new tablet is paired.
+ */
+export function getMemberPreferencesForSync(): SyncableMemberPreference[] {
+  return query<SyncableMemberPreference>(
+    `SELECT memberId, lastPracticeType, lastClassification, updatedAtUtc
+     FROM MemberPreference`
+  );
+}
+
+/**
+ * Process a trainer info record from sync payload.
+ * Upserts trainer info - higher syncVersion wins.
+ */
+async function processTrainerInfo(trainerInfo: SyncableTrainerInfo): Promise<boolean> {
+  // Check if already exists
+  const existing = query<{ memberId: string; syncVersion: number }>(
+    'SELECT memberId, syncVersion FROM TrainerInfo WHERE memberId = ?',
+    [trainerInfo.memberId]
+  );
+
+  const now = new Date().toISOString();
+
+  if (existing.length > 0) {
+    // Only update if incoming has higher version
+    if (existing[0].syncVersion >= trainerInfo.syncVersion) {
+      return false; // Our version is same or newer
+    }
+
+    // Update existing trainer info
+    execute(
+      `UPDATE TrainerInfo SET
+        isTrainer = ?, hasSkydelederCertificate = ?, certifiedDate = ?,
+        modifiedAtUtc = ?, deviceId = ?, syncVersion = ?, syncedAtUtc = ?
+       WHERE memberId = ?`,
+      [
+        trainerInfo.isTrainer ? 1 : 0,
+        trainerInfo.hasSkydelederCertificate ? 1 : 0,
+        trainerInfo.certifiedDate ?? null,
+        trainerInfo.modifiedAtUtc,
+        trainerInfo.deviceId,
+        trainerInfo.syncVersion,
+        now,
+        trainerInfo.memberId
+      ]
+    );
+    console.log(`[SyncService] Updated trainer info for ${trainerInfo.memberId}`);
+    return true;
+  }
+
+  // Insert new trainer info
+  execute(
+    `INSERT INTO TrainerInfo (
+      memberId, isTrainer, hasSkydelederCertificate, certifiedDate,
+      createdAtUtc, modifiedAtUtc, deviceId, syncVersion, syncedAtUtc
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      trainerInfo.memberId,
+      trainerInfo.isTrainer ? 1 : 0,
+      trainerInfo.hasSkydelederCertificate ? 1 : 0,
+      trainerInfo.certifiedDate ?? null,
+      trainerInfo.createdAtUtc,
+      trainerInfo.modifiedAtUtc,
+      trainerInfo.deviceId,
+      trainerInfo.syncVersion,
+      now
+    ]
+  );
+
+  console.log(`[SyncService] Added trainer info for ${trainerInfo.memberId}`);
+  return true;
+}
+
+/**
+ * Process a trainer discipline record from sync payload.
+ * Upserts trainer discipline - higher syncVersion wins.
+ */
+async function processTrainerDiscipline(discipline: SyncableTrainerDiscipline): Promise<boolean> {
+  // Check if already exists
+  const existing = query<{ id: string; syncVersion: number }>(
+    'SELECT id, syncVersion FROM TrainerDiscipline WHERE id = ?',
+    [discipline.id]
+  );
+
+  const now = new Date().toISOString();
+
+  if (existing.length > 0) {
+    // Only update if incoming has higher version
+    if (existing[0].syncVersion >= discipline.syncVersion) {
+      return false; // Our version is same or newer
+    }
+
+    // Update existing discipline
+    execute(
+      `UPDATE TrainerDiscipline SET
+        memberId = ?, discipline = ?, level = ?, certifiedDate = ?,
+        modifiedAtUtc = ?, deviceId = ?, syncVersion = ?, syncedAtUtc = ?
+       WHERE id = ?`,
+      [
+        discipline.memberId,
+        discipline.discipline,
+        discipline.level,
+        discipline.certifiedDate ?? null,
+        discipline.modifiedAtUtc,
+        discipline.deviceId,
+        discipline.syncVersion,
+        now,
+        discipline.id
+      ]
+    );
+    console.log(`[SyncService] Updated trainer discipline ${discipline.id}`);
+    return true;
+  }
+
+  // Insert new discipline
+  execute(
+    `INSERT INTO TrainerDiscipline (
+      id, memberId, discipline, level, certifiedDate,
+      createdAtUtc, modifiedAtUtc, deviceId, syncVersion, syncedAtUtc
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      discipline.id,
+      discipline.memberId,
+      discipline.discipline,
+      discipline.level,
+      discipline.certifiedDate ?? null,
+      discipline.createdAtUtc,
+      discipline.modifiedAtUtc,
+      discipline.deviceId,
+      discipline.syncVersion,
+      now
+    ]
+  );
+
+  console.log(`[SyncService] Added trainer discipline ${discipline.id}`);
+  return true;
+}
+
+/**
+ * Get trainer data for sync to tablets.
+ * Returns all trainer infos and disciplines.
+ */
+export function getTrainerDataForSync(): { trainerInfos: SyncableTrainerInfo[], trainerDisciplines: SyncableTrainerDiscipline[] } {
+  const trainerInfos = query<SyncableTrainerInfo>(
+    `SELECT memberId, isTrainer, hasSkydelederCertificate, certifiedDate,
+            deviceId, syncVersion, createdAtUtc, modifiedAtUtc, syncedAtUtc
+     FROM TrainerInfo`
+  ).map(info => ({
+    ...info,
+    isTrainer: Boolean(info.isTrainer),
+    hasSkydelederCertificate: Boolean(info.hasSkydelederCertificate)
+  }));
+
+  const trainerDisciplines = query<SyncableTrainerDiscipline>(
+    `SELECT id, memberId, discipline, level, certifiedDate,
+            deviceId, syncVersion, createdAtUtc, modifiedAtUtc, syncedAtUtc
+     FROM TrainerDiscipline`
+  );
+
+  return { trainerInfos, trainerDisciplines };
+}
+
+/**
  * Get full sync payload for a device that is doing initial sync.
  * Returns all member data to be pushed to the tablet.
+ * For MEMBER_TABLET devices, also includes member preferences.
  */
-export function getFullSyncPayload(): SyncPayload {
+export function getFullSyncPayload(deviceType?: string): SyncPayload {
   const members = getMemberDataForFullSync();
   const { equipmentItems, equipmentCheckouts } = getEquipmentForSync();
-  
+  const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
+
+  // Only include member preferences for MEMBER_TABLET devices
+  const memberPreferences = deviceType === 'MEMBER_TABLET'
+    ? getMemberPreferencesForSync()
+    : [];
+
   return {
     schemaVersion: SYNC_SCHEMA_VERSION,
     deviceId: 'laptop-master',
@@ -1046,7 +1363,10 @@ export function getFullSyncPayload(): SyncPayload {
       practiceSessions: [],
       newMemberRegistrations: [],
       equipmentItems,
-      equipmentCheckouts
+      equipmentCheckouts,
+      memberPreferences,
+      trainerInfos,
+      trainerDisciplines
     }
   };
 }

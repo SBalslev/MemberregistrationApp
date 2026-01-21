@@ -5,17 +5,18 @@
 
 import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { 
-  DashboardPage, 
-  MembersPage, 
-  EquipmentPage, 
+import {
+  DashboardPage,
+  MembersPage,
+  EquipmentPage,
   FinancePage,
-  DevicesPage, 
-  ConflictsPage, 
+  DevicesPage,
+  ConflictsPage,
   SettingsPage,
-  ImportPage
+  ImportPage,
+  TrainersPage
 } from './pages';
-import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, runPhotoMigration, isMigrationNeeded, type SyncPayload } from './database';
+import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, getMemberPreferencesForSync, runPhotoMigration, isMigrationNeeded, type SyncPayload } from './database';
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
 
@@ -123,8 +124,9 @@ function App() {
           // ===== Promise-based IPC handlers for sync data =====
           
           // Handle sync:get-members - main process requests member data
-          api?.onGetMembersRequest?.(() => {
-            console.log('[App] IPC get-members request');
+          api?.onGetMembersRequest?.((data) => {
+            const deviceType = data?.deviceType || 'MEMBER_TABLET';
+            console.log(`[App] IPC get-members request for ${deviceType}`);
             const members = getMemberDataForFullSync();
             // NOTE: NewMemberRegistration sync deprecated per FR-7.3
             // Trial members now sync as Member entities with memberType = TRIAL
@@ -132,12 +134,17 @@ function App() {
             const registrations: never[] = [];
             // Include equipment data
             const { equipmentItems, equipmentCheckouts } = getEquipmentForSync();
-            console.log(`[App] Returning ${members.length} members, ${equipmentItems.length} equipment items for sync`);
+            // Include member preferences only for MEMBER_TABLET devices
+            const memberPreferences = deviceType === 'MEMBER_TABLET'
+              ? getMemberPreferencesForSync()
+              : [];
+            console.log(`[App] Returning ${members.length} members, ${equipmentItems.length} equipment items, ${memberPreferences.length} preferences for sync`);
             return {
               members,
               registrations,
               equipmentItems,
               equipmentCheckouts,
+              memberPreferences,
               count: members.length,
               timestamp: new Date().toISOString()
             };
@@ -244,6 +251,8 @@ function PageRouter({ currentPage }: { currentPage: string }) {
     // Legacy route redirects to members page (trial members managed there now)
     case 'registrations':
       return <MembersPage />;
+    case 'trainers':
+      return <TrainersPage />;
     case 'equipment':
       return <EquipmentPage />;
     case 'finance':

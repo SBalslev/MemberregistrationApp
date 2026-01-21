@@ -1,6 +1,7 @@
 package com.club.medlems.data.entity
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.datetime.Instant
@@ -17,6 +18,7 @@ enum class MemberType {
 /** Member operational status */
 enum class MemberStatus { ACTIVE, INACTIVE }
 enum class PracticeType { Riffel, Pistol, LuftRiffel, LuftPistol, Andet }
+enum class TrainerLevel { FULL, ASSISTANT }
 enum class ScanEventType { FIRST_SCAN, REPEAT_SCAN }
 enum class SessionSource { kiosk, attendant }
 
@@ -234,11 +236,13 @@ data class EquipmentItem(
     val description: String? = null,
     /** Current status */
     val status: EquipmentStatus = EquipmentStatus.Available,
+    /** Optional discipline this equipment is associated with */
+    val discipline: PracticeType? = null,
     /** Device that created this equipment item */
     val createdByDeviceId: String,
     val createdAtUtc: Instant,
     val modifiedAtUtc: Instant,
-    
+
     // Sync metadata fields
     val deviceId: String? = null,
     val syncVersion: Long = 0,
@@ -247,7 +251,7 @@ data class EquipmentItem(
 
 /**
  * Equipment checkout record for tracking equipment loans to members.
- * 
+ *
  * @see [design.md FR-8.3] - EquipmentCheckout schema
  */
 @Entity(indices = [
@@ -284,8 +288,115 @@ data class EquipmentCheckout(
     val conflictResolutionNotes: String? = null,
     val createdAtUtc: Instant,
     val modifiedAtUtc: Instant,
-    
+
     // Sync metadata fields
+    val deviceId: String? = null,
+    val syncVersion: Long = 0,
+    val syncedAtUtc: Instant? = null
+)
+
+// ===== Member Preference Entity (for sync of UI preferences) =====
+
+/**
+ * Member practice preferences (last selected discipline/classification).
+ * Synced between tablets via the laptop to preserve preferences when replacing devices.
+ *
+ * @see [design.md member-preference-sync] - Member Preference Sync feature
+ */
+@Entity(tableName = "member_preference")
+data class MemberPreference(
+    /** FK to Member.internalId */
+    @PrimaryKey
+    val memberId: String,
+
+    /** Last selected PracticeType enum name (e.g., "Riffel", "Pistol") */
+    val lastPracticeType: String? = null,
+
+    /** Last selected classification within the practice type */
+    val lastClassification: String? = null,
+
+    /** When this preference was last updated */
+    val updatedAtUtc: Instant
+)
+
+// ===== Trainer Experience Entities =====
+
+/**
+ * Trainer information for a member.
+ * Tracks whether a member is a trainer and their certifications.
+ *
+ * @see [trainer-experience/prd.md] - Trainer Experience Feature
+ */
+@Entity(
+    tableName = "trainer_info",
+    foreignKeys = [ForeignKey(
+        entity = Member::class,
+        parentColumns = ["internalId"],
+        childColumns = ["memberId"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+data class TrainerInfo(
+    /** FK to Member.internalId */
+    @PrimaryKey
+    val memberId: String,
+
+    /** Whether the member is designated as a trainer */
+    val isTrainer: Boolean = false,
+
+    /** Whether the member has Skydeleder (Range Officer) certification */
+    val hasSkydelederCertificate: Boolean = false,
+
+    /** Date when Skydeleder certificate was obtained */
+    val certifiedDate: Instant? = null,
+
+    // Timestamps
+    val createdAtUtc: Instant,
+    val modifiedAtUtc: Instant,
+
+    // Sync metadata
+    val deviceId: String? = null,
+    val syncVersion: Long = 0,
+    val syncedAtUtc: Instant? = null
+)
+
+/**
+ * Trainer discipline qualification.
+ * Tracks which disciplines a trainer is qualified to supervise.
+ *
+ * @see [trainer-experience/prd.md] - Trainer Experience Feature
+ */
+@Entity(
+    tableName = "trainer_discipline",
+    foreignKeys = [ForeignKey(
+        entity = Member::class,
+        parentColumns = ["internalId"],
+        childColumns = ["memberId"],
+        onDelete = ForeignKey.CASCADE
+    )],
+    indices = [Index("memberId")]
+)
+data class TrainerDiscipline(
+    @PrimaryKey
+    val id: String,
+
+    /** FK to Member.internalId */
+    val memberId: String,
+
+    /** The discipline type (Riffel, Pistol, etc.) */
+    val discipline: PracticeType,
+
+    /** Trainer level for this discipline */
+    val level: TrainerLevel,
+
+    /** Date when certification for this discipline was obtained */
+    val certifiedDate: Instant? = null,
+
+    // Timestamps
+    val createdAtUtc: Instant,
+    val modifiedAtUtc: Instant,
+
+    // Sync metadata
     val deviceId: String? = null,
     val syncVersion: Long = 0,
     val syncedAtUtc: Instant? = null

@@ -5,16 +5,23 @@ import com.club.medlems.data.dao.CheckInDao
 import com.club.medlems.data.dao.EquipmentCheckoutDao
 import com.club.medlems.data.dao.EquipmentItemDao
 import com.club.medlems.data.dao.MemberDao
+import com.club.medlems.data.dao.MemberPreferenceDao
 import com.club.medlems.data.dao.NewMemberRegistrationDao
 import com.club.medlems.data.dao.PracticeSessionDao
 import com.club.medlems.data.dao.ScanEventDao
+import com.club.medlems.data.dao.TrainerDisciplineDao
+import com.club.medlems.data.dao.TrainerInfoDao
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.MemberPreference
 import com.club.medlems.data.entity.MemberStatus
 import com.club.medlems.data.entity.MemberType
 import com.club.medlems.data.entity.NewMemberRegistration
 import com.club.medlems.data.entity.PracticeSession
+import com.club.medlems.data.entity.TrainerDiscipline
+import com.club.medlems.data.entity.TrainerInfo
 import com.club.medlems.domain.prefs.DeviceConfigPreferences
+import com.club.medlems.domain.prefs.LastClassificationStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
@@ -45,9 +52,13 @@ class SyncRepository @Inject constructor(
     private val newMemberRegistrationDao: NewMemberRegistrationDao,
     private val equipmentItemDao: EquipmentItemDao,
     private val equipmentCheckoutDao: EquipmentCheckoutDao,
+    private val memberPreferenceDao: MemberPreferenceDao,
+    private val trainerInfoDao: TrainerInfoDao,
+    private val trainerDisciplineDao: TrainerDisciplineDao,
     private val conflictDetector: ConflictDetector,
     private val conflictRepository: ConflictRepository,
-    private val deviceConfigPreferences: DeviceConfigPreferences
+    private val deviceConfigPreferences: DeviceConfigPreferences,
+    private val lastClassificationStore: LastClassificationStore
 ) {
     companion object {
         private const val TAG = "SyncRepository"
@@ -69,7 +80,7 @@ class SyncRepository @Inject constructor(
         deviceId: String
     ): SyncEntities = withContext(Dispatchers.IO) {
         Log.d(TAG, "Collecting changes since $since")
-        
+
         val members = memberDao.allMembers().map { it.toSyncable(deviceId) }
         val checkIns = checkInDao.checkInsCreatedAfter(since).map { it.toSyncable(deviceId) }
         val sessions = practiceSessionDao.sessionsCreatedAfter(since).map { it.toSyncable(deviceId) }
@@ -77,18 +88,23 @@ class SyncRepository @Inject constructor(
             .map { it.toSyncable(deviceId) }
         val equipmentItems = equipmentItemDao.getUnsynced().map { it.toSyncable(deviceId) }
         val equipmentCheckouts = equipmentCheckoutDao.getUnsynced().map { it.toSyncable(deviceId) }
-        
+        val trainerInfos = trainerInfoDao.getUnsynced().map { it.toSyncable(deviceId) }
+        val trainerDisciplines = trainerDisciplineDao.getUnsynced().map { it.toSyncable(deviceId) }
+
         Log.i(TAG, "Collected: ${members.size} members, ${checkIns.size} check-ins, " +
             "${sessions.size} sessions, ${registrations.size} registrations, " +
-            "${equipmentItems.size} equipment items, ${equipmentCheckouts.size} checkouts")
-        
+            "${equipmentItems.size} equipment items, ${equipmentCheckouts.size} checkouts, " +
+            "${trainerInfos.size} trainer infos, ${trainerDisciplines.size} trainer disciplines")
+
         SyncEntities(
             members = members,
             checkIns = checkIns,
             practiceSessions = sessions,
             newMemberRegistrations = registrations,
             equipmentItems = equipmentItems,
-            equipmentCheckouts = equipmentCheckouts
+            equipmentCheckouts = equipmentCheckouts,
+            trainerInfos = trainerInfos,
+            trainerDisciplines = trainerDisciplines
         )
     }
     
@@ -243,12 +259,68 @@ class SyncRepository @Inject constructor(
                 Log.e(TAG, "Error processing checkout ${syncCheckout.id}", e)
             }
         }
-        
+
+        // Process member preferences
+        // Only Member tablets need these preferences - apply to both Room and SharedPreferences
+        var memberPreferencesProcessed = 0
+        if (localDeviceType == DeviceType.MEMBER_TABLET && payload.entities.memberPreferences.isNotEmpty()) {
+            try {
+                val preferences = payload.entities.memberPreferences.map { it.toEntity() }
+                lastClassificationStore.applyFromSync(preferences)
+                memberPreferencesProcessed = preferences.size
+                Log.d(TAG, "Applied ${preferences.size} member preferences from sync")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing member preferences", e)
+            }
+        }
+
+        // Process trainer infos
+        // Laptop is master for trainer data - updates flow from laptop to tablets
+        var trainerInfosProcessed = 0
+        payload.entities.trainerInfos.forEach { syncTrainerInfo ->
+            try {
+                val existing = trainerInfoDao.get(syncTrainerInfo.memberId)
+                if (existing == null) {
+                    // New trainer info - insert it
+                    trainerInfoDao.upsert(syncTrainerInfo.toEntity())
+                    trainerInfosProcessed++
+                } else if (syncTrainerInfo.syncVersion > existing.syncVersion) {
+                    // Incoming has higher version - update local record
+                    trainerInfoDao.upsert(syncTrainerInfo.toEntity())
+                    trainerInfosProcessed++
+                    Log.d(TAG, "Updated trainer info ${syncTrainerInfo.memberId}: version=${syncTrainerInfo.syncVersion}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing trainer info ${syncTrainerInfo.memberId}", e)
+            }
+        }
+
+        // Process trainer disciplines
+        var trainerDisciplinesProcessed = 0
+        payload.entities.trainerDisciplines.forEach { syncDiscipline ->
+            try {
+                val existing = trainerDisciplineDao.get(syncDiscipline.id)
+                if (existing == null) {
+                    // New discipline - insert it
+                    trainerDisciplineDao.upsert(syncDiscipline.toEntity())
+                    trainerDisciplinesProcessed++
+                } else if (syncDiscipline.syncVersion > existing.syncVersion) {
+                    // Incoming has higher version - update local record
+                    trainerDisciplineDao.upsert(syncDiscipline.toEntity())
+                    trainerDisciplinesProcessed++
+                    Log.d(TAG, "Updated trainer discipline ${syncDiscipline.id}: version=${syncDiscipline.syncVersion}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing trainer discipline ${syncDiscipline.id}", e)
+            }
+        }
+
         Log.i(TAG, "Sync applied: $membersProcessed members, $checkInsProcessed check-ins, " +
             "$sessionsProcessed sessions, $registrationsProcessed registrations, " +
             "$equipmentItemsProcessed equipment items, $equipmentCheckoutsProcessed checkouts, " +
-            "${conflicts.size} conflicts")
-        
+            "$memberPreferencesProcessed member preferences, $trainerInfosProcessed trainer infos, " +
+            "$trainerDisciplinesProcessed trainer disciplines, ${conflicts.size} conflicts")
+
         SyncResult(
             membersProcessed = membersProcessed,
             checkInsProcessed = checkInsProcessed,
@@ -256,6 +328,8 @@ class SyncRepository @Inject constructor(
             registrationsProcessed = registrationsProcessed,
             equipmentItemsProcessed = equipmentItemsProcessed,
             equipmentCheckoutsProcessed = equipmentCheckoutsProcessed,
+            trainerInfosProcessed = trainerInfosProcessed,
+            trainerDisciplinesProcessed = trainerDisciplinesProcessed,
             conflicts = conflicts
         )
     }
@@ -350,14 +424,36 @@ class SyncRepository @Inject constructor(
         } else {
             emptyList()
         }
-        
+
+        // Include member preferences when pushing to laptop (for backup/transfer to new tablets)
+        val memberPreferences = if (destinationDeviceType == DeviceType.LAPTOP) {
+            memberPreferenceDao.getAll().map { it.toSyncable() }
+        } else {
+            emptyList()
+        }
+
+        // Include trainer data when pushing to laptop (laptop is master for trainer data)
+        val trainerInfos = if (destinationDeviceType == DeviceType.LAPTOP) {
+            trainerInfoDao.getUnsynced().map { it.toSyncable(deviceId) }
+        } else {
+            emptyList()
+        }
+        val trainerDisciplines = if (destinationDeviceType == DeviceType.LAPTOP) {
+            trainerDisciplineDao.getUnsynced().map { it.toSyncable(deviceId) }
+        } else {
+            emptyList()
+        }
+
         SyncEntities(
             members = members,
             checkIns = checkInDao.getUnsynced().map { it.toSyncable(deviceId) },
             practiceSessions = practiceSessionDao.getUnsynced().map { it.toSyncable(deviceId) },
             newMemberRegistrations = newMemberRegistrationDao.getUnsynced().map { it.toSyncable(deviceId) },
             equipmentItems = equipmentItemDao.getUnsynced().map { it.toSyncable(deviceId) },
-            equipmentCheckouts = equipmentCheckoutDao.getUnsynced().map { it.toSyncable(deviceId) }
+            equipmentCheckouts = equipmentCheckoutDao.getUnsynced().map { it.toSyncable(deviceId) },
+            memberPreferences = memberPreferences,
+            trainerInfos = trainerInfos,
+            trainerDisciplines = trainerDisciplines
         )
     }
     
@@ -374,6 +470,8 @@ class SyncRepository @Inject constructor(
         entities.newMemberRegistrations.forEach { newMemberRegistrationDao.markSynced(it.id, syncedAt) }
         entities.equipmentItems.forEach { equipmentItemDao.markSynced(it.id, syncedAt) }
         entities.equipmentCheckouts.forEach { equipmentCheckoutDao.markSynced(it.id, syncedAt) }
+        entities.trainerInfos.forEach { trainerInfoDao.markSynced(it.memberId, syncedAt) }
+        entities.trainerDisciplines.forEach { trainerDisciplineDao.markSynced(it.id, syncedAt) }
     }
     
     /**
@@ -681,6 +779,73 @@ class SyncRepository @Inject constructor(
         syncVersion = syncVersion,
         syncedAtUtc = syncedAtUtc
     )
+
+    // Member preference converters
+    private fun MemberPreference.toSyncable() = SyncableMemberPreference(
+        memberId = memberId,
+        lastPracticeType = lastPracticeType,
+        lastClassification = lastClassification,
+        updatedAtUtc = updatedAtUtc
+    )
+
+    private fun SyncableMemberPreference.toEntity() = MemberPreference(
+        memberId = memberId,
+        lastPracticeType = lastPracticeType,
+        lastClassification = lastClassification,
+        updatedAtUtc = updatedAtUtc
+    )
+
+    // Trainer info converters
+    private fun TrainerInfo.toSyncable(deviceId: String) = SyncableTrainerInfo(
+        memberId = memberId,
+        isTrainer = isTrainer,
+        hasSkydelederCertificate = hasSkydelederCertificate,
+        certifiedDate = certifiedDate,
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        createdAtUtc = createdAtUtc,
+        modifiedAtUtc = modifiedAtUtc,
+        syncedAtUtc = syncedAtUtc
+    )
+
+    private fun SyncableTrainerInfo.toEntity() = TrainerInfo(
+        memberId = memberId,
+        isTrainer = isTrainer,
+        hasSkydelederCertificate = hasSkydelederCertificate,
+        certifiedDate = certifiedDate,
+        createdAtUtc = createdAtUtc,
+        modifiedAtUtc = modifiedAtUtc,
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        syncedAtUtc = syncedAtUtc
+    )
+
+    // Trainer discipline converters
+    private fun TrainerDiscipline.toSyncable(deviceId: String) = SyncableTrainerDiscipline(
+        id = id,
+        memberId = memberId,
+        discipline = discipline,
+        level = level,
+        certifiedDate = certifiedDate,
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        createdAtUtc = createdAtUtc,
+        modifiedAtUtc = modifiedAtUtc,
+        syncedAtUtc = syncedAtUtc
+    )
+
+    private fun SyncableTrainerDiscipline.toEntity() = TrainerDiscipline(
+        id = id,
+        memberId = memberId,
+        discipline = discipline,
+        level = level,
+        certifiedDate = certifiedDate,
+        createdAtUtc = createdAtUtc,
+        modifiedAtUtc = modifiedAtUtc,
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        syncedAtUtc = syncedAtUtc
+    )
 }
 
 /**
@@ -693,15 +858,18 @@ data class SyncResult(
     val registrationsProcessed: Int = 0,
     val equipmentItemsProcessed: Int = 0,
     val equipmentCheckoutsProcessed: Int = 0,
+    val trainerInfosProcessed: Int = 0,
+    val trainerDisciplinesProcessed: Int = 0,
     val conflicts: List<SyncConflict> = emptyList(),
     val errorMessage: String? = null
 ) {
-    val totalProcessed: Int get() = membersProcessed + checkInsProcessed + 
-        sessionsProcessed + registrationsProcessed + 
-        equipmentItemsProcessed + equipmentCheckoutsProcessed
+    val totalProcessed: Int get() = membersProcessed + checkInsProcessed +
+        sessionsProcessed + registrationsProcessed +
+        equipmentItemsProcessed + equipmentCheckoutsProcessed +
+        trainerInfosProcessed + trainerDisciplinesProcessed
     val hasConflicts: Boolean get() = conflicts.isNotEmpty()
     val hasErrors: Boolean get() = errorMessage != null || conflicts.isNotEmpty()
-    
+
     /**
      * Combines this result with another, summing counts and merging conflicts.
      */
@@ -712,6 +880,8 @@ data class SyncResult(
         registrationsProcessed = this.registrationsProcessed + other.registrationsProcessed,
         equipmentItemsProcessed = this.equipmentItemsProcessed + other.equipmentItemsProcessed,
         equipmentCheckoutsProcessed = this.equipmentCheckoutsProcessed + other.equipmentCheckoutsProcessed,
+        trainerInfosProcessed = this.trainerInfosProcessed + other.trainerInfosProcessed,
+        trainerDisciplinesProcessed = this.trainerDisciplinesProcessed + other.trainerDisciplinesProcessed,
         conflicts = this.conflicts + other.conflicts,
         errorMessage = this.errorMessage ?: other.errorMessage
     )

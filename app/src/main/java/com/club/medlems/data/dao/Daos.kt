@@ -1,7 +1,20 @@
 package com.club.medlems.data.dao
 
 import androidx.room.*
-import com.club.medlems.data.entity.*
+import com.club.medlems.data.entity.CheckIn
+import com.club.medlems.data.entity.ConflictStatus
+import com.club.medlems.data.entity.EquipmentCheckout
+import com.club.medlems.data.entity.EquipmentItem
+import com.club.medlems.data.entity.EquipmentStatus
+import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.MemberPreference
+import com.club.medlems.data.entity.MemberStatus
+import com.club.medlems.data.entity.NewMemberRegistration
+import com.club.medlems.data.entity.PracticeSession
+import com.club.medlems.data.entity.PracticeType
+import com.club.medlems.data.entity.ScanEvent
+import com.club.medlems.data.entity.TrainerDiscipline
+import com.club.medlems.data.entity.TrainerInfo
 import kotlinx.coroutines.flow.Flow
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
@@ -392,7 +405,136 @@ interface EquipmentCheckoutDao {
     // Sync-related queries
     @Query("UPDATE EquipmentCheckout SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
     suspend fun markSynced(id: String, syncedAt: Instant)
-    
+
     @Query("SELECT * FROM EquipmentCheckout WHERE syncedAtUtc IS NULL")
     suspend fun getUnsynced(): List<EquipmentCheckout>
+}
+
+// ===== Member Preference DAO (for sync of UI preferences) =====
+
+/**
+ * DAO for MemberPreference entity.
+ * Used to sync practice preferences between tablets via the laptop.
+ *
+ * @see [design.md member-preference-sync] - Member Preference Sync feature
+ */
+@Dao
+interface MemberPreferenceDao {
+    /** Get preference for a specific member */
+    @Query("SELECT * FROM member_preference WHERE memberId = :memberId")
+    suspend fun get(memberId: String): MemberPreference?
+
+    /** Insert or update a preference */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(preference: MemberPreference)
+
+    /** Get all preferences (for sync push) */
+    @Query("SELECT * FROM member_preference")
+    suspend fun getAll(): List<MemberPreference>
+
+    /** Get preferences updated since a timestamp (for incremental sync) */
+    @Query("SELECT * FROM member_preference WHERE updatedAtUtc > :since ORDER BY updatedAtUtc ASC")
+    suspend fun getModifiedSince(since: Instant): List<MemberPreference>
+
+    /** Delete preference for a member */
+    @Query("DELETE FROM member_preference WHERE memberId = :memberId")
+    suspend fun delete(memberId: String)
+
+    /** Delete all preferences */
+    @Query("DELETE FROM member_preference")
+    suspend fun deleteAll()
+}
+
+// ===== Trainer Experience DAOs =====
+
+/**
+ * DAO for TrainerInfo entity.
+ * Manages trainer designations and certifications.
+ *
+ * @see [trainer-experience/prd.md] - Trainer Experience Feature
+ */
+@Dao
+interface TrainerInfoDao {
+    /** Get trainer info for a specific member */
+    @Query("SELECT * FROM trainer_info WHERE memberId = :memberId")
+    suspend fun get(memberId: String): TrainerInfo?
+
+    /** Get all trainers (members marked as trainers) */
+    @Query("SELECT * FROM trainer_info WHERE isTrainer = 1")
+    suspend fun getAllTrainers(): List<TrainerInfo>
+
+    /** Get all trainers as Flow for real-time updates */
+    @Query("SELECT * FROM trainer_info WHERE isTrainer = 1")
+    fun getAllTrainersFlow(): Flow<List<TrainerInfo>>
+
+    /** Insert or update trainer info */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(trainerInfo: TrainerInfo)
+
+    /** Delete trainer info for a member */
+    @Query("DELETE FROM trainer_info WHERE memberId = :memberId")
+    suspend fun delete(memberId: String)
+
+    /** Delete all trainer info */
+    @Query("DELETE FROM trainer_info")
+    suspend fun deleteAll()
+
+    // Sync-related queries
+    @Query("SELECT * FROM trainer_info WHERE syncedAtUtc IS NULL OR syncedAtUtc < modifiedAtUtc")
+    suspend fun getUnsynced(): List<TrainerInfo>
+
+    @Query("UPDATE trainer_info SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE memberId = :memberId")
+    suspend fun markSynced(memberId: String, syncedAt: Instant)
+}
+
+/**
+ * DAO for TrainerDiscipline entity.
+ * Manages discipline qualifications for trainers.
+ *
+ * @see [trainer-experience/prd.md] - Trainer Experience Feature
+ */
+@Dao
+interface TrainerDisciplineDao {
+    /** Get all disciplines for a trainer */
+    @Query("SELECT * FROM trainer_discipline WHERE memberId = :memberId")
+    suspend fun getDisciplinesForTrainer(memberId: String): List<TrainerDiscipline>
+
+    /** Get all disciplines for a trainer as Flow */
+    @Query("SELECT * FROM trainer_discipline WHERE memberId = :memberId")
+    fun getDisciplinesForTrainerFlow(memberId: String): Flow<List<TrainerDiscipline>>
+
+    /** Get a specific discipline by ID */
+    @Query("SELECT * FROM trainer_discipline WHERE id = :id")
+    suspend fun get(id: String): TrainerDiscipline?
+
+    /** Get trainers qualified for a specific discipline */
+    @Query("SELECT * FROM trainer_discipline WHERE discipline = :discipline")
+    suspend fun getTrainersForDiscipline(discipline: PracticeType): List<TrainerDiscipline>
+
+    /** Insert a new discipline qualification */
+    @Insert
+    suspend fun insert(discipline: TrainerDiscipline)
+
+    /** Insert or update a discipline qualification */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(discipline: TrainerDiscipline)
+
+    /** Delete a discipline qualification */
+    @Delete
+    suspend fun delete(discipline: TrainerDiscipline)
+
+    /** Delete all disciplines for a trainer */
+    @Query("DELETE FROM trainer_discipline WHERE memberId = :memberId")
+    suspend fun deleteAllForTrainer(memberId: String)
+
+    /** Delete all discipline qualifications */
+    @Query("DELETE FROM trainer_discipline")
+    suspend fun deleteAll()
+
+    // Sync-related queries
+    @Query("SELECT * FROM trainer_discipline WHERE syncedAtUtc IS NULL OR syncedAtUtc < modifiedAtUtc")
+    suspend fun getUnsynced(): List<TrainerDiscipline>
+
+    @Query("UPDATE trainer_discipline SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
+    suspend fun markSynced(id: String, syncedAt: Instant)
 }

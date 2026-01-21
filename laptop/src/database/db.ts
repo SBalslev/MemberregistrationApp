@@ -8,7 +8,7 @@
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 
 // Schema version matching Android app
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 // SQL.js instance (singleton)
 let SQL: SqlJsStatic | null = null;
@@ -409,6 +409,71 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('TrustedDevice.tokenExpiresAt');
   }
 
+  // ===== Migration: MemberPreference table for sync of UI preferences =====
+  const memberPrefCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='MemberPreference'");
+  if (memberPrefCheck.length === 0 || memberPrefCheck[0].values.length === 0) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS MemberPreference (
+        memberId TEXT PRIMARY KEY NOT NULL,
+        lastPracticeType TEXT,
+        lastClassification TEXT,
+        updatedAtUtc TEXT NOT NULL
+      )
+    `);
+    migrationsRun.push('MemberPreference table created');
+  }
+
+  // ===== Migration: Schema v11 - Trainer Experience =====
+  // Add TrainerInfo table
+  const trainerInfoCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='TrainerInfo'");
+  if (trainerInfoCheck.length === 0 || trainerInfoCheck[0].values.length === 0) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS TrainerInfo (
+        memberId TEXT PRIMARY KEY NOT NULL,
+        isTrainer INTEGER NOT NULL DEFAULT 0,
+        hasSkydelederCertificate INTEGER NOT NULL DEFAULT 0,
+        certifiedDate TEXT,
+        createdAtUtc TEXT NOT NULL,
+        modifiedAtUtc TEXT NOT NULL,
+        deviceId TEXT,
+        syncVersion INTEGER NOT NULL DEFAULT 0,
+        syncedAtUtc TEXT,
+        FOREIGN KEY (memberId) REFERENCES Member(internalId)
+      )
+    `);
+    migrationsRun.push('TrainerInfo table created');
+  }
+
+  // Add TrainerDiscipline table
+  const trainerDisciplineCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='TrainerDiscipline'");
+  if (trainerDisciplineCheck.length === 0 || trainerDisciplineCheck[0].values.length === 0) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS TrainerDiscipline (
+        id TEXT PRIMARY KEY NOT NULL,
+        memberId TEXT NOT NULL,
+        discipline TEXT NOT NULL,
+        level TEXT NOT NULL,
+        certifiedDate TEXT,
+        createdAtUtc TEXT NOT NULL,
+        modifiedAtUtc TEXT NOT NULL,
+        deviceId TEXT,
+        syncVersion INTEGER NOT NULL DEFAULT 0,
+        syncedAtUtc TEXT,
+        FOREIGN KEY (memberId) REFERENCES Member(internalId)
+      )
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_TrainerDiscipline_memberId ON TrainerDiscipline(memberId)');
+    migrationsRun.push('TrainerDiscipline table created');
+  }
+
+  // Add discipline column to EquipmentItem if missing
+  const equipmentColumns = db.exec("PRAGMA table_info(EquipmentItem)");
+  const existingEquipmentColumns = equipmentColumns[0]?.values.map(row => row[1] as string) || [];
+  if (!existingEquipmentColumns.includes('discipline')) {
+    db.run('ALTER TABLE EquipmentItem ADD COLUMN discipline TEXT');
+    migrationsRun.push('EquipmentItem.discipline');
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -541,6 +606,7 @@ async function createSchema(): Promise<void> {
       description TEXT,
       equipmentType TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'AVAILABLE',
+      discipline TEXT,
       notes TEXT,
       createdAtUtc TEXT NOT NULL,
       createdByDeviceId TEXT NOT NULL,
@@ -675,6 +741,44 @@ async function createSchema(): Promise<void> {
       FOREIGN KEY (categoryId) REFERENCES PostingCategory(id),
       FOREIGN KEY (memberId) REFERENCES Member(membershipId)
     );
+
+    -- Member preferences for practice type/classification sync
+    CREATE TABLE IF NOT EXISTS MemberPreference (
+      memberId TEXT PRIMARY KEY NOT NULL,
+      lastPracticeType TEXT,
+      lastClassification TEXT,
+      updatedAtUtc TEXT NOT NULL
+    );
+
+    -- Trainer info table for trainer designations and certifications
+    CREATE TABLE IF NOT EXISTS TrainerInfo (
+      memberId TEXT PRIMARY KEY NOT NULL,
+      isTrainer INTEGER NOT NULL DEFAULT 0,
+      hasSkydelederCertificate INTEGER NOT NULL DEFAULT 0,
+      certifiedDate TEXT,
+      createdAtUtc TEXT NOT NULL,
+      modifiedAtUtc TEXT NOT NULL,
+      deviceId TEXT,
+      syncVersion INTEGER NOT NULL DEFAULT 0,
+      syncedAtUtc TEXT,
+      FOREIGN KEY (memberId) REFERENCES Member(internalId)
+    );
+
+    -- Trainer discipline qualifications
+    CREATE TABLE IF NOT EXISTS TrainerDiscipline (
+      id TEXT PRIMARY KEY NOT NULL,
+      memberId TEXT NOT NULL,
+      discipline TEXT NOT NULL,
+      level TEXT NOT NULL,
+      certifiedDate TEXT,
+      createdAtUtc TEXT NOT NULL,
+      modifiedAtUtc TEXT NOT NULL,
+      deviceId TEXT,
+      syncVersion INTEGER NOT NULL DEFAULT 0,
+      syncedAtUtc TEXT,
+      FOREIGN KEY (memberId) REFERENCES Member(internalId)
+    );
+    CREATE INDEX IF NOT EXISTS idx_TrainerDiscipline_memberId ON TrainerDiscipline(memberId);
 
     -- Schema version metadata
     CREATE TABLE IF NOT EXISTS _schema_version (

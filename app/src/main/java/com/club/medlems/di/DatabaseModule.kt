@@ -12,6 +12,7 @@ import dagger.hilt.components.SingletonComponent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Singleton
 import com.club.medlems.domain.security.AttendantModeManager
+import com.club.medlems.domain.trainer.TrainerSessionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
@@ -380,13 +381,83 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * MIGRATION_11_12: Member Preference Sync
+     *
+     * Adds member_preference table to store practice preferences for sync between tablets.
+     * This allows preferences (last discipline/classification) to transfer when replacing tablets.
+     */
+    private val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS member_preference (
+                    memberId TEXT NOT NULL PRIMARY KEY,
+                    lastPracticeType TEXT,
+                    lastClassification TEXT,
+                    updatedAtUtc TEXT NOT NULL
+                )
+            """.trimIndent())
+        }
+    }
+
+    /**
+     * MIGRATION_12_13: Trainer Experience
+     *
+     * Adds trainer_info and trainer_discipline tables for the Trainer Experience feature.
+     * Also adds discipline column to EquipmentItem for equipment categorization.
+     *
+     * @see [trainer-experience/prd.md] - Trainer Experience Feature
+     */
+    private val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Create trainer_info table
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS trainer_info (
+                    memberId TEXT NOT NULL PRIMARY KEY,
+                    isTrainer INTEGER NOT NULL DEFAULT 0,
+                    hasSkydelederCertificate INTEGER NOT NULL DEFAULT 0,
+                    certifiedDate TEXT,
+                    createdAtUtc TEXT NOT NULL,
+                    modifiedAtUtc TEXT NOT NULL,
+                    deviceId TEXT,
+                    syncVersion INTEGER NOT NULL DEFAULT 0,
+                    syncedAtUtc TEXT,
+                    FOREIGN KEY (memberId) REFERENCES Member(internalId) ON DELETE CASCADE
+                )
+            """.trimIndent())
+
+            // Create trainer_discipline table
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS trainer_discipline (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    memberId TEXT NOT NULL,
+                    discipline TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    certifiedDate TEXT,
+                    createdAtUtc TEXT NOT NULL,
+                    modifiedAtUtc TEXT NOT NULL,
+                    deviceId TEXT,
+                    syncVersion INTEGER NOT NULL DEFAULT 0,
+                    syncedAtUtc TEXT,
+                    FOREIGN KEY (memberId) REFERENCES Member(internalId) ON DELETE CASCADE
+                )
+            """.trimIndent())
+
+            // Create index on trainer_discipline.memberId
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_trainer_discipline_memberId ON trainer_discipline(memberId)")
+
+            // Add discipline column to EquipmentItem
+            db.execSQL("ALTER TABLE EquipmentItem ADD COLUMN discipline TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11).fallbackToDestructiveMigration().build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13).fallbackToDestructiveMigration().build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()
@@ -404,6 +475,12 @@ object DatabaseModule {
     fun equipmentItemDao(db: AppDatabase) = db.equipmentItemDao()
     @Provides
     fun equipmentCheckoutDao(db: AppDatabase) = db.equipmentCheckoutDao()
+    @Provides
+    fun memberPreferenceDao(db: AppDatabase) = db.memberPreferenceDao()
+    @Provides
+    fun trainerInfoDao(db: AppDatabase) = db.trainerInfoDao()
+    @Provides
+    fun trainerDisciplineDao(db: AppDatabase) = db.trainerDisciplineDao()
 
     @Provides
     @Singleton
@@ -412,4 +489,8 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun attendantManager(scope: CoroutineScope, @ApplicationContext context: Context) = AttendantModeManager(scope, context)
+
+    @Provides
+    @Singleton
+    fun trainerSessionManager(scope: CoroutineScope) = TrainerSessionManager(scope)
 }

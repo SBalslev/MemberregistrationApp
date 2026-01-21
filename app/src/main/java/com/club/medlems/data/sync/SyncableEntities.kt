@@ -5,6 +5,7 @@ import com.club.medlems.data.entity.MemberType
 import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.entity.ScanEventType
 import com.club.medlems.data.entity.SessionSource
+import com.club.medlems.data.entity.TrainerLevel
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
@@ -285,7 +286,90 @@ data class SyncableEquipmentCheckout(
     val checkoutNotes: String? = null, // max 500 chars
     val checkinNotes: String? = null, // max 500 chars
     val conflictStatus: ConflictStatus? = null,
-    
+
+    // Sync metadata
+    override val deviceId: String,
+    override val syncVersion: Long,
+    override val createdAtUtc: Instant,
+    override val modifiedAtUtc: Instant,
+    override val syncedAtUtc: Instant? = null
+) : SyncMetadata
+
+// ===== Member Preference Sync =====
+
+/**
+ * Syncable member preference for practice type and classification.
+ * Used to transfer UI preferences between tablets via the laptop.
+ *
+ * @see [design.md member-preference-sync] - Member Preference Sync feature
+ */
+@Serializable
+data class SyncableMemberPreference(
+    /** FK to Member.internalId */
+    val memberId: String,
+
+    /** Last selected PracticeType enum name (e.g., "Riffel", "Pistol") */
+    val lastPracticeType: String? = null,
+
+    /** Last selected classification within the practice type */
+    val lastClassification: String? = null,
+
+    /** When this preference was last updated */
+    val updatedAtUtc: Instant
+)
+
+// ===== Trainer Experience Syncable Entities =====
+
+/**
+ * Syncable wrapper for TrainerInfo entity.
+ * Syncs trainer designations and certifications between devices.
+ *
+ * @see [trainer-experience/prd.md] - Trainer Experience Feature
+ */
+@Serializable
+data class SyncableTrainerInfo(
+    /** FK to Member.internalId */
+    val memberId: String,
+
+    /** Whether the member is designated as a trainer */
+    val isTrainer: Boolean = false,
+
+    /** Whether the member has Skydeleder (Range Officer) certification */
+    val hasSkydelederCertificate: Boolean = false,
+
+    /** Date when Skydeleder certificate was obtained */
+    val certifiedDate: Instant? = null,
+
+    // Sync metadata
+    override val deviceId: String,
+    override val syncVersion: Long,
+    override val createdAtUtc: Instant,
+    override val modifiedAtUtc: Instant,
+    override val syncedAtUtc: Instant? = null
+) : SyncMetadata
+
+/**
+ * Syncable wrapper for TrainerDiscipline entity.
+ * Syncs discipline qualifications for trainers between devices.
+ *
+ * @see [trainer-experience/prd.md] - Trainer Experience Feature
+ */
+@Serializable
+data class SyncableTrainerDiscipline(
+    val id: String,
+
+    /** FK to Member.internalId */
+    val memberId: String,
+
+    /** The discipline type (Riffel, Pistol, etc.) */
+    val discipline: PracticeType,
+
+    /** Trainer level for this discipline */
+    val level: TrainerLevel,
+
+    /** Date when certification for this discipline was obtained */
+    val certifiedDate: Instant? = null,
+
     // Sync metadata
     override val deviceId: String,
     override val syncVersion: Long,
