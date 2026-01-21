@@ -53,7 +53,7 @@ export interface ElectronAPI {
   scanSubnet?: () => Promise<DiscoveredDevice[]>;
 
   // Promise-based IPC for sync data requests
-  onGetMembersRequest?: (handler: (data: { since?: string }) => Promise<MemberDataPayload> | MemberDataPayload) => void;
+  onGetMembersRequest?: (handler: (data: { since?: string; deviceType?: string }) => Promise<MemberDataPayload> | MemberDataPayload) => void;
   onProcessPushRequest?: (handler: (payload: SyncPushPayload) => Promise<SyncProcessResult> | SyncProcessResult) => void;
 
   // ===== SEC-1, SEC-2: Pairing Session Management =====
@@ -196,8 +196,19 @@ export interface InitialSyncResultPayload {
 
 export interface MemberDataPayload {
   members: SyncableMemberData[];
+  registrations?: unknown[];
+  equipmentItems?: unknown[];
+  equipmentCheckouts?: unknown[];
+  memberPreferences?: SyncableMemberPreference[];
   count: number;
   timestamp: string;
+}
+
+export interface SyncableMemberPreference {
+  memberId: string;
+  lastPracticeType?: string | null;
+  lastClassification?: string | null;
+  updatedAtUtc: string;
 }
 
 export interface SyncableMemberData {

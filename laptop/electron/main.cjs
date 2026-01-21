@@ -334,11 +334,14 @@ function startSyncServer() {
         practiceSessions: [],
         equipmentItems: [],
         equipmentCheckouts: [],
-        newMemberRegistrations: []
+        newMemberRegistrations: [],
+        memberPreferences: []
       };
 
       try {
-        const memberData = await requestFromRenderer('sync:get-members', { since: since.toISOString() });
+        // Pass device type so renderer can include device-specific data (e.g., member preferences for MEMBER_TABLET)
+        const requestingDeviceType = req.trustedDevice?.deviceType || 'MEMBER_TABLET';
+        const memberData = await requestFromRenderer('sync:get-members', { since: since.toISOString(), deviceType: requestingDeviceType });
         if (memberData && memberData.members) {
           entities.members = memberData.members;
           console.log(`[Sync] Sending ${entities.members.length} members to tablet`);
@@ -356,6 +359,11 @@ function startSyncServer() {
         if (memberData && memberData.equipmentCheckouts) {
           entities.equipmentCheckouts = memberData.equipmentCheckouts;
           console.log(`[Sync] Sending ${entities.equipmentCheckouts.length} equipment checkouts to tablet`);
+        }
+        // Include member preferences for MEMBER_TABLET devices
+        if (memberData && memberData.memberPreferences) {
+          entities.memberPreferences = memberData.memberPreferences;
+          console.log(`[Sync] Sending ${entities.memberPreferences.length} member preferences to tablet`);
         }
       } catch (ipcError) {
         console.warn('[Sync] Could not get members from renderer:', ipcError.message);

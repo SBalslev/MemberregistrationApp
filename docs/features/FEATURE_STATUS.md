@@ -1,7 +1,7 @@
 # Feature Status Overview
 
 **Project:** Medlemscheckin (Club Member Check-in System)
-**Last Updated:** January 20, 2026
+**Last Updated:** January 21, 2026
 **Updated By:** Claude
 
 ---
@@ -26,6 +26,7 @@
 | **Photo Storage Optimization** | ✅ Complete | 2026-01-20 | [tasks.md](photo-storage-optimization/tasks.md) |
 | **Financial Transactions** | ✅ Complete | 2026-01-20 | [tasks.md](financial-transactions/tasks.md) |
 | **Tablet UX Improvements** | ✅ Complete | 2026-01-20 | [tasks.md](tablet-ux-improvements/tasks.md) |
+| **Member Preference Sync** | ✅ Complete | 2026-01-21 | [tasks.md](member-preference-sync/tasks.md) |
 
 ## Not Started Features ❌
 
@@ -139,6 +140,26 @@
 - Page: `FinancePage.tsx` (662 lines)
 - Excel export: `excelExport.ts`
 - Types: `finance.ts`
+
+### 7. Member Preference Sync
+
+**Summary:** Sync member practice preferences between tablets via the laptop for seamless tablet replacement.
+
+**Key Capabilities:**
+
+- Stores last selected discipline and classification in Room DB (not just SharedPreferences)
+- Syncs preferences from Member tablet to Laptop on push
+- Syncs preferences from Laptop to new Member tablet on initial sync
+- Only sent to MEMBER_TABLET devices (not Trainer, EquipmentDisplay, PracticeDisplay)
+- Preserves user convenience settings when replacing tablets
+
+**Implementation:**
+
+- Android: `MemberPreference` Room entity with DAO
+- Android: `LastClassificationStore` writes to both SharedPreferences and Room
+- Android: Database version 12 with migration
+- Laptop: `MemberPreference` table in SQLite schema
+- Sync: `memberPreferences` field in `SyncEntities`
 
 ---
 

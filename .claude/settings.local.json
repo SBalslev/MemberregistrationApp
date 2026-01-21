@@ -7,7 +7,15 @@
       "WebSearch",
       "Bash(./gradlew assembleMemberDebug:*)",
       "Bash(./gradlew :app:compileDebugKotlin:*)",
-      "Bash(./gradlew :app:compileMemberDebugKotlin:*)"
+      "Bash(./gradlew :app:compileMemberDebugKotlin:*)",
+      "Bash(find:*)",
+      "Bash(.gradlew:*)",
+      "Bash(cmd.exe /c \"gradlew.bat :app:assembleMemberDebug --no-daemon\")",
+      "Bash(ls:*)",
+      "Bash(bash gradlew:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(./gradlew :app:compileTrainerDebugKotlin:*)"
     ]
   }
 }

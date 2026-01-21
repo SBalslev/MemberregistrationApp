@@ -87,7 +87,7 @@ data class DeviceInfo(
  */
 object SyncSchemaVersion {
     const val MAJOR = 1
-    const val MINOR = 1
+    const val MINOR = 2  // 1.2.0: Added memberPreferences for preference sync
     const val PATCH = 0
     
     val version: String get() = "$MAJOR.$MINOR.$PATCH"
