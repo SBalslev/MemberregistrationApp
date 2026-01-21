@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(npm run build:*)",
-      "Bash(npm test)"
+      "Bash(npm test)",
+      "WebSearch",
+      "Bash(./gradlew assembleMemberDebug:*)",
+      "Bash(./gradlew :app:compileDebugKotlin:*)",
+      "Bash(./gradlew :app:compileMemberDebugKotlin:*)"
     ]
   }
 }

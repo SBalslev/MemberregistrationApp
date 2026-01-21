@@ -8,6 +8,7 @@ import android.net.NetworkRequest
 import android.util.Log
 import com.club.medlems.network.DeviceDiscoveryService
 import com.club.medlems.network.DiscoveredDevice
+import com.club.medlems.network.QuickReconnectManager
 import com.club.medlems.network.SyncApiServer
 import com.club.medlems.network.SyncClient
 import com.club.medlems.network.TrustManager
@@ -49,7 +50,8 @@ class SyncManager @Inject constructor(
     private val discoveryService: DeviceDiscoveryService,
     private val trustManager: TrustManager,
     private val conflictRepository: ConflictRepository,
-    private val syncLogManager: SyncLogManager
+    private val syncLogManager: SyncLogManager,
+    private val quickReconnectManager: QuickReconnectManager
 ) {
     companion object {
         private const val TAG = "SyncManager"
@@ -79,7 +81,11 @@ class SyncManager @Inject constructor(
     
     private val _connectedPeers = MutableStateFlow<List<DiscoveredDevice>>(emptyList())
     val connectedPeers: StateFlow<List<DiscoveredDevice>> = _connectedPeers.asStateFlow()
-    
+
+    // Discovery progress for UI feedback
+    private val _discoveryProgress = MutableStateFlow(DiscoveryProgress())
+    val discoveryProgress: StateFlow<DiscoveryProgress> = _discoveryProgress.asStateFlow()
+
     /** Last known sync timestamp for incremental pulls */
     private var lastPullTimestamp: Instant = Instant.DISTANT_PAST
     
@@ -119,18 +125,96 @@ class SyncManager @Inject constructor(
             }
         }
         
-        // Start mDNS discovery and advertising
+        // Start tiered discovery: Quick Reconnect -> mDNS -> Subnet Scan
         scope.launch {
+            // Start advertising first so we can be discovered
             discoveryService.startAdvertising(
                 deviceInfo = deviceInfo,
                 networkId = networkId
             )
-            discoveryService.startDiscovery()
-            
-            // Collect discovered devices
-            discoveryService.discoveredDevices.collect { devices ->
-                _connectedPeers.value = devices
-                Log.d(TAG, "Discovered ${devices.size} peer devices")
+
+            // Phase 1: Quick Reconnect (try known IP addresses)
+            val trustedDeviceCount = trustManager.trustedDevices.value.size
+            if (quickReconnectManager.hasKnownAddresses()) {
+                _discoveryProgress.value = DiscoveryProgress(
+                    phase = DiscoveryPhase.QuickReconnect,
+                    expectedDeviceCount = trustedDeviceCount,
+                    foundDeviceCount = 0,
+                    message = "Connecting to known devices..."
+                )
+
+                val quickResults = quickReconnectManager.attemptQuickReconnect()
+
+                if (quickResults.isNotEmpty()) {
+                    _connectedPeers.value = quickResults.values.toList()
+                    _discoveryProgress.value = _discoveryProgress.value.copy(
+                        foundDeviceCount = quickResults.size,
+                        message = "Found ${quickResults.size} devices via quick reconnect"
+                    )
+                    Log.i(TAG, "Quick reconnect found ${quickResults.size}/$trustedDeviceCount devices")
+                    syncLogManager.info("Discovery", "Quick reconnect: ${quickResults.size}/$trustedDeviceCount devices")
+                }
+
+                // If all trusted devices found, skip mDNS discovery
+                if (quickResults.size >= trustedDeviceCount && trustedDeviceCount > 0) {
+                    _discoveryProgress.value = DiscoveryProgress(
+                        phase = DiscoveryPhase.Complete,
+                        expectedDeviceCount = trustedDeviceCount,
+                        foundDeviceCount = quickResults.size,
+                        message = "All devices connected"
+                    )
+                    Log.i(TAG, "All trusted devices found via quick reconnect, skipping mDNS")
+                    syncLogManager.info("Discovery", "All devices found via quick reconnect")
+
+                    // Still start mDNS in background for new device discovery
+                    discoveryService.startDiscovery()
+                } else {
+                    // Phase 2: Start mDNS discovery for missing devices
+                    _discoveryProgress.value = _discoveryProgress.value.copy(
+                        phase = DiscoveryPhase.TargetedDiscovery,
+                        message = "Searching for remaining devices..."
+                    )
+                    discoveryService.startDiscovery()
+                }
+            } else {
+                // No known addresses, go directly to mDNS discovery
+                _discoveryProgress.value = DiscoveryProgress(
+                    phase = DiscoveryPhase.TargetedDiscovery,
+                    expectedDeviceCount = trustedDeviceCount,
+                    foundDeviceCount = 0,
+                    message = "Searching for devices..."
+                )
+                discoveryService.startDiscovery()
+            }
+
+            // Collect discovered devices (merges with quick reconnect results)
+            discoveryService.discoveredDevices.collect { mdnsDevices ->
+                // Merge mDNS discoveries with quick reconnect results
+                val currentPeers = _connectedPeers.value.toMutableList()
+                for (device in mdnsDevices) {
+                    val existingIndex = currentPeers.indexOfFirst { it.deviceId == device.deviceId }
+                    if (existingIndex >= 0) {
+                        // Update existing device (mDNS may have newer info)
+                        currentPeers[existingIndex] = device
+                    } else {
+                        currentPeers.add(device)
+                    }
+                }
+                _connectedPeers.value = currentPeers
+
+                // Update discovery progress
+                val foundTrusted = currentPeers.count { peer ->
+                    trustManager.trustedDevices.value.any { it.id == peer.deviceId }
+                }
+                _discoveryProgress.value = _discoveryProgress.value.copy(
+                    foundDeviceCount = foundTrusted,
+                    phase = if (foundTrusted >= trustedDeviceCount && trustedDeviceCount > 0)
+                        DiscoveryPhase.Complete
+                    else
+                        _discoveryProgress.value.phase
+                )
+
+                Log.d(TAG, "Discovered ${currentPeers.size} peer devices ($foundTrusted trusted)")
             }
         }
         
@@ -248,7 +332,7 @@ class SyncManager @Inject constructor(
     /**
      * Syncs with a single peer device.
      * Performs push (our changes) then pull (their changes).
-     * 
+     *
      * For tablet-to-tablet sync:
      * - Push only check-ins/sessions (not members)
      * - Pull check-ins/sessions from peer tablets
@@ -258,39 +342,52 @@ class SyncManager @Inject constructor(
         val baseUrl = "http://${peer.address.hostAddress}:${peer.port}"
         Log.d(TAG, "Syncing with peer: ${peer.deviceName} (${peer.deviceType}) at $baseUrl")
         syncLogManager.info("Sync", "Syncing with ${peer.deviceName} (${peer.deviceType}) at $baseUrl")
-        
+
         var result = SyncResult()
-        
+
         try {
             // Check peer status first
             val status = syncClient.checkStatus(baseUrl)
             if (status == null) {
                 Log.w(TAG, "Peer ${peer.deviceName} not responding")
                 syncLogManager.warn("Sync", "Peer ${peer.deviceName} not responding")
+                // Record connection failure for address tracking
+                peer.address.hostAddress?.let { ip ->
+                    trustManager.recordConnectionFailure(peer.deviceId, ip)
+                }
                 return SyncResult(errorMessage = "Peer not responding")
             }
-            
+
+            // Record successful connection for address tracking
+            peer.address.hostAddress?.let { ip ->
+                trustManager.recordConnectionSuccess(peer.deviceId, ip, peer.port)
+            }
+
             // Verify schema compatibility
             if (!SyncSchemaVersion.isCompatible(status.schemaVersion)) {
                 Log.w(TAG, "Schema mismatch with ${peer.deviceName}: ${status.schemaVersion}")
                 syncLogManager.error("Sync", "Schema mismatch with ${peer.deviceName}: ${status.schemaVersion}")
                 return SyncResult(errorMessage = "Schema version mismatch - update required")
             }
-            
+
             // Push our changes (filtered based on peer type)
             val pushResult = pushChangesToPeer(baseUrl, peer.deviceType)
             result = result.combine(pushResult)
-            
+
             // Pull their changes
             val pullResult = pullChangesFromPeer(baseUrl)
             result = result.combine(pullResult)
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error syncing with peer ${peer.deviceName}", e)
             syncLogManager.error("Sync", "Error syncing with ${peer.deviceName}", e)
+            // Record connection failure
+            peer.address.hostAddress?.let { ip ->
+                trustManager.recordConnectionFailure(peer.deviceId, ip)
+            }
             result = result.copy(errorMessage = e.message)
         }
-        
+
         return result
     }
     

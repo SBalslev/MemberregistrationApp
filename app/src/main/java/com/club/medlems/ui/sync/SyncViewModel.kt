@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.club.medlems.data.sync.DeviceInfo
 import com.club.medlems.data.sync.DeviceType
+import com.club.medlems.data.sync.DiscoveryPhase
+import com.club.medlems.data.sync.DiscoveryProgress
 import com.club.medlems.data.sync.SyncLogEntry
 import com.club.medlems.data.sync.SyncLogManager
 import com.club.medlems.data.sync.SyncManager
@@ -69,6 +71,9 @@ class SyncViewModel @Inject constructor(
     
     /** Trusted/paired devices */
     val trustedDevices: StateFlow<List<DeviceInfo>> = trustManager.trustedDevices
+
+    /** Discovery progress for tiered discovery UI feedback */
+    val discoveryProgress: StateFlow<DiscoveryProgress> = syncManager.discoveryProgress
     
     /** This device's info */
     val thisDeviceInfo: DeviceInfo?
@@ -84,14 +89,27 @@ class SyncViewModel @Inject constructor(
         lastSyncTime,
         pendingChangesCount,
         isNetworkAvailable,
-        discoveredDevices
-    ) { state, lastSync, pending, networkAvailable, peers ->
+        discoveredDevices,
+        discoveryProgress
+    ) { values ->
+        val state = values[0] as SyncState
+        val lastSync = values[1] as Instant?
+        val pending = values[2] as Int
+        val networkAvailable = values[3] as Boolean
+        @Suppress("UNCHECKED_CAST")
+        val peers = values[4] as List<DiscoveredDevice>
+        val progress = values[5] as DiscoveryProgress
+
         SyncUiState(
             state = state,
             lastSyncTime = lastSync,
             pendingChangesCount = pending,
             isNetworkAvailable = networkAvailable,
-            connectedPeerCount = peers.size
+            connectedPeerCount = peers.size,
+            discoveryPhase = progress.phase,
+            discoveryMessage = progress.message,
+            expectedDeviceCount = progress.expectedDeviceCount,
+            foundDeviceCount = progress.foundDeviceCount
         )
     }.stateIn(
         scope = viewModelScope,
@@ -276,16 +294,34 @@ data class SyncUiState(
     val lastSyncTime: Instant? = null,
     val pendingChangesCount: Int = 0,
     val isNetworkAvailable: Boolean = false,
-    val connectedPeerCount: Int = 0
+    val connectedPeerCount: Int = 0,
+    // Discovery progress fields
+    val discoveryPhase: DiscoveryPhase = DiscoveryPhase.Idle,
+    val discoveryMessage: String = "",
+    val expectedDeviceCount: Int = 0,
+    val foundDeviceCount: Int = 0
 ) {
     /** Whether sync is currently in progress */
     val isSyncing: Boolean get() = state == SyncState.SYNCING
-    
+
     /** Whether sync has encountered an error */
     val hasError: Boolean get() = state == SyncState.ERROR
-    
+
     /** Whether sync is ready (network available, has peers) */
     val isReady: Boolean get() = isNetworkAvailable && connectedPeerCount > 0
+
+    /** Whether discovery is currently in progress */
+    val isDiscovering: Boolean get() = discoveryPhase != DiscoveryPhase.Idle &&
+            discoveryPhase != DiscoveryPhase.Complete &&
+            discoveryPhase !is DiscoveryPhase.Error
+
+    /** Whether all expected devices have been found */
+    val allDevicesFound: Boolean get() = expectedDeviceCount > 0 && foundDeviceCount >= expectedDeviceCount
+
+    /** Discovery progress as a percentage (0.0 to 1.0) */
+    val discoveryProgressPercent: Float get() =
+        if (expectedDeviceCount == 0) 0f
+        else (foundDeviceCount.toFloat() / expectedDeviceCount).coerceIn(0f, 1f)
 }
 
 /**

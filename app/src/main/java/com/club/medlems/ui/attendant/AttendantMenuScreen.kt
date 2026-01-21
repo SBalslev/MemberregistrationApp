@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
@@ -138,9 +139,16 @@ fun AttendantMenuScreen(
             Spacer(Modifier.height(16.dp))
             Text("Indtast PIN-kode", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(12.dp))
-            OutlinedTextField(value = pinInput, onValueChange = {
-                if (it.length <= 4 && it.all { c -> c.isDigit() }) pinInput = it
-            }, label = { Text("PIN") }, enabled = state.cooldownRemainingMs == 0L, singleLine = true, modifier = Modifier.focusRequester(pinFocus))
+            OutlinedTextField(
+                value = pinInput,
+                onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pinInput = it },
+                label = { Text("PIN") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                enabled = state.cooldownRemainingMs == 0L,
+                singleLine = true,
+                modifier = Modifier.focusRequester(pinFocus)
+            )
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Spacer(Modifier.height(12.dp))
             Button(onClick = { attendant.attemptUnlock(pinInput) }, enabled = pinInput.length == 4 && state.cooldownRemainingMs == 0L) {
@@ -180,110 +188,174 @@ fun AttendantMenuScreen(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            val btnHeight = 72.dp
-            // Single-page: all admin actions visible together
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { attendant.registerInteraction(); openImportExport() }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                            Icon(Icons.Default.UploadFile, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Import / eksport")
+            val btnHeight = 64.dp
+            var showEditPicker by remember { mutableStateOf(false) }
+            val diagnosticPrefs: com.club.medlems.domain.prefs.DiagnosticPreferences = hiltViewModel<AttendantViewModel>().diagnosticPrefs
+            val diagnosticsEnabled by diagnosticPrefs.diagnosticsEnabled.collectAsState()
+
+            // Scrollable menu with sections
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // === DAGLIG BRUG ===
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "Daglig brug",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(onClick = { attendant.registerInteraction(); openLeaderboard() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.Leaderboard, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Resultatliste")
+                            }
+                            Button(onClick = { attendant.registerInteraction(); showManual = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.QrCode, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Manuel scanning")
+                            }
                         }
-                        Button(onClick = { attendant.registerInteraction(); openLeaderboard() }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                            Icon(Icons.Default.Leaderboard, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Resultatliste")
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(onClick = { attendant.registerInteraction(); openRegistration() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.PersonAdd, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Tilmeld medlem")
+                            }
+                            Spacer(Modifier.weight(1f))
                         }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { attendant.registerInteraction(); showManual = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                            Icon(Icons.Default.QrCode, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Manuel scanning")
-                        }
-                        Button(onClick = { attendant.registerInteraction(); openRegistration() }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                            Icon(Icons.Default.PersonAdd, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Tilmeld nyt medlem")
+                }
+
+                // === UDSTYR (conditional) ===
+                if (canManageEquipment) {
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                "Udstyr",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(onClick = { attendant.registerInteraction(); openEquipmentList() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                    Icon(Icons.Default.Build, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Udstyr")
+                                }
+                                Button(onClick = { attendant.registerInteraction(); openCurrentCheckouts() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                    Icon(Icons.Default.Inventory, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Udlån")
+                                }
+                            }
                         }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { attendant.registerInteraction(); showChangePin = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                }
+
+                // === ADMINISTRATION ===
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "Administration",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(onClick = { attendant.registerInteraction(); openImportExport() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.UploadFile, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Import / eksport")
+                            }
+                            Button(onClick = { attendant.registerInteraction(); showEditPicker = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.VerifiedUser, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Redigér skydninger")
+                            }
+                        }
+                        if (canManageEquipment) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(onClick = { attendant.registerInteraction(); openMemberLookup() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                    Icon(Icons.Default.PersonSearch, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Medlemssøgning")
+                                }
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+
+                // === SYSTEM ===
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "System",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(onClick = { attendant.registerInteraction(); openDevicePairing() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.Wifi, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Enheder")
+                            }
+                            Button(onClick = { attendant.registerInteraction(); showChangePin = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                Icon(Icons.Default.Lock, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Skift PIN")
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(
+                                onClick = {
+                                    attendant.registerInteraction()
+                                    diagnosticPrefs.setDiagnosticsEnabled(!diagnosticsEnabled)
+                                },
+                                modifier = Modifier.weight(1f).height(btnHeight)
+                            ) {
+                                Icon(Icons.Default.BugReport, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (diagnosticsEnabled) "Skjul diagnostik" else "Vis diagnostik")
+                            }
+                            if (canManageEquipment) {
+                                Button(onClick = { attendant.registerInteraction(); openConflictResolution() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                    Icon(Icons.Default.Sync, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Konflikter")
+                                }
+                            } else {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+
+                // === LOG UD ===
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { attendant.registerInteraction(); attendant.lock(); onBack() },
+                            modifier = Modifier.fillMaxWidth().height(btnHeight),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
                             Icon(Icons.Default.Lock, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Skift PIN")
+                            Text("Log ud")
                         }
-                        val diagnosticPrefs: com.club.medlems.domain.prefs.DiagnosticPreferences = hiltViewModel<AttendantViewModel>().diagnosticPrefs
-                        val diagnosticsEnabled by diagnosticPrefs.diagnosticsEnabled.collectAsState()
-                        Button(
-                            onClick = { 
-                                attendant.registerInteraction()
-                                diagnosticPrefs.setDiagnosticsEnabled(!diagnosticsEnabled)
-                            }, 
-                            modifier = Modifier.weight(1f).height(btnHeight)
-                        ) {
-                            Icon(Icons.Default.BugReport, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (diagnosticsEnabled) "Skjul diagnostik" else "Vis diagnostik")
+                        TextButton(onClick = { attendant.registerInteraction(); showAbout = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                            Text("Om")
                         }
                     }
-                    var showEditPicker by remember { mutableStateOf(false) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { attendant.registerInteraction(); showEditPicker = true }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                            Icon(Icons.Default.VerifiedUser, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Redigér skydninger")
-                        }
-                        Spacer(Modifier.weight(1f))
-                    }
-                    // Member lookup (only for Trainer Tablet and Laptop)
-                    if (canManageEquipment) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Button(onClick = { attendant.registerInteraction(); openMemberLookup() }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                                Icon(Icons.Default.PersonSearch, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Medlemssøgning")
-                            }
-                            Spacer(Modifier.weight(1f))
-                        }
-                    }
-                    // Equipment management row (only for Trainer Tablet and Laptop)
-                    if (canManageEquipment) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Button(onClick = { attendant.registerInteraction(); openEquipmentList() }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                                Icon(Icons.Default.Build, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Udstyr")
-                            }
-                            Button(onClick = { attendant.registerInteraction(); openCurrentCheckouts() }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                                Icon(Icons.Default.Inventory, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Udlån")
-                            }
-                        }
-                    }
-                    // Conflict resolution (only for Trainer Tablet)
-                    if (canManageEquipment) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Button(onClick = { attendant.registerInteraction(); openConflictResolution() }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                                Icon(Icons.Default.Sync, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Konflikter")
-                            }
-                            Spacer(Modifier.weight(1f))
-                        }
-                    }
-                    // Device pairing - available on all devices
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { attendant.registerInteraction(); openDevicePairing() }, modifier = Modifier.weight(1f).height(btnHeight)) {
-                            Icon(Icons.Default.Wifi, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Enheder")
-                        }
-                        Spacer(Modifier.weight(1f))
-                    }
-                    if (showEditPicker) {
+                }
+            }
+
+            if (showEditPicker) {
                         AlertDialog(
                             onDismissRequest = { showEditPicker = false },
                             confirmButton = { TextButton(onClick = { showEditPicker = false }) { Text("Luk") } },
@@ -337,17 +409,6 @@ fun AttendantMenuScreen(
                             }
                         )
                     }
-                    HorizontalDivider()
-                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { attendant.registerInteraction(); attendant.lock(); onBack() }, modifier = Modifier.fillMaxWidth().height(btnHeight)) {
-                            Icon(Icons.Default.Lock, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Log ud")
-                        }
-                        TextButton(onClick = { attendant.registerInteraction(); showAbout = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Om") }
-                    }
-                }
-            }
             // No separate back button in admin menu; use "Log ud" above
         }
         if (showManual) {
@@ -498,9 +559,30 @@ fun AttendantMenuScreen(
                     var newPin by remember { mutableStateOf("") }
                     var newPin2 by remember { mutableStateOf("") }
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(oldPin, onValueChange = { if (it.length <=4 && it.all(Char::isDigit)) oldPin = it }, label = { Text("Nuværende PIN") }, singleLine = true)
-                        OutlinedTextField(newPin, onValueChange = { if (it.length <=4 && it.all(Char::isDigit)) newPin = it }, label = { Text("Ny PIN") }, singleLine = true)
-                        OutlinedTextField(newPin2, onValueChange = { if (it.length <=4 && it.all(Char::isDigit)) newPin2 = it }, label = { Text("Gentag ny PIN") }, singleLine = true)
+                        OutlinedTextField(
+                            value = oldPin,
+                            onValueChange = { if (it.length <= 4 && it.all(Char::isDigit)) oldPin = it },
+                            label = { Text("Nuværende PIN") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = newPin,
+                            onValueChange = { if (it.length <= 4 && it.all(Char::isDigit)) newPin = it },
+                            label = { Text("Ny PIN") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = newPin2,
+                            onValueChange = { if (it.length <= 4 && it.all(Char::isDigit)) newPin2 = it },
+                            label = { Text("Gentag ny PIN") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             TextButton(onClick = { showChangePin = false }) { Text("Annuller") }
                             val enabled = oldPin.length==4 && newPin.length==4 && newPin == newPin2

@@ -25,6 +25,7 @@
 |---------|--------|-----------------|---------------|
 | **Photo Storage Optimization** | ✅ Complete | 2026-01-20 | [tasks.md](photo-storage-optimization/tasks.md) |
 | **Financial Transactions** | ✅ Complete | 2026-01-20 | [tasks.md](financial-transactions/tasks.md) |
+| **Tablet UX Improvements** | ✅ Complete | 2026-01-20 | [tasks.md](tablet-ux-improvements/tasks.md) |
 
 ## Not Started Features ❌
 

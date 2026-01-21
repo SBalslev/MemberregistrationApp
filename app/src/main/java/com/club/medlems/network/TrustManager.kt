@@ -5,6 +5,9 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.club.medlems.data.sync.AddressRecord
+import com.club.medlems.data.sync.ConnectionStats
+import com.club.medlems.data.sync.DeviceConnectionProfile
 import com.club.medlems.data.sync.DeviceInfo
 import com.club.medlems.data.sync.SyncJson
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -15,6 +18,8 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import java.security.SecureRandom
 import java.util.Base64
 import javax.inject.Inject
@@ -38,6 +43,7 @@ class TrustManager @Inject constructor(
         private const val TAG = "TrustManager"
         private const val PREFS_NAME = "medlems_sync_trust"
         private const val KEY_TRUSTED_DEVICES = "trusted_devices"
+        private const val KEY_CONNECTION_PROFILES = "connection_profiles"
         private const val KEY_NETWORK_ID = "network_id"
         private const val KEY_THIS_DEVICE_ID = "this_device_id"
         private const val KEY_THIS_DEVICE_INFO = "this_device_info"
@@ -50,9 +56,14 @@ class TrustManager @Inject constructor(
     
     private val _trustedDevices = MutableStateFlow<List<DeviceInfo>>(emptyList())
     val trustedDevices: StateFlow<List<DeviceInfo>> = _trustedDevices.asStateFlow()
-    
+
+    // Connection profiles for fast reconnection - stores IP history and stats per device
+    private val _connectionProfiles = MutableStateFlow<Map<String, DeviceConnectionProfile>>(emptyMap())
+    val connectionProfiles: StateFlow<Map<String, DeviceConnectionProfile>> = _connectionProfiles.asStateFlow()
+
     init {
         loadTrustedDevices()
+        loadConnectionProfiles()
     }
     
     /**
@@ -236,7 +247,7 @@ class TrustManager @Inject constructor(
     fun addTrustedDevice(deviceInfo: DeviceInfo) {
         val currentList = _trustedDevices.value.toMutableList()
         val existingIndex = currentList.indexOfFirst { it.id == deviceInfo.id }
-        
+
         if (existingIndex >= 0) {
             currentList[existingIndex] = deviceInfo
             Log.i(TAG, "Updated trusted device: ${deviceInfo.name}")
@@ -244,9 +255,12 @@ class TrustManager @Inject constructor(
             currentList.add(deviceInfo)
             Log.i(TAG, "Added trusted device: ${deviceInfo.name}")
         }
-        
+
         _trustedDevices.value = currentList
         saveTrustedDevices()
+
+        // Ensure connection profile exists for fast reconnection
+        ensureConnectionProfile(deviceInfo)
     }
     
     /**
@@ -255,11 +269,15 @@ class TrustManager @Inject constructor(
     fun revokeTrust(deviceId: String) {
         val currentList = _trustedDevices.value.toMutableList()
         val device = currentList.find { it.id == deviceId }
-        
+
         if (device != null) {
             currentList.remove(device)
             _trustedDevices.value = currentList
             saveTrustedDevices()
+
+            // Also remove the connection profile
+            removeConnectionProfile(deviceId)
+
             Log.i(TAG, "Removed device from trusted list: ${device.name}")
         }
     }
@@ -326,6 +344,7 @@ class TrustManager @Inject constructor(
     fun clearAllTrustData() {
         prefs.edit().clear().apply()
         _trustedDevices.value = emptyList()
+        _connectionProfiles.value = emptyMap()
         Log.i(TAG, "Cleared all trust data")
     }
     
@@ -361,6 +380,194 @@ class TrustManager @Inject constructor(
             prefs.edit().putString(KEY_TRUSTED_DEVICES, json).apply()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save trusted devices", e)
+        }
+    }
+
+    // ============ Connection Profile Methods ============
+
+    /**
+     * Gets the connection profile for a device, or null if not found.
+     */
+    fun getConnectionProfile(deviceId: String): DeviceConnectionProfile? {
+        return _connectionProfiles.value[deviceId]
+    }
+
+    /**
+     * Gets all connection profiles for trusted devices.
+     */
+    fun getAllConnectionProfiles(): Map<String, DeviceConnectionProfile> {
+        return _connectionProfiles.value
+    }
+
+    /**
+     * Gets all known IP addresses across all devices for quick reconnect.
+     * Returns pairs of (deviceId, AddressRecord).
+     */
+    fun getAllKnownAddresses(): List<Pair<String, AddressRecord>> {
+        return _connectionProfiles.value.flatMap { (deviceId, profile) ->
+            profile.knownAddresses.map { address -> deviceId to address }
+        }
+    }
+
+    /**
+     * Records a successful connection to a device at the given address.
+     * Updates the connection profile with the new IP and success statistics.
+     */
+    fun recordConnectionSuccess(deviceId: String, ip: String, port: Int) {
+        val now = Clock.System.now()
+        val currentProfiles = _connectionProfiles.value.toMutableMap()
+
+        val existingProfile = currentProfiles[deviceId]
+        val updatedProfile = if (existingProfile != null) {
+            existingProfile.withSuccessfulConnection(ip, port, now)
+        } else {
+            // Create new profile for this device
+            val deviceInfo = _trustedDevices.value.find { it.id == deviceId }
+            if (deviceInfo != null) {
+                DeviceConnectionProfile(
+                    deviceId = deviceId,
+                    deviceInfo = deviceInfo,
+                    knownAddresses = listOf(
+                        AddressRecord(
+                            ip = ip,
+                            firstSeen = now,
+                            lastSeen = now,
+                            successCount = 1,
+                            failCount = 0
+                        )
+                    ),
+                    preferredPort = port,
+                    connectionStats = ConnectionStats(
+                        totalAttempts = 1,
+                        totalSuccesses = 1,
+                        lastSuccessfulSync = now
+                    )
+                )
+            } else {
+                Log.w(TAG, "Cannot create connection profile for unknown device: $deviceId")
+                return
+            }
+        }
+
+        currentProfiles[deviceId] = updatedProfile
+        _connectionProfiles.value = currentProfiles
+        saveConnectionProfiles()
+
+        Log.d(TAG, "Recorded connection success for $deviceId at $ip:$port")
+    }
+
+    /**
+     * Records a failed connection attempt to a device at the given address.
+     */
+    fun recordConnectionFailure(deviceId: String, ip: String) {
+        val now = Clock.System.now()
+        val currentProfiles = _connectionProfiles.value.toMutableMap()
+
+        val existingProfile = currentProfiles[deviceId]
+        if (existingProfile != null) {
+            currentProfiles[deviceId] = existingProfile.withFailedConnection(ip, now)
+            _connectionProfiles.value = currentProfiles
+            saveConnectionProfiles()
+            Log.d(TAG, "Recorded connection failure for $deviceId at $ip")
+        }
+    }
+
+    /**
+     * Updates the reconnect time statistic for a device.
+     */
+    fun recordReconnectTime(deviceId: String, durationMs: Long) {
+        val currentProfiles = _connectionProfiles.value.toMutableMap()
+        val existingProfile = currentProfiles[deviceId]
+
+        if (existingProfile != null) {
+            currentProfiles[deviceId] = existingProfile.copy(
+                connectionStats = existingProfile.connectionStats.withReconnectTime(durationMs)
+            )
+            _connectionProfiles.value = currentProfiles
+            saveConnectionProfiles()
+        }
+    }
+
+    /**
+     * Ensures a connection profile exists for a device.
+     * Called when a device is added to the trusted list.
+     */
+    fun ensureConnectionProfile(deviceInfo: DeviceInfo) {
+        if (_connectionProfiles.value.containsKey(deviceInfo.id)) return
+
+        val currentProfiles = _connectionProfiles.value.toMutableMap()
+        currentProfiles[deviceInfo.id] = DeviceConnectionProfile(
+            deviceId = deviceInfo.id,
+            deviceInfo = deviceInfo
+        )
+        _connectionProfiles.value = currentProfiles
+        saveConnectionProfiles()
+
+        Log.d(TAG, "Created connection profile for ${deviceInfo.name}")
+    }
+
+    /**
+     * Removes the connection profile for a device.
+     * Called when a device is removed from the trusted list.
+     */
+    fun removeConnectionProfile(deviceId: String) {
+        val currentProfiles = _connectionProfiles.value.toMutableMap()
+        if (currentProfiles.remove(deviceId) != null) {
+            _connectionProfiles.value = currentProfiles
+            saveConnectionProfiles()
+            Log.d(TAG, "Removed connection profile for $deviceId")
+        }
+    }
+
+    private fun loadConnectionProfiles() {
+        val json = prefs.getString(KEY_CONNECTION_PROFILES, null)
+        if (json != null) {
+            try {
+                val profiles = SyncJson.json.decodeFromString(
+                    MapSerializer(String.serializer(), DeviceConnectionProfile.serializer()),
+                    json
+                )
+                _connectionProfiles.value = profiles
+                Log.i(TAG, "Loaded ${profiles.size} connection profiles")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load connection profiles", e)
+            }
+        }
+
+        // Migrate: Create profiles for trusted devices that don't have one
+        migrateConnectionProfiles()
+    }
+
+    private fun migrateConnectionProfiles() {
+        val currentProfiles = _connectionProfiles.value.toMutableMap()
+        var migrated = 0
+
+        for (device in _trustedDevices.value) {
+            if (!currentProfiles.containsKey(device.id)) {
+                currentProfiles[device.id] = DeviceConnectionProfile(
+                    deviceId = device.id,
+                    deviceInfo = device
+                )
+                migrated++
+            }
+        }
+
+        if (migrated > 0) {
+            _connectionProfiles.value = currentProfiles
+            saveConnectionProfiles()
+            Log.i(TAG, "Migrated $migrated trusted devices to connection profiles")
+        }
+    }
+
+    private fun saveConnectionProfiles() {
+        try {
+            val json = SyncJson.json.encodeToString(
+                MapSerializer(String.serializer(), DeviceConnectionProfile.serializer()),
+                _connectionProfiles.value
+            )
+            prefs.edit().putString(KEY_CONNECTION_PROFILES, json).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save connection profiles", e)
         }
     }
 }

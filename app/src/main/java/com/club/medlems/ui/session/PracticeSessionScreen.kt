@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -142,7 +144,7 @@ fun PracticeSessionScreen(
 ) {
     var points by remember { mutableStateOf("") }
     var krydser by remember { mutableStateOf("") }
-    var practiceType by remember { mutableStateOf(PracticeType.Riffel) }
+    var practiceType by remember { mutableStateOf<PracticeType?>(null) }
     var classification by remember { mutableStateOf<String?>(null) }
     var showHistory by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf<List<PracticeSession>>(emptyList()) }
@@ -154,16 +156,16 @@ fun PracticeSessionScreen(
     // Load last selection
     LaunchedEffect(memberId) {
         val (t, cls) = vm.getLast(memberId)
-        t?.let { practiceType = it }
+        practiceType = t
         classification = cls
         memberName = vm.loadMemberName(memberId)
     }
 
-    var idleSeconds by remember { mutableStateOf(60) }
+    var idleSeconds by remember { mutableStateOf(90) }
     // Restart key is any change to user input, practice type, or classification
     IdleCountdown(
-        totalSeconds = 60,
-        restartKey = listOf(points, krydser, practiceType, classification ?: ""),
+        totalSeconds = 90,
+        restartKey = listOf(points, krydser, practiceType ?: "", classification ?: ""),
         active = true,
         onTick = { idleSeconds = it },
         onTimeout = { vm.cancel(scanEventId) { onCancel() } }
@@ -171,7 +173,7 @@ fun PracticeSessionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Indtast skydning") },
+                title = { Text("Indtast skydning", style = MaterialTheme.typography.headlineSmall) },
                 actions = {
                     val idAndName = memberName?.let { "$memberId – $it" } ?: memberId
                     AssistChip(onClick = {}, label = { Text(idAndName) }, enabled = false)
@@ -185,35 +187,67 @@ fun PracticeSessionScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(pad)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // === STEP 1: Practice Type ===
             ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Discipline
-                    Column {
-                        Text("Skydnings-type", style = MaterialTheme.typography.titleSmall)
-                        Spacer(Modifier.height(8.dp))
-                        val types = PracticeType.values().toList()
-                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                            types.forEachIndexed { index, pt ->
-                                val selected = practiceType == pt
-                                SegmentedButton(
-                                    selected = selected,
-                                    onClick = { practiceType = pt; classification = null },
-                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = types.size)
-                                ) {
-                                    Text(pt.displayName)
-                                }
-                            }
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            color = if (practiceType != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                "1",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (practiceType != null) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text("Vælg skydningstype", style = MaterialTheme.typography.titleLarge)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    val types = PracticeType.values().toList()
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        types.forEach { pt ->
+                            FilterChip(
+                                selected = practiceType == pt,
+                                onClick = { practiceType = pt; classification = null },
+                                label = { Text(pt.displayName, style = MaterialTheme.typography.titleMedium) },
+                                modifier = Modifier.height(48.dp)
+                            )
                         }
                     }
+                }
+            }
 
-                    // Classification
-                    Column {
-                        Text("Klassifikation", style = MaterialTheme.typography.titleSmall)
-                        Spacer(Modifier.height(8.dp))
-                        val opts = optionsFor(practiceType)
+            // === STEP 2: Classification (only show after type selected) ===
+            if (practiceType != null) {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = if (classification != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(
+                                    "2",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (classification != null) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Text("Vælg klassifikation", style = MaterialTheme.typography.titleLarge)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        val opts = optionsFor(practiceType!!)
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -222,78 +256,112 @@ fun PracticeSessionScreen(
                                 FilterChip(
                                     selected = classification == opt,
                                     onClick = { classification = opt },
-                                    label = { Text(opt) }
+                                    label = { Text(opt, style = MaterialTheme.typography.titleMedium) },
+                                    modifier = Modifier.height(48.dp)
                                 )
                             }
                         }
-                        if (classification == null) {
-                            Text("Vælg en klassifikation", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-
-                    // Scores
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val pointsError = points.isBlank()
-                        OutlinedTextField(
-                            value = points,
-                            onValueChange = { points = it.filter { c -> c.isDigit() } },
-                            isError = pointsError,
-                            label = { Text("Point") },
-                            placeholder = { Text("0") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            supportingText = { if (pointsError) Text("Påkrævet") }
-                        )
-                        OutlinedTextField(
-                            value = krydser,
-                            onValueChange = { krydser = it.filter { c -> c.isDigit() } },
-                            label = { Text("Krydser (valgfri)") },
-                            placeholder = { Text("0") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                        vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     }
                 }
             }
 
-            // Actions
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // === STEP 3: Score input (only show after classification selected) ===
+            if (practiceType != null && classification != null) {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = if (points.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(
+                                    "3",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (points.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Text("Indtast resultat", style = MaterialTheme.typography.titleLarge)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            OutlinedTextField(
+                                value = points,
+                                onValueChange = { points = it.filter { c -> c.isDigit() } },
+                                label = { Text("Point") },
+                                placeholder = { Text("0") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                textStyle = MaterialTheme.typography.headlineMedium
+                            )
+                            OutlinedTextField(
+                                value = krydser,
+                                onValueChange = { krydser = it.filter { c -> c.isDigit() } },
+                                label = { Text("Krydser (valgfri)") },
+                                placeholder = { Text("0") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                                textStyle = MaterialTheme.typography.headlineMedium
+                            )
+                        }
+                        vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
+                    }
+                }
+            }
+
+            // === SAVE BUTTON (only show when form is complete) ===
+            if (practiceType != null && classification != null && points.isNotBlank()) {
                 Button(
                     onClick = {
                         val cls = classification
-                        if (cls == null || !ClassificationOptions.isValid(practiceType, cls)) {
+                        val pt = practiceType
+                        if (pt == null || cls == null || !ClassificationOptions.isValid(pt, cls)) {
                             return@Button
                         }
-                        vm.save(memberId, scanEventId, practiceType, cls, points, krydser, onSaved)
+                        vm.save(memberId, scanEventId, pt, cls, points, krydser, onSaved)
                     },
-                    enabled = points.isNotBlank() && classification != null && !vm.saving,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(if (vm.saving) "Gemmer..." else "Gem") }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    var hasHistory by remember { mutableStateOf<Boolean?>(null) }
-                    LaunchedEffect(memberId, practiceType) {
-                        hasHistory = vm.hasAnyHistoryAllClasses(memberId, practiceType)
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            showHistory = true
-                        },
-                        enabled = (hasHistory == true),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Mine resultater") }
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = { vm.cancel(scanEventId) { onCancel() } }, enabled = !vm.saving, modifier = Modifier.weight(1f)) { Text("Annuller") }
+                    enabled = !vm.saving,
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text(
+                        if (vm.saving) "Gemmer..." else "GEM RESULTAT",
+                        style = MaterialTheme.typography.titleLarge
+                    )
                 }
+            }
+
+            // === SECONDARY ACTIONS (always visible) ===
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                var hasHistory by remember { mutableStateOf<Boolean?>(null) }
+                LaunchedEffect(memberId, practiceType) {
+                    practiceType?.let { pt ->
+                        hasHistory = vm.hasAnyHistoryAllClasses(memberId, pt)
+                    }
+                }
+                OutlinedButton(
+                    onClick = { showHistory = true },
+                    enabled = (hasHistory == true && practiceType != null),
+                    modifier = Modifier.weight(1f).height(48.dp)
+                ) { Text("Mine resultater") }
+                TextButton(
+                    onClick = { vm.cancel(scanEventId) { onCancel() } },
+                    enabled = !vm.saving,
+                    modifier = Modifier.weight(1f).height(48.dp)
+                ) { Text("Annuller") }
             }
         }
     }
     // IdleCountdown handles timing; no manual loop needed now.
 
-    if (showHistory) {
-        LaunchedEffect(showHistory, practiceType, classification) {
+    if (showHistory && practiceType != null) {
+        val currentType = practiceType!! // Safe - checked above
+        LaunchedEffect(showHistory, currentType, classification) {
             // Load across all classifications for the selected discipline
-            history = vm.loadHistoryAllClasses(memberId, practiceType)
+            history = vm.loadHistoryAllClasses(memberId, currentType)
         }
     ModalBottomSheet(onDismissRequest = { showHistory = false }) {
             val top3Ids = remember(history) {
@@ -305,7 +373,7 @@ fun PracticeSessionScreen(
                     .toSet()
             }
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                Text("${practiceType.displayName} – Mine resultater (12 mdr.)", style = MaterialTheme.typography.titleMedium)
+                Text("${currentType.displayName} – Mine resultater (12 mdr.)", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 // Summary
                 val total = history.size

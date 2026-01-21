@@ -53,36 +53,53 @@ fun LeaderboardScreen(onBack: () -> Unit, vm: LeaderboardViewModel = hiltViewMod
                         state.groupedBest[t]?.any { (_, list) -> list.isNotEmpty() } == true
                     }
                     if (typesToRender.isEmpty()) {
-                        item { 
-                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                                Text("Ingen resultater", style = MaterialTheme.typography.bodyMedium)
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                Text("Ingen resultater", style = MaterialTheme.typography.titleMedium)
                             }
                         }
                     } else {
                         typesToRender.forEach { type ->
                             val byCls = state.groupedBest[type].orEmpty().filterValues { it.isNotEmpty() }
-                            item { Text(type.displayName, style = MaterialTheme.typography.titleMedium) }
+                            item {
+                                Text(
+                                    type.displayName.uppercase(),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                                )
+                            }
                             byCls.toSortedMap().forEach { (cls, list) ->
                                 val label = if (cls.isBlank()) "Uklassificeret" else cls
-                                item { Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp)) }
-                                item { Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) { Text("Medlem", Modifier.weight(1f)); Text("Points/Krydser") } }
+                                item {
+                                    Text(
+                                        label,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                                    )
+                                }
+                                item {
+                                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                        Text("Medlem", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                                        Text("Points/Krydser", style = MaterialTheme.typography.titleMedium)
+                                    }
+                                }
                                 items(list, key = { it.practiceType.name + ":" + (it.classification ?: "") + ":" + it.internalMemberId }) { entry ->
                                     val key = entry.practiceType.name + ":" + entry.internalMemberId
                                     val isNew = state.justAddedKeys.contains(key)
                                     val targetColor = if (isNew) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.background
                                     val bg by animateColorAsState(targetValue = targetColor, label = "lbItemBg")
                                     Row(
-                                        Modifier.fillMaxWidth().padding(vertical = 4.dp).background(bg).padding(4.dp),
+                                        Modifier.fillMaxWidth().padding(vertical = 6.dp).background(bg).padding(horizontal = 8.dp, vertical = 8.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         val name = entry.memberName
                                         val left = if (name.isNullOrBlank()) entry.displayMemberId else "${entry.displayMemberId} - ${name}"
-                                        Text(left, Modifier.weight(1f))
-                                        Text("${entry.points}${entry.krydser?.let { "/$it" } ?: ""}")
+                                        Text(left, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                                        Text("${entry.points}${entry.krydser?.let { "/$it" } ?: ""}", style = MaterialTheme.typography.titleMedium)
                                     }
                                 }
                             }
-                            item { Spacer(Modifier.height(12.dp)) }
+                            item { Spacer(Modifier.height(20.dp)) }
                         }
                     }
                 }

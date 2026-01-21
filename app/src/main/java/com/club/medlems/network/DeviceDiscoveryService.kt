@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.club.medlems.data.sync.DeviceInfo
 import com.club.medlems.data.sync.DeviceType
@@ -29,6 +31,8 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.URL
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.jmdns.JmDNS
@@ -59,6 +63,7 @@ class DeviceDiscoveryService @Inject constructor(
         private const val SERVICE_TYPE_NSD = "_medlemssync._tcp."
         private const val DEFAULT_PORT = 8085  // Changed from 8080 to avoid conflicts
         private const val STALE_DEVICE_TIMEOUT_MS = 5 * 60 * 1000L // 5 minutes
+        private const val NSD_RESOLUTION_TIMEOUT_MS = 5000L // 5 seconds timeout for NSD resolution
     }
 
     private var jmDNS: JmDNS? = null
@@ -69,6 +74,12 @@ class DeviceDiscoveryService @Inject constructor(
     private var isAdvertising = false
     private var isDiscovering = false
     private var isNsdDiscovering = false
+
+    // NSD resolution queue - Android NsdManager can only resolve one service at a time
+    // This queue handles FAILURE_ALREADY_ACTIVE errors on Android 6.0+ devices
+    private val pendingNsdResolutions = ConcurrentLinkedQueue<NsdServiceInfo>()
+    private val isNsdResolving = AtomicBoolean(false)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val _discoveredDevices = MutableStateFlow<List<DiscoveredDevice>>(emptyList())
     val discoveredDevices: StateFlow<List<DiscoveredDevice>> = _discoveredDevices.asStateFlow()
@@ -246,8 +257,8 @@ class DeviceDiscoveryService @Inject constructor(
         override fun onServiceFound(serviceInfo: NsdServiceInfo) {
             Log.d(TAG, "NSD found service: ${serviceInfo.serviceName}")
             syncLogManager.debug("NSD", "Found: ${serviceInfo.serviceName}")
-            // Resolve the service to get IP and port
-            nsdManager?.resolveService(serviceInfo, createNsdResolveListener())
+            // Queue the service for resolution (NsdManager can only resolve one at a time)
+            queueNsdResolution(serviceInfo)
         }
 
         override fun onServiceLost(serviceInfo: NsdServiceInfo) {
@@ -270,15 +281,82 @@ class DeviceDiscoveryService @Inject constructor(
         }
     }
 
-    private fun createNsdResolveListener() = object : NsdManager.ResolveListener {
-        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-            Log.e(TAG, "NSD resolve failed for ${serviceInfo.serviceName}: $errorCode")
+    /**
+     * Queues a service for NSD resolution.
+     * NsdManager can only resolve one service at a time - concurrent calls return FAILURE_ALREADY_ACTIVE.
+     * This queue ensures reliable resolution on Android 6.0+ devices.
+     */
+    private fun queueNsdResolution(serviceInfo: NsdServiceInfo) {
+        pendingNsdResolutions.add(serviceInfo)
+        processNextNsdResolution()
+    }
+
+    /**
+     * Processes the next service in the NSD resolution queue.
+     * Uses AtomicBoolean to ensure only one resolution runs at a time.
+     */
+    private fun processNextNsdResolution() {
+        if (isNsdResolving.compareAndSet(false, true)) {
+            val next = pendingNsdResolutions.poll()
+            if (next != null) {
+                resolveNsdWithTimeout(next)
+            } else {
+                isNsdResolving.set(false)
+            }
+        }
+    }
+
+    /**
+     * Resolves an NSD service with a timeout.
+     * NsdManager doesn't have a built-in timeout, so we add one manually.
+     */
+    private fun resolveNsdWithTimeout(serviceInfo: NsdServiceInfo) {
+        val serviceName = serviceInfo.serviceName
+
+        val timeoutRunnable = Runnable {
+            Log.w(TAG, "NSD resolution timeout for $serviceName")
+            syncLogManager.warn("NSD", "Resolution timeout: $serviceName")
+            isNsdResolving.set(false)
+            processNextNsdResolution()
         }
 
-        override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-            Log.i(TAG, "NSD resolved: ${serviceInfo.serviceName} at ${serviceInfo.host}:${serviceInfo.port}")
-            syncLogManager.info("NSD", "Resolved: ${serviceInfo.serviceName} at ${serviceInfo.host?.hostAddress}:${serviceInfo.port}")
-            addOrUpdateDeviceFromNsd(serviceInfo)
+        // Set timeout - will be cancelled if resolution succeeds/fails before timeout
+        mainHandler.postDelayed(timeoutRunnable, NSD_RESOLUTION_TIMEOUT_MS)
+
+        try {
+            nsdManager?.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
+                    mainHandler.removeCallbacks(timeoutRunnable)
+
+                    if (errorCode == NsdManager.FAILURE_ALREADY_ACTIVE) {
+                        // Re-queue for later - another resolution is still in progress
+                        Log.d(TAG, "NSD resolver busy, re-queuing: ${info.serviceName}")
+                        pendingNsdResolutions.add(info)
+                    } else {
+                        Log.e(TAG, "NSD resolve failed for ${info.serviceName}: $errorCode")
+                        syncLogManager.warn("NSD", "Resolve failed for ${info.serviceName}: code $errorCode")
+                    }
+
+                    isNsdResolving.set(false)
+                    processNextNsdResolution()
+                }
+
+                override fun onServiceResolved(info: NsdServiceInfo) {
+                    mainHandler.removeCallbacks(timeoutRunnable)
+
+                    Log.i(TAG, "NSD resolved: ${info.serviceName} at ${info.host}:${info.port}")
+                    syncLogManager.info("NSD", "Resolved: ${info.serviceName} at ${info.host?.hostAddress}:${info.port}")
+                    addOrUpdateDeviceFromNsd(info)
+
+                    isNsdResolving.set(false)
+                    processNextNsdResolution()
+                }
+            })
+        } catch (e: Exception) {
+            mainHandler.removeCallbacks(timeoutRunnable)
+            Log.e(TAG, "Error starting NSD resolution for $serviceName", e)
+            isNsdResolving.set(false)
+            processNextNsdResolution()
         }
     }
 
@@ -351,7 +429,7 @@ class DeviceDiscoveryService @Inject constructor(
         try {
             // Stop jmDNS discovery
             jmDNS?.removeServiceListener(SERVICE_TYPE, serviceListener)
-            
+
             // Stop NSD discovery
             if (isNsdDiscovering) {
                 try {
@@ -361,7 +439,11 @@ class DeviceDiscoveryService @Inject constructor(
                 }
                 isNsdDiscovering = false
             }
-            
+
+            // Clear NSD resolution queue
+            pendingNsdResolutions.clear()
+            isNsdResolving.set(false)
+
             isDiscovering = false
             _discoveryState.value = DiscoveryState.STOPPED
             Log.i(TAG, "Stopped service discovery")
@@ -483,6 +565,58 @@ class DeviceDiscoveryService @Inject constructor(
         syncLogManager.info("Scan", "Subnet scan complete. Found $foundCount devices.")
         Log.i(TAG, "Subnet scan complete. Found $foundCount devices.")
         Result.success(foundCount)
+    }
+
+    /**
+     * Scans IP addresses adjacent to a known address.
+     * Used for targeted discovery when a device might have received a new DHCP lease.
+     *
+     * @param baseIp The last known IP address of the device
+     * @param range Number of addresses to check above and below baseIp (default 20)
+     * @return List of discovered devices in the scanned range
+     */
+    suspend fun scanAdjacentIps(baseIp: String, range: Int = 20): List<DiscoveredDevice> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<DiscoveredDevice>()
+
+        val parts = baseIp.split(".")
+        if (parts.size != 4) {
+            Log.w(TAG, "Invalid IP format for adjacent scan: $baseIp")
+            return@withContext results
+        }
+
+        val subnetPrefix = "${parts[0]}.${parts[1]}.${parts[2]}"
+        val baseOctet = parts[3].toIntOrNull() ?: return@withContext results
+
+        // Calculate range to scan (stay within valid IP range 1-254)
+        val startOctet = (baseOctet - range).coerceIn(1, 254)
+        val endOctet = (baseOctet + range).coerceIn(1, 254)
+
+        syncLogManager.debug("Scan", "Adjacent scan: $subnetPrefix.$startOctet-$endOctet (base: $baseIp)")
+        Log.d(TAG, "Adjacent IP scan: $subnetPrefix.$startOctet to $subnetPrefix.$endOctet")
+
+        // Scan adjacent IPs in parallel
+        coroutineScope {
+            val jobs = (startOctet..endOctet).map { lastOctet ->
+                async {
+                    val ip = "$subnetPrefix.$lastOctet"
+                    probeDevice(ip)
+                }
+            }
+
+            jobs.awaitAll().forEach { device ->
+                if (device != null) {
+                    results.add(device)
+                    addDiscoveredDevice(device)
+                }
+            }
+        }
+
+        if (results.isNotEmpty()) {
+            syncLogManager.info("Scan", "Adjacent scan found ${results.size} devices")
+            Log.i(TAG, "Adjacent scan found ${results.size} devices")
+        }
+
+        results
     }
 
     /**
@@ -664,10 +798,12 @@ class DeviceDiscoveryService @Inject constructor(
 
     private fun acquireMulticastLock() {
         if (multicastLock?.isHeld == true) return
-        
+
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         multicastLock = wifiManager.createMulticastLock("medlems-sync-mdns").apply {
-            setReferenceCounted(true)
+            // Use setReferenceCounted(false) to prevent "MulticastLock under-locked" crashes
+            // that can occur when release() is called multiple times on Android 6.0+ devices
+            setReferenceCounted(false)
             acquire()
         }
         Log.d(TAG, "Multicast lock acquired")
