@@ -5,6 +5,7 @@
 import { query, execute, transaction } from './db';
 import type { Member, MemberStatus, MemberListItem } from '../types';
 import { deletePhotoFile } from '../utils/photoStorage';
+import { queueMember } from './syncOutboxRepository';
 
 /**
  * Get all members.
@@ -151,20 +152,34 @@ export function getTrialMemberCount(): number {
 export function assignMembershipId(internalId: string, membershipId: string): void {
   const now = new Date().toISOString();
   execute(
-    `UPDATE Member 
-     SET membershipId = ?, memberLifecycleStage = 'FULL', updatedAtUtc = ?, syncVersion = syncVersion + 1 
+    `UPDATE Member
+     SET membershipId = ?, memberLifecycleStage = 'FULL', updatedAtUtc = ?, syncVersion = syncVersion + 1
      WHERE internalId = ?`,
     [membershipId, now, internalId]
   );
+
+  // Queue to outbox for sync to tablets
+  try {
+    const updatedMember = getMemberByInternalId(internalId);
+    if (updatedMember) {
+      queueMember(updatedMember, 'UPDATE');
+    }
+  } catch (e) {
+    console.warn('[MemberRepository] Failed to queue member to outbox:', e);
+  }
 }
 
 /**
  * Insert or update a member.
  * Uses internalId as the primary key for upsert.
  */
-export function upsertMember(member: Member): void {
+export function upsertMember(member: Member, skipOutbox = false): void {
   const now = new Date().toISOString();
-  
+
+  // Check if this is an insert or update
+  const existing = getMemberByInternalId(member.internalId);
+  const isUpdate = !!existing;
+
   execute(
     `INSERT INTO Member (
       internalId, membershipId, memberLifecycleStage, status,
@@ -222,6 +237,19 @@ export function upsertMember(member: Member): void {
       member.syncVersion || 0
     ]
   );
+
+  // Queue to outbox for sync to tablets (unless called from sync processing)
+  if (!skipOutbox) {
+    try {
+      // Refresh member data with updated syncVersion
+      const updatedMember = getMemberByInternalId(member.internalId);
+      if (updatedMember) {
+        queueMember(updatedMember, isUpdate ? 'UPDATE' : 'INSERT');
+      }
+    } catch (e) {
+      console.warn('[MemberRepository] Failed to queue member to outbox:', e);
+    }
+  }
 }
 
 /**
@@ -233,6 +261,16 @@ export function updateMemberStatusByInternalId(internalId: string, status: Membe
     'UPDATE Member SET status = ?, updatedAtUtc = ?, syncVersion = syncVersion + 1 WHERE internalId = ?',
     [status, now, internalId]
   );
+
+  // Queue to outbox for sync to tablets
+  try {
+    const updatedMember = getMemberByInternalId(internalId);
+    if (updatedMember) {
+      queueMember(updatedMember, 'UPDATE');
+    }
+  } catch (e) {
+    console.warn('[MemberRepository] Failed to queue member to outbox:', e);
+  }
 }
 
 /**

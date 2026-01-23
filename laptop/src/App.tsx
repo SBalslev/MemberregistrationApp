@@ -3,7 +3,7 @@
  * Sets up the app shell with sidebar navigation and page routing.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import {
   DashboardPage,
@@ -20,10 +20,22 @@ import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberD
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
 
+// Task 6.6: Periodic pull interval (5 minutes)
+const PERIODIC_PULL_INTERVAL_MS = 5 * 60 * 1000;
+
+// Task 6.5: Debounce delay for sync-on-discovery (avoid rapid fire)
+const DISCOVERY_SYNC_DEBOUNCE_MS = 3000;
+
 function App() {
-  const { isDbInitialized, setDbInitialized, currentPage } = useAppStore();
+  const { isDbInitialized, setDbInitialized, currentPage, triggerSync } = useAppStore();
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+
+  // Task 6.5: Track last discovery sync to debounce
+  const lastDiscoverySyncRef = useRef<number>(0);
+
+  // Task 6.6: Track periodic pull interval
+  const periodicPullIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // NOTE: Pending registration count removed - approval workflow deprecated per FR-7.2
   // Trial members are now created directly on tablets and synced as Member entities
@@ -152,30 +164,30 @@ function App() {
 
           // Handle sync:process-push - main process sends incoming sync data
           api?.onProcessPushRequest?.(async (payload) => {
-            console.log('[App] IPC process-push request:', 
+            console.log('[App] IPC process-push request:',
               `${payload.entities.checkIns?.length || 0} check-ins, ` +
               `${payload.entities.practiceSessions?.length || 0} sessions, ` +
               `${payload.entities.newMemberRegistrations?.length || 0} registrations`
             );
-            
+
             setSyncStatus('Synkroniserer...');
-            
+
             try {
               const result = await processSyncPayload(payload as SyncPayload);
-              
-              const accepted = 
-                (result.registrationsAdded || 0) + 
+
+              const accepted =
+                (result.registrationsAdded || 0) +
                 (result.registrationsUpdated || 0) +
                 (result.checkInsAdded || 0) +
                 (result.sessionsAdded || 0);
-              
+
               if (accepted > 0) {
                 setSyncStatus(`${accepted} elementer modtaget`);
               } else {
                 setSyncStatus('Synkroniseret');
               }
               setTimeout(() => setSyncStatus(null), 3000);
-              
+
               return {
                 accepted,
                 errors: result.errors || []
@@ -190,7 +202,35 @@ function App() {
               };
             }
           });
-          
+
+          // Task 6.5: Sync-on-discovery - trigger sync when a device is discovered
+          api?.onDeviceDiscovered((device) => {
+            console.log('[App] Device discovered:', device.name, 'at', device.host);
+
+            // Debounce to avoid rapid sync triggers when multiple devices are discovered
+            const now = Date.now();
+            if (now - lastDiscoverySyncRef.current > DISCOVERY_SYNC_DEBOUNCE_MS) {
+              lastDiscoverySyncRef.current = now;
+              console.log('[App] Triggering sync-on-discovery...');
+              triggerSync().catch(err => {
+                console.error('[App] Sync-on-discovery error:', err);
+              });
+            } else {
+              console.log('[App] Sync-on-discovery debounced');
+            }
+          });
+
+          // Task 6.6: Start periodic pull interval (5 minutes)
+          if (!periodicPullIntervalRef.current) {
+            console.log('[App] Starting periodic pull interval (5 minutes)');
+            periodicPullIntervalRef.current = setInterval(() => {
+              console.log('[App] Periodic pull triggered');
+              triggerSync().catch(err => {
+                console.error('[App] Periodic pull error:', err);
+              });
+            }, PERIODIC_PULL_INTERVAL_MS);
+          }
+
           console.log('[App] Sync listener registered');
         }
       } catch (err) {
@@ -199,7 +239,16 @@ function App() {
       }
     }
     init();
-  }, [setDbInitialized]);
+
+    // Cleanup periodic pull interval on unmount
+    return () => {
+      if (periodicPullIntervalRef.current) {
+        console.log('[App] Cleaning up periodic pull interval');
+        clearInterval(periodicPullIntervalRef.current);
+        periodicPullIntervalRef.current = null;
+      }
+    };
+  }, [setDbInitialized, triggerSync]);
 
   if (error) {
     return (

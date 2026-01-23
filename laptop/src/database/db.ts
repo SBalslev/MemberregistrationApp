@@ -8,7 +8,7 @@
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 
 // Schema version matching Android app
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 // SQL.js instance (singleton)
 let SQL: SqlJsStatic | null = null;
@@ -474,6 +474,57 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('EquipmentItem.discipline');
   }
 
+  // ===== Migration: Schema v12 - Sync Outbox for Reliable Sync =====
+  const outboxCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='SyncOutbox'");
+  if (outboxCheck.length === 0 || outboxCheck[0].values.length === 0) {
+    // SyncOutbox: Persistent queue for sync operations
+    db.run(`
+      CREATE TABLE IF NOT EXISTS SyncOutbox (
+        id TEXT PRIMARY KEY NOT NULL,
+        entityType TEXT NOT NULL,
+        entityId TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        createdAtUtc TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        lastAttemptUtc TEXT,
+        lastError TEXT,
+        nextRetryUtc TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+      )
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_SyncOutbox_status ON SyncOutbox(status)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_SyncOutbox_createdAtUtc ON SyncOutbox(createdAtUtc)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_SyncOutbox_nextRetryUtc ON SyncOutbox(nextRetryUtc)');
+    migrationsRun.push('SyncOutbox table created');
+
+    // SyncOutboxDelivery: Per-device delivery tracking
+    db.run(`
+      CREATE TABLE IF NOT EXISTS SyncOutboxDelivery (
+        outboxId TEXT NOT NULL,
+        deviceId TEXT NOT NULL,
+        deliveredAtUtc TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        lastAttemptUtc TEXT,
+        lastError TEXT,
+        PRIMARY KEY (outboxId, deviceId),
+        FOREIGN KEY (outboxId) REFERENCES SyncOutbox(id) ON DELETE CASCADE
+      )
+    `);
+    migrationsRun.push('SyncOutboxDelivery table created');
+
+    // ProcessedSyncMessage: Idempotency tracking
+    db.run(`
+      CREATE TABLE IF NOT EXISTS ProcessedSyncMessage (
+        messageId TEXT PRIMARY KEY NOT NULL,
+        sourceDeviceId TEXT NOT NULL,
+        processedAtUtc TEXT NOT NULL
+      )
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_ProcessedSyncMessage_processedAt ON ProcessedSyncMessage(processedAtUtc)');
+    migrationsRun.push('ProcessedSyncMessage table created');
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -779,6 +830,46 @@ async function createSchema(): Promise<void> {
       FOREIGN KEY (memberId) REFERENCES Member(internalId)
     );
     CREATE INDEX IF NOT EXISTS idx_TrainerDiscipline_memberId ON TrainerDiscipline(memberId);
+
+    -- ===== Sync Outbox Tables (Reliable Sync) =====
+
+    -- SyncOutbox: Persistent queue for sync operations
+    CREATE TABLE IF NOT EXISTS SyncOutbox (
+      id TEXT PRIMARY KEY NOT NULL,
+      entityType TEXT NOT NULL,
+      entityId TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      createdAtUtc TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      lastAttemptUtc TEXT,
+      lastError TEXT,
+      nextRetryUtc TEXT,
+      status TEXT NOT NULL DEFAULT 'pending'
+    );
+    CREATE INDEX IF NOT EXISTS idx_SyncOutbox_status ON SyncOutbox(status);
+    CREATE INDEX IF NOT EXISTS idx_SyncOutbox_createdAtUtc ON SyncOutbox(createdAtUtc);
+    CREATE INDEX IF NOT EXISTS idx_SyncOutbox_nextRetryUtc ON SyncOutbox(nextRetryUtc);
+
+    -- SyncOutboxDelivery: Per-device delivery tracking
+    CREATE TABLE IF NOT EXISTS SyncOutboxDelivery (
+      outboxId TEXT NOT NULL,
+      deviceId TEXT NOT NULL,
+      deliveredAtUtc TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      lastAttemptUtc TEXT,
+      lastError TEXT,
+      PRIMARY KEY (outboxId, deviceId),
+      FOREIGN KEY (outboxId) REFERENCES SyncOutbox(id) ON DELETE CASCADE
+    );
+
+    -- ProcessedSyncMessage: Idempotency tracking
+    CREATE TABLE IF NOT EXISTS ProcessedSyncMessage (
+      messageId TEXT PRIMARY KEY NOT NULL,
+      sourceDeviceId TEXT NOT NULL,
+      processedAtUtc TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ProcessedSyncMessage_processedAt ON ProcessedSyncMessage(processedAtUtc);
 
     -- Schema version metadata
     CREATE TABLE IF NOT EXISTS _schema_version (

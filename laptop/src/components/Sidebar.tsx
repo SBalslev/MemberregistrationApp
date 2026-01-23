@@ -21,6 +21,7 @@ import {
 import { useAppStore } from '../store';
 import { PushConfirmationDialog } from './PushConfirmationDialog';
 import { query } from '../database';
+import { getPendingCount, getFailedCount } from '../database/syncOutboxRepository';
 import type { DeviceInfo } from '../types/entities';
 
 interface NavItem {
@@ -48,6 +49,8 @@ export function Sidebar() {
   const { currentPage, setCurrentPage, hasPendingChanges, isSyncing } = useAppStore();
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
+  const [outboxPending, setOutboxPending] = useState(0);
+  const [outboxFailed, setOutboxFailed] = useState(0);
 
   // Load paired devices for the push dialog
   useEffect(() => {
@@ -64,6 +67,21 @@ export function Sidebar() {
       setDevices([]);
     }
   }, [showPushDialog]);
+
+  // Load outbox counts and refresh periodically
+  useEffect(() => {
+    function refreshOutboxCounts() {
+      try {
+        setOutboxPending(getPendingCount());
+        setOutboxFailed(getFailedCount());
+      } catch {
+        // Database may not be initialized yet
+      }
+    }
+    refreshOutboxCounts();
+    const interval = setInterval(refreshOutboxCounts, 5000); // Refresh every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   // Get badge count for a nav item
   // NOTE: 'registrations' badge removed - approval workflow deprecated per FR-7.2
@@ -129,19 +147,35 @@ export function Sidebar() {
           disabled={isSyncing}
           onClick={handleSyncClick}
           className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-            hasPendingChanges
-              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            outboxFailed > 0
+              ? 'bg-red-100 text-red-700 hover:bg-red-200'
+              : outboxPending > 0 || hasPendingChanges
+                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
           }`}
         >
           <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
           {isSyncing
             ? 'Synkroniserer...'
-            : hasPendingChanges
-              ? 'Push ændringer'
-              : 'Synkronisér'}
+            : outboxFailed > 0
+              ? `${outboxFailed} fejlet`
+              : outboxPending > 0
+                ? `${outboxPending} afventer`
+                : hasPendingChanges
+                  ? 'Push ændringer'
+                  : 'Synkronisér'}
         </button>
-        {hasPendingChanges && (
+        {(outboxPending > 0 || outboxFailed > 0) && (
+          <div className="text-xs text-center mt-2 space-y-1">
+            {outboxPending > 0 && (
+              <p className="text-amber-600">{outboxPending} afventer synkronisering</p>
+            )}
+            {outboxFailed > 0 && (
+              <p className="text-red-600">{outboxFailed} fejlet - klik for at prøve igen</p>
+            )}
+          </div>
+        )}
+        {!outboxPending && !outboxFailed && hasPendingChanges && (
           <p className="text-xs text-amber-600 text-center mt-2">
             Usendte ændringer venter
           </p>

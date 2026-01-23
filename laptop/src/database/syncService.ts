@@ -15,6 +15,7 @@ import type { NewMemberRegistration } from '../types/entities';
 import { getAllMembers } from './memberRepository';
 import { processPhoto } from '../utils/photoStorage';
 import { getFeeCategoryFromBirthDate } from '../utils/feeCategory';
+import { isMessageProcessed, recordProcessedMessage } from './syncOutboxRepository';
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
@@ -41,6 +42,10 @@ export interface SyncPayload {
   deviceId: string;
   deviceType: string;
   timestamp: string;
+  /** Unique message ID for idempotency (FR-3) */
+  messageId?: string;
+  /** Outbox entry IDs from sender for acknowledgment */
+  outboxIds?: string[];
   entities: {
     members?: SyncableMember[];
     checkIns?: SyncableCheckIn[];
@@ -231,6 +236,12 @@ export interface SyncResult {
   trainerInfosProcessed: number;
   trainerDisciplinesProcessed: number;
   errors: string[];
+  /** Acknowledged message ID for idempotency (FR-3) */
+  acknowledgedMessageId?: string;
+  /** Acknowledged outbox IDs from sender */
+  acknowledgedOutboxIds?: string[];
+  /** Whether this was a duplicate message (already processed) */
+  isDuplicate?: boolean;
 }
 
 /**
@@ -251,10 +262,25 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     memberPreferencesProcessed: 0,
     trainerInfosProcessed: 0,
     trainerDisciplinesProcessed: 0,
-    errors: []
+    errors: [],
+    acknowledgedMessageId: payload.messageId,
+    acknowledgedOutboxIds: payload.outboxIds || []
   };
 
   console.log(`[SyncService] Processing payload from ${payload.deviceId}`);
+
+  // FR-3: Idempotency check - skip if this message was already processed
+  if (payload.messageId) {
+    try {
+      if (isMessageProcessed(payload.messageId)) {
+        console.log(`[SyncService] Duplicate message ${payload.messageId} - already processed`);
+        result.isDuplicate = true;
+        return result;
+      }
+    } catch (e) {
+      console.warn('[SyncService] Error checking message idempotency:', e);
+    }
+  }
   
   // Process members (especially trial members from tablets)
   if (payload.entities.members) {
@@ -407,6 +433,16 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
   }
 
   console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts, ${result.memberPreferencesProcessed} preferences, ${result.trainerInfosProcessed} trainer infos, ${result.trainerDisciplinesProcessed} trainer disciplines`);
+
+  // FR-3: Record message as processed for idempotency
+  if (payload.messageId) {
+    try {
+      recordProcessedMessage(payload.messageId, payload.deviceId);
+    } catch (e) {
+      console.warn('[SyncService] Error recording processed message:', e);
+    }
+  }
+
   return result;
 }
 
