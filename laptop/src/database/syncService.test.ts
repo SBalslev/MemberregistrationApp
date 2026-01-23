@@ -48,8 +48,13 @@ vi.mock('./db', () => {
   };
 });
 
+vi.mock('../utils/photoStorage', () => ({
+  processPhoto: vi.fn()
+}));
+
 // Import after mocking
-import { query } from './db';
+import { execute, query } from './db';
+import { processSyncPayload } from './syncService';
 
 // Type definitions for test payloads
 interface SyncableNewMemberRegistration {
@@ -332,6 +337,121 @@ describe('Tablet-to-Tablet Sync Filtering', () => {
     const shouldSyncMembers = destinationDeviceType === 'LAPTOP';
     
     expect(shouldSyncMembers).toBe(true);
+  });
+});
+
+describe('Schema consistency guards', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should insert trial members using current Member schema columns', async () => {
+    const payload = {
+      schemaVersion: '1.2.0',
+      deviceId: 'tablet-1',
+      deviceType: 'MEMBER_TABLET',
+      timestamp: '2026-01-22T10:00:00Z',
+      entities: {
+        newMemberRegistrations: [
+          {
+            id: 'reg-123',
+            temporaryId: 'temp-123',
+            photoPath: '/photos/test.jpg',
+            firstName: 'John',
+            lastName: 'Doe',
+            deviceId: 'tablet-1',
+            syncVersion: 1,
+            createdAtUtc: '2026-01-22T10:00:00Z',
+            modifiedAtUtc: '2026-01-22T10:00:00Z'
+          }
+        ]
+      }
+    };
+
+    await processSyncPayload(payload);
+
+    const insertCall = [...vi.mocked(execute).mock.calls].reverse().find(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO Member')
+    );
+
+    expect(insertCall).toBeTruthy();
+    const insertSql = insertCall?.[0] as string;
+    expect(insertSql).toContain('memberLifecycleStage');
+    expect(insertSql).not.toContain('registeredByDeviceId');
+    expect(insertSql).not.toContain('photoUri');
+    expect(insertSql).not.toContain('birthday');
+  });
+
+  it('should assign child fee category for under-18 registrations', async () => {
+    const payload = {
+      schemaVersion: '1.2.0',
+      deviceId: 'tablet-1',
+      deviceType: 'MEMBER_TABLET',
+      timestamp: '2026-01-22T10:00:00Z',
+      entities: {
+        newMemberRegistrations: [
+          {
+            id: 'reg-124',
+            temporaryId: 'temp-124',
+            photoPath: '/photos/test.jpg',
+            firstName: 'Lise',
+            lastName: 'Hansen',
+            birthDate: '2010-01-01',
+            deviceId: 'tablet-1',
+            syncVersion: 1,
+            createdAtUtc: '2026-01-22T10:00:00Z',
+            modifiedAtUtc: '2026-01-22T10:00:00Z'
+          }
+        ]
+      }
+    };
+
+    await processSyncPayload(payload);
+
+    const insertCall = [...vi.mocked(execute).mock.calls].reverse().find(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO Member')
+    );
+
+    expect(insertCall).toBeTruthy();
+    const insertParams = insertCall?.[1] as unknown[] | undefined;
+    expect(insertParams).toBeTruthy();
+    expect(insertParams).toContain('CHILD');
+  });
+
+  it('should assign adult fee category for adult registrations', async () => {
+    const payload = {
+      schemaVersion: '1.2.0',
+      deviceId: 'tablet-1',
+      deviceType: 'MEMBER_TABLET',
+      timestamp: '2026-01-22T10:00:00Z',
+      entities: {
+        newMemberRegistrations: [
+          {
+            id: 'reg-125',
+            temporaryId: 'temp-125',
+            photoPath: '/photos/test.jpg',
+            firstName: 'Peter',
+            lastName: 'Nielsen',
+            birthDate: '1980-01-01',
+            deviceId: 'tablet-1',
+            syncVersion: 1,
+            createdAtUtc: '2026-01-22T10:00:00Z',
+            modifiedAtUtc: '2026-01-22T10:00:00Z'
+          }
+        ]
+      }
+    };
+
+    await processSyncPayload(payload);
+
+    const insertCall = [...vi.mocked(execute).mock.calls].reverse().find(([sql]) =>
+      typeof sql === 'string' && sql.includes('INSERT INTO Member')
+    );
+
+    expect(insertCall).toBeTruthy();
+    const insertParams = insertCall?.[1] as unknown[] | undefined;
+    expect(insertParams).toBeTruthy();
+    expect(insertParams).toContain('ADULT');
   });
 });
 

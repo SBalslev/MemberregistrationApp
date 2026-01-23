@@ -2,7 +2,7 @@
  * Members page - list and manage members.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge } from 'lucide-react';
 import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers } from '../database';
 import type { Member, Gender } from '../types';
@@ -189,9 +189,9 @@ export function MembersPage() {
                     }`}
                   >
                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                      {(member.photoThumbnail || member.photoUri || member.registrationPhotoPath) ? (
+                      {(member.photoThumbnail || member.photoPath || member.registrationPhotoPath) ? (
                         <img
-                          src={getPhotoSrc(member.photoThumbnail || member.photoUri || member.registrationPhotoPath) || ''}
+                          src={getPhotoSrc(member.photoThumbnail || member.photoPath || member.registrationPhotoPath) || ''}
                           alt=""
                           className="w-10 h-10 rounded-full object-cover"
                         />
@@ -383,7 +383,7 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
   const trialWarning = daysSinceRegistration > 90 ? 'error' : daysSinceRegistration > 30 ? 'warning' : 'info';
 
   // Get photo source - prefer full photo (photoPath) for detail view, fallback to older fields
-  const photoSource = member.photoPath || member.registrationPhotoPath || member.photoUri;
+  const photoSource = member.photoPath || member.registrationPhotoPath;
   const photoSrc = getPhotoSrc(photoSource);
 
   return (
@@ -435,7 +435,7 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
 
       {/* Details */}
       <div className="space-y-4">
-        <DetailRow label="Fødselsdag" value={member.birthday ? `${member.birthday} (${calculateAge(member.birthday)} år)` : '-'} />
+        <DetailRow label="Fødselsdag" value={member.birthDate ? `${member.birthDate} (${calculateAge(member.birthDate)} år)` : '-'} />
         <DetailRow label="Køn" value={formatGender(member.gender)} />
         <DetailRow label="Email" value={member.email || '-'} />
         <DetailRow label="Telefon" value={member.phone || '-'} />
@@ -446,7 +446,7 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
       </div>
 
       {/* Guardian info if under 18 */}
-      {member.birthday && calculateAge(member.birthday) < 18 && (member.guardianName || member.guardianPhone || member.guardianEmail) && (
+      {member.birthDate && calculateAge(member.birthDate) < 18 && (member.guardianName || member.guardianPhone || member.guardianEmail) && (
         <div className="mt-6 pt-4 border-t border-gray-200">
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Forælder/værge</h3>
           <div className="space-y-4">
@@ -882,10 +882,20 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
   const [guardianName, setGuardianName] = useState('');
   const [guardianPhone, setGuardianPhone] = useState('');
   const [guardianEmail, setGuardianEmail] = useState('');
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoPath, setPhotoPath] = useState<string | null>(null);
+  const [feeCategory, setFeeCategory] = useState<Member['memberType']>('ADULT');
 
   // Calculate if member is under 18
   const isUnder18 = birthday ? calculateAge(birthday) < 18 : false;
+
+  useEffect(() => {
+    if (isUnder18 && feeCategory === 'ADULT') {
+      setFeeCategory('CHILD');
+    }
+    if (!isUnder18 && feeCategory !== 'ADULT') {
+      setFeeCategory('ADULT');
+    }
+  }, [isUnder18, feeCategory]);
 
   // Handle photo file selection
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -893,14 +903,14 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPhotoUri(reader.result as string);
+        setPhotoPath(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
   }
 
   function removePhoto() {
-    setPhotoUri(null);
+    setPhotoPath(null);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -911,13 +921,14 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
     }
 
     const now = new Date().toISOString();
+    const effectiveFeeCategory: Member['memberType'] = isUnder18 ? feeCategory : 'ADULT';
     const newMember: Member = {
       internalId: crypto.randomUUID(),
       membershipId: membershipId.trim(),
       memberLifecycleStage: 'FULL', // Has membershipId, so FULL
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-      birthday: birthday || null,
+      birthDate: birthday || null,
       gender: gender || null,
       email: email.trim() || null,
       phone: phone.trim() || null,
@@ -927,15 +938,13 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
       guardianName: isUnder18 ? guardianName.trim() || null : null,
       guardianPhone: isUnder18 ? guardianPhone.trim() || null : null,
       guardianEmail: isUnder18 ? guardianEmail.trim() || null : null,
-      feeCategory: 'ADULT',
+      memberType: effectiveFeeCategory,
       status: 'ACTIVE',
       expiresOn: null,
-      photoUri,
       registrationPhotoPath: null,
-      photoPath: null,
+      photoPath,
       photoThumbnail: null,
       mergedIntoId: null,
-      deviceId: null,
       createdAtUtc: now,
       updatedAtUtc: now,
       syncedAtUtc: null,
@@ -965,9 +974,9 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
           <div className="flex justify-center mb-4">
             <div className="relative">
               <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border-4 border-white shadow-lg">
-                {photoUri ? (
+                {photoPath ? (
                   <img
-                    src={photoUri}
+                    src={photoPath}
                     alt="Medlemsfoto"
                     className="w-full h-full object-cover"
                   />
@@ -984,7 +993,7 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
                   className="hidden"
                 />
               </label>
-              {photoUri && (
+              {photoPath && (
                 <button
                   type="button"
                   onClick={removePhoto}
@@ -1070,6 +1079,44 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
               onChange={(e) => setBirthday(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Kontingenttype
+            </label>
+            <select
+              value={feeCategory}
+              onChange={(e) => setFeeCategory(e.target.value as Member['memberType'])}
+              disabled={!isUnder18}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500"
+            >
+              <option value="ADULT">Voksen</option>
+              <option value="CHILD" disabled={!isUnder18}>Barn</option>
+              <option value="CHILD_PLUS" disabled={!isUnder18}>Barn+</option>
+            </select>
+            {!isUnder18 && (
+              <p className="mt-1 text-xs text-gray-500">Kun børn under 18 kan være Barn eller Barn+</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Kontingenttype
+            </label>
+            <select
+              value={feeCategory}
+              onChange={(e) => setFeeCategory(e.target.value as Member['memberType'])}
+              disabled={!isUnder18}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500"
+            >
+              <option value="ADULT">Voksen</option>
+              <option value="CHILD" disabled={!isUnder18}>Barn</option>
+              <option value="CHILD_PLUS" disabled={!isUnder18}>Barn+</option>
+            </select>
+            {!isUnder18 && (
+              <p className="mt-1 text-xs text-gray-500">Kun børn under 18 kan være Barn eller Barn+</p>
+            )}
           </div>
 
           <div>
@@ -1200,7 +1247,7 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
   const [lastName, setLastName] = useState(member.lastName);
   const [email, setEmail] = useState(member.email || '');
   const [phone, setPhone] = useState(member.phone || '');
-  const [birthday, setBirthday] = useState(member.birthday || '');
+  const [birthday, setBirthday] = useState(member.birthDate || '');
   const [gender, setGender] = useState<Gender | ''>(member.gender || '');
   const [address, setAddress] = useState(member.address || '');
   const [zipCode, setZipCode] = useState(member.zipCode || '');
@@ -1209,7 +1256,15 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
   const [guardianPhone, setGuardianPhone] = useState(member.guardianPhone || '');
   const [guardianEmail, setGuardianEmail] = useState(member.guardianEmail || '');
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>(member.status);
-  const [photoUri, setPhotoUri] = useState<string | null>(member.photoUri || null);
+  const [photoPath, setPhotoPath] = useState<string | null>(member.photoPath || null);
+  const [feeCategory, setFeeCategory] = useState<Member['memberType']>(() => {
+    const isUnder18Initial = member.birthDate ? calculateAge(member.birthDate) < 18 : false;
+    if (!isUnder18Initial) return 'ADULT';
+    if (member.memberType === 'CHILD_PLUS' || member.memberType === 'CHILD') {
+      return member.memberType;
+    }
+    return 'CHILD';
+  });
 
   // Handle photo file selection
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1217,18 +1272,27 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPhotoUri(reader.result as string);
+        setPhotoPath(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
   }
 
   function removePhoto() {
-    setPhotoUri(null);
+    setPhotoPath(null);
   }
 
   // Calculate if member is under 18
   const isUnder18 = birthday ? calculateAge(birthday) < 18 : false;
+
+  useEffect(() => {
+    if (isUnder18 && feeCategory === 'ADULT') {
+      setFeeCategory('CHILD');
+    }
+    if (!isUnder18 && feeCategory !== 'ADULT') {
+      setFeeCategory('ADULT');
+    }
+  }, [isUnder18, feeCategory]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1237,11 +1301,12 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
       return;
     }
 
+    const effectiveFeeCategory: Member['memberType'] = isUnder18 ? feeCategory : 'ADULT';
     const updatedMember: Member = {
       ...member,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-      birthday: birthday || null,
+      birthDate: birthday || null,
       gender: gender || null,
       email: email.trim() || null,
       phone: phone.trim() || null,
@@ -1251,8 +1316,9 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
       guardianName: isUnder18 ? guardianName.trim() || null : null,
       guardianPhone: isUnder18 ? guardianPhone.trim() || null : null,
       guardianEmail: isUnder18 ? guardianEmail.trim() || null : null,
+      memberType: effectiveFeeCategory,
       status,
-      photoUri,
+      photoPath,
       updatedAtUtc: new Date().toISOString(),
     };
 
@@ -1279,9 +1345,9 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
           <div className="flex justify-center mb-4">
             <div className="relative">
               <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border-4 border-white shadow-lg">
-                {photoUri ? (
+                {photoPath ? (
                   <img
-                    src={photoUri.startsWith('data:') || photoUri.startsWith('http') ? photoUri : `file://${photoUri}`}
+                    src={photoPath.startsWith('data:') || photoPath.startsWith('http') ? photoPath : `file://${photoPath}`}
                     alt="Medlemsfoto"
                     className="w-full h-full object-cover"
                   />
@@ -1298,7 +1364,7 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
                   className="hidden"
                 />
               </label>
-              {photoUri && (
+              {photoPath && (
                 <button
                   type="button"
                   onClick={removePhoto}

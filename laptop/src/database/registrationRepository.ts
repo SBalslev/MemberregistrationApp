@@ -102,12 +102,17 @@ export function approveRegistration(
     // Create the member with all fields from registration
     execute(
       `INSERT INTO Member (
-        membershipId, firstName, lastName, birthday, gender, email, phone, 
+        internalId, membershipId, memberLifecycleStage, status,
+        firstName, lastName, birthDate, gender, email, phone,
         address, zipCode, city, guardianName, guardianPhone, guardianEmail,
-        status, photoUri, createdAtUtc, updatedAtUtc, syncedAtUtc, syncVersion
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        registrationPhotoPath, photoPath, photoThumbnail, memberType,
+        createdAtUtc, updatedAtUtc, syncedAtUtc, syncVersion
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        registration.id,
         membershipId,
+        'FULL',
+        'ACTIVE',
         registration.firstName,
         registration.lastName,
         registration.birthday,
@@ -120,8 +125,10 @@ export function approveRegistration(
         registration.guardianName,
         registration.guardianPhone,
         registration.guardianEmail,
-        'ACTIVE',
         registration.photoPath,
+        null,
+        null,
+        'ADULT',
         now,
         now,
         null, // syncedAtUtc

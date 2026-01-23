@@ -20,54 +20,52 @@ export type FeeCategoryType = 'ADULT' | 'CHILD' | 'CHILD_PLUS';
 export interface Member {
   /** Immutable UUID, primary key across all devices */
   internalId: string;
-  
+
   /** Club-assigned ID, null for trial members */
   membershipId: string | null;
-  
+
   /** Lifecycle stage: TRIAL or FULL */
   memberLifecycleStage: MemberLifecycleStage;
-  
+
   /** Operational status: ACTIVE or INACTIVE */
   status: MemberStatus;
-  
+
   // Personal Information
   firstName: string;
   lastName: string;
-  birthday: string | null; // ISO date string YYYY-MM-DD
+  birthDate: string | null; // ISO date string YYYY-MM-DD (DB column name)
   gender: Gender | null;
   email: string | null;
   phone: string | null;
   address: string | null;
   zipCode: string | null;
   city: string | null;
-  
+
   // Guardian info for members under 18
   guardianName: string | null;
   guardianPhone: string | null;
   guardianEmail: string | null;
-  
-  // Member type for fee calculation (ADULT/CHILD/CHILD_PLUS)
-  feeCategory: FeeCategoryType;
-  
+
+  // Member type for fee calculation (ADULT/CHILD/CHILD_PLUS) - DB column: memberType
+  memberType: FeeCategoryType;
+
   // Membership details
   expiresOn: string | null;
-  photoUri: string | null;
   /** @deprecated Use photoPath and photoThumbnail instead */
   registrationPhotoPath: string | null;
   /** Path to full-resolution photo file on disk */
   photoPath: string | null;
   /** Small 150x150 thumbnail as data URL for list views */
   photoThumbnail: string | null;
-  
+
   // Merge tracking (per DD-10)
   mergedIntoId: string | null;
-  
+
   // Timestamps
   createdAtUtc: string; // ISO datetime
   updatedAtUtc: string; // ISO datetime
-  
+
   // Sync metadata
-  deviceId: string | null;
   syncedAtUtc: string | null;
   syncVersion: number;
 }

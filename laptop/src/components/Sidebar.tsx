@@ -35,7 +35,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'members', label: 'Medlemmer', icon: Users },
-  { id: 'trainers', label: 'Traenere', icon: GraduationCap },
+  { id: 'trainers', label: 'Trænere', icon: GraduationCap },
   { id: 'equipment', label: 'Udstyr', icon: Package },
   { id: 'finance', label: 'Økonomi', icon: Wallet },
   { id: 'devices', label: 'Enheder', icon: Laptop },

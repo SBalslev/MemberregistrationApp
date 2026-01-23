@@ -8,6 +8,7 @@ import { X, CreditCard, Banknote, Building2 } from 'lucide-react';
 import type { Member } from '../../types/entities';
 import type { PaymentMethod, FeeRate } from '../../types';
 import { PAYMENT_METHOD_LABELS, MEMBER_TYPE_LABELS } from '../../types';
+import { getEffectiveMemberType } from '../../utils/feeCategory';
 
 interface QuickFeePaymentDialogProps {
   isOpen: boolean;
@@ -34,12 +35,15 @@ export function QuickFeePaymentDialog({
   year,
   preselectedMemberId,
 }: QuickFeePaymentDialogProps) {
+  const getMemberById = (selectedMemberId: string) =>
+    members.find(m => m.membershipId === selectedMemberId || m.internalId === selectedMemberId);
+
   // Helper to get default amount for a member
   const getDefaultAmount = (selectedMemberId: string | null | undefined) => {
     if (!selectedMemberId) return 0;
-    const member = members.find(m => m.membershipId === selectedMemberId);
+    const member = getMemberById(selectedMemberId);
     if (!member) return 0;
-    const feeCategory = member.feeCategory ?? 'ADULT';
+    const feeCategory = getEffectiveMemberType(member);
     const feeRate = feeRates.find(r => r.memberType === feeCategory && r.fiscalYear === year);
     return feeRate?.feeAmount ?? 0;
   };
@@ -87,8 +91,8 @@ export function QuickFeePaymentDialog({
     onClose();
   };
 
-  const selectedMember = members.find(m => m.membershipId === memberId);
-  const selectedMemberType = selectedMember?.feeCategory ?? 'ADULT';
+  const selectedMember = memberId ? getMemberById(memberId) : undefined;
+  const selectedMemberType = selectedMember ? getEffectiveMemberType(selectedMember) : 'ADULT';
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">

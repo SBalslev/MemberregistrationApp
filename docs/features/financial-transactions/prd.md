@@ -2,7 +2,7 @@
 
 **Feature:** Club Financial Transaction Recording and Reporting
 **Version:** 1.0
-**Last Updated:** 2026-01-19
+**Last Updated:** 2026-01-23
 **Updated By:** sbalslev
 
 ---
@@ -227,6 +227,13 @@ Fee amounts are determined by member type and fiscal year:
 | CHILD_PLUS | Barn+ | 600 kr |
 
 **Note:** Member type (`memberType`) must be added to the Member entity. Fee rates are stored per fiscal year to allow changes.
+
+Fee rates are editable per fiscal year in the UI.
+
+Member fee category rules:
+
+- Members under 18 use CHILD or CHILD_PLUS
+- Members 18 and older use ADULT
 
 #### 3.6.2 Fee Rate Table
 

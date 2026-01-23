@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { getTrialMemberCount, getRecentTrialMembers } from './memberRepository';
 
 // Mock the database module
 const mockData: {
@@ -19,6 +20,7 @@ const mockData: {
     internalId: string;
     membershipId: string | null;
     memberType: string;
+    memberLifecycleStage: string;
     firstName: string;
     lastName: string;
     email: string | null;
@@ -28,7 +30,7 @@ const mockData: {
     createdAtUtc: string;
     mergedIntoId: string | null;
   }>;
-  checkIns: Array<{ id: string; internalMemberId: string }>;
+  checkIns: Array<{ id: string; internalMemberId: string; localDate: string }>;
   practiceSessions: Array<{ id: string; internalMemberId: string }>;
   scanEvents: Array<{ id: string; internalMemberId: string }>;
   equipmentCheckouts: Array<{ id: string; internalMemberId: string }>;
@@ -45,6 +47,41 @@ vi.mock('./db', () => ({
     return { changes: 1 };
   }),
   query: vi.fn(<T>(sql: string, params?: unknown[]): T[] => {
+    // Trial member count query
+    if (sql.includes('COUNT(*)') && sql.includes('FROM Member') && sql.includes("memberLifecycleStage = 'TRIAL'")) {
+      const count = mockData.members.filter(
+        (m) => m.memberLifecycleStage === 'TRIAL' && m.status === 'ACTIVE' && m.mergedIntoId === null
+      ).length;
+      return [{ count }] as T[];
+    }
+    // Recent trial members query (with JOIN to CheckIn)
+    if (sql.includes('FROM Member m') && sql.includes('LEFT JOIN CheckIn') && sql.includes("memberLifecycleStage = 'TRIAL'")) {
+      const threeMonthsAgo = params?.[0] as string;
+      const threeMonthsAgoDate = params?.[1] as string;
+
+      const results = mockData.members
+        .filter((m) => m.memberLifecycleStage === 'TRIAL' && m.status === 'ACTIVE' && m.mergedIntoId === null)
+        .map((m) => {
+          const memberCheckIns = mockData.checkIns.filter((c) => c.internalMemberId === m.internalId);
+          const lastCheckInDate = memberCheckIns.length > 0
+            ? memberCheckIns.reduce((latest, c) => c.localDate > latest ? c.localDate : latest, memberCheckIns[0].localDate)
+            : null;
+          const checkInCount = memberCheckIns.length;
+
+          // Filter by recent activity (created or checked in within 3 months)
+          const hasRecentCheckIn = lastCheckInDate && lastCheckInDate >= threeMonthsAgoDate;
+          const isRecentlyCreated = m.createdAtUtc >= threeMonthsAgo;
+
+          if (!hasRecentCheckIn && !isRecentlyCreated) {
+            return null;
+          }
+
+          return { ...m, lastCheckInDate, checkInCount };
+        })
+        .filter((m) => m !== null);
+
+      return results as T[];
+    }
     // Member queries
     if (sql.includes('FROM Member') && sql.includes('WHERE internalId =')) {
       const id = params?.[0];
@@ -120,6 +157,7 @@ describe('Trial Member Management (FR-1, FR-3)', () => {
         internalId: 'uuid-trial-001',
         membershipId: null,
         memberType: 'TRIAL',
+        memberLifecycleStage: 'TRIAL',
         firstName: 'John',
         lastName: 'Doe',
         email: 'john@example.com',
@@ -129,7 +167,7 @@ describe('Trial Member Management (FR-1, FR-3)', () => {
         createdAtUtc: '2026-01-15T10:00:00Z',
         mergedIntoId: null,
       };
-      
+
       mockData.members.push(trialMember);
       
       // Verify trial member properties
@@ -161,11 +199,11 @@ describe('Trial Member Management (FR-1, FR-3)', () => {
     it('should return only trial members when filtering by memberType', () => {
       // FR-3.1: Laptop displays filtered view of trial members
       mockData.members = [
-        { internalId: 'uuid-1', membershipId: null, memberType: 'TRIAL', firstName: 'Trial', lastName: 'One', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-15T10:00:00Z', mergedIntoId: null },
-        { internalId: 'uuid-2', membershipId: 'M001', memberType: 'FULL', firstName: 'Full', lastName: 'Member', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
-        { internalId: 'uuid-3', membershipId: null, memberType: 'TRIAL', firstName: 'Trial', lastName: 'Two', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-16T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-1', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Trial', lastName: 'One', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-15T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-2', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Full', lastName: 'Member', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-3', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Trial', lastName: 'Two', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-16T10:00:00Z', mergedIntoId: null },
       ];
-      
+
       const trialMembers = mockData.members.filter(m => m.memberType === 'TRIAL');
       
       expect(trialMembers).toHaveLength(2);
@@ -181,6 +219,7 @@ describe('Trial Member Management (FR-1, FR-3)', () => {
         internalId: 'uuid-trial-001',
         membershipId: null as string | null,
         memberType: 'TRIAL',
+        memberLifecycleStage: 'TRIAL',
         firstName: 'John',
         lastName: 'Doe',
         email: null,
@@ -204,9 +243,9 @@ describe('Trial Member Management (FR-1, FR-3)', () => {
     it('should validate membershipId uniqueness', () => {
       // FR-3.4: Laptop validates membershipId uniqueness before saving
       mockData.members = [
-        { internalId: 'uuid-1', membershipId: 'M001', memberType: 'FULL', firstName: 'Existing', lastName: 'Member', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-1', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Existing', lastName: 'Member', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
       ];
-      
+
       const existingId = 'M001';
       const isUnique = !mockData.members.some(m => m.membershipId === existingId);
       
@@ -223,28 +262,26 @@ describe('Trial Member Management (FR-1, FR-3)', () => {
 describe('Duplicate Detection (FR-9.1)', () => {
   beforeEach(() => {
     mockData.members = [
-      { internalId: 'uuid-1', membershipId: 'M001', memberType: 'FULL', firstName: 'John', lastName: 'Smith', email: 'john@example.com', phone: '12345678', birthday: '1990-01-15', status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
-      { internalId: 'uuid-2', membershipId: null, memberType: 'TRIAL', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com', phone: '87654321', birthday: '1995-05-20', status: 'ACTIVE', createdAtUtc: '2026-01-15T10:00:00Z', mergedIntoId: null },
-      { internalId: 'uuid-3', membershipId: null, memberType: 'TRIAL', firstName: 'Jon', lastName: 'Smith', email: null, phone: '12345678', birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-16T10:00:00Z', mergedIntoId: null },
+      { internalId: 'uuid-1', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'John', lastName: 'Smith', email: 'john@example.com', phone: '12345678', birthday: '1990-01-15', status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      { internalId: 'uuid-2', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com', phone: '87654321', birthday: '1995-05-20', status: 'ACTIVE', createdAtUtc: '2026-01-15T10:00:00Z', mergedIntoId: null },
+      { internalId: 'uuid-3', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Jon', lastName: 'Smith', email: null, phone: '12345678', birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-16T10:00:00Z', mergedIntoId: null },
     ];
   });
 
-  it('should detect duplicate by exact phone number match (high confidence)', () => {
+  it('should ignore phone number matches for duplicate detection', () => {
     const targetPhone = '12345678';
     const duplicates = mockData.members.filter(m => m.phone === targetPhone);
     
-    // Both uuid-1 and uuid-3 have same phone
+    // Phone matches should not drive duplicate detection anymore
     expect(duplicates).toHaveLength(2);
-    expect(duplicates.map(d => d.internalId)).toContain('uuid-1');
-    expect(duplicates.map(d => d.internalId)).toContain('uuid-3');
   });
 
-  it('should detect duplicate by exact email match (high confidence)', () => {
+  it('should ignore email matches for duplicate detection', () => {
     const targetEmail = 'john@example.com';
     const duplicates = mockData.members.filter(m => m.email === targetEmail);
     
+    // Email matches should not drive duplicate detection anymore
     expect(duplicates).toHaveLength(1);
-    expect(duplicates[0].internalId).toBe('uuid-1');
   });
 
   it('should detect duplicate by similar name (medium confidence)', () => {
@@ -286,6 +323,7 @@ describe('Duplicate Detection (FR-9.1)', () => {
       internalId: 'uuid-inactive',
       membershipId: null,
       memberType: 'TRIAL',
+      memberLifecycleStage: 'TRIAL',
       firstName: 'John',
       lastName: 'Smith',
       email: 'john@example.com',
@@ -295,12 +333,12 @@ describe('Duplicate Detection (FR-9.1)', () => {
       createdAtUtc: '2026-01-01T10:00:00Z',
       mergedIntoId: null,
     });
-    
+
     const activeMembers = mockData.members.filter(m => m.status === 'ACTIVE');
-    const duplicatesWithPhone = activeMembers.filter(m => m.phone === '12345678');
+    const activeWithPhone = activeMembers.filter(m => m.phone === '12345678');
     
-    // Should only find 2 active members, not the inactive one
-    expect(duplicatesWithPhone).toHaveLength(2);
+    // Phone matches are irrelevant, but active set should exclude inactive member
+    expect(activeWithPhone).toHaveLength(2);
   });
 });
 
@@ -308,15 +346,15 @@ describe('Member Merge (FR-9.2 - FR-9.6)', () => {
   beforeEach(() => {
     // Set up two members with overlapping data
     mockData.members = [
-      { internalId: 'uuid-keep', membershipId: 'M001', memberType: 'FULL', firstName: 'John', lastName: 'Smith', email: 'john@example.com', phone: '12345678', birthday: '1990-01-15', status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
-      { internalId: 'uuid-merge', membershipId: null, memberType: 'TRIAL', firstName: 'Jon', lastName: 'Smith', email: null, phone: '12345678', birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-16T10:00:00Z', mergedIntoId: null },
+      { internalId: 'uuid-keep', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'John', lastName: 'Smith', email: 'john@example.com', phone: '12345678', birthday: '1990-01-15', status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      { internalId: 'uuid-merge', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Jon', lastName: 'Smith', email: null, phone: '12345678', birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-16T10:00:00Z', mergedIntoId: null },
     ];
     
     // Set up related records for the member to be merged
     mockData.checkIns = [
-      { id: 'ci-1', internalMemberId: 'uuid-merge' },
-      { id: 'ci-2', internalMemberId: 'uuid-merge' },
-      { id: 'ci-3', internalMemberId: 'uuid-keep' },
+      { id: 'ci-1', internalMemberId: 'uuid-merge', localDate: '2026-01-18' },
+      { id: 'ci-2', internalMemberId: 'uuid-merge', localDate: '2026-01-19' },
+      { id: 'ci-3', internalMemberId: 'uuid-keep', localDate: '2026-01-20' },
     ];
     
     mockData.practiceSessions = [
@@ -505,12 +543,171 @@ describe('Member Status Transitions', () => {
       memberType: 'TRIAL' as 'TRIAL' | 'FULL',
       status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE',
     };
-    
+
     // Deactivate without assigning membershipId
     member.status = 'INACTIVE';
-    
+
     // memberType should remain TRIAL
     expect(member.memberType).toBe('TRIAL');
     expect(member.status).toBe('INACTIVE');
+  });
+});
+
+describe('Recent Trial Members (Dashboard)', () => {
+  beforeEach(() => {
+    mockData.members = [];
+    mockData.checkIns = [];
+    vi.clearAllMocks();
+  });
+
+  describe('getTrialMemberCount', () => {
+    it('should return count of active trial members', () => {
+      mockData.members = [
+        { internalId: 'uuid-1', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Trial', lastName: 'One', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-15T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-2', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Full', lastName: 'Member', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-3', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Trial', lastName: 'Two', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-16T10:00:00Z', mergedIntoId: null },
+      ];
+
+      const count = getTrialMemberCount();
+      expect(count).toBe(2);
+    });
+
+    it('should exclude inactive trial members from count', () => {
+      mockData.members = [
+        { internalId: 'uuid-1', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Active', lastName: 'Trial', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-15T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-2', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Inactive', lastName: 'Trial', email: null, phone: null, birthday: null, status: 'INACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+
+      const count = getTrialMemberCount();
+      expect(count).toBe(1);
+    });
+
+    it('should exclude merged trial members from count', () => {
+      mockData.members = [
+        { internalId: 'uuid-1', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Active', lastName: 'Trial', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-15T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-2', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Merged', lastName: 'Trial', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: 'uuid-1' },
+      ];
+
+      const count = getTrialMemberCount();
+      expect(count).toBe(1);
+    });
+
+    it('should return 0 when no trial members exist', () => {
+      mockData.members = [
+        { internalId: 'uuid-1', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Full', lastName: 'Member', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+
+      const count = getTrialMemberCount();
+      expect(count).toBe(0);
+    });
+  });
+
+  describe('getRecentTrialMembers', () => {
+    it('should return trial members created within last 3 months', () => {
+      const now = new Date();
+      const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString();
+
+      mockData.members = [
+        { internalId: 'uuid-recent', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Recent', lastName: 'Trial', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: oneMonthAgo, mergedIntoId: null },
+        { internalId: 'uuid-old', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Old', lastName: 'Trial', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: sixMonthsAgo, mergedIntoId: null },
+      ];
+
+      const recentMembers = getRecentTrialMembers();
+
+      expect(recentMembers).toHaveLength(1);
+      expect(recentMembers[0].member.firstName).toBe('Recent');
+    });
+
+    it('should include old trial members with recent check-ins', () => {
+      const now = new Date();
+      const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString();
+      const recentDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+
+      mockData.members = [
+        { internalId: 'uuid-old-active', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Old', lastName: 'Active', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: sixMonthsAgo, mergedIntoId: null },
+      ];
+
+      mockData.checkIns = [
+        { id: 'ci-1', internalMemberId: 'uuid-old-active', localDate: recentDate },
+      ];
+
+      const recentMembers = getRecentTrialMembers();
+
+      expect(recentMembers).toHaveLength(1);
+      expect(recentMembers[0].member.firstName).toBe('Old');
+      expect(recentMembers[0].lastCheckInDate).toBe(recentDate);
+      expect(recentMembers[0].checkInCount).toBe(1);
+    });
+
+    it('should exclude old trial members without recent activity', () => {
+      const now = new Date();
+      const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString();
+      const oldDate = new Date(now.getTime() - 120 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+
+      mockData.members = [
+        { internalId: 'uuid-old-inactive', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Old', lastName: 'Inactive', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: sixMonthsAgo, mergedIntoId: null },
+      ];
+
+      mockData.checkIns = [
+        { id: 'ci-1', internalMemberId: 'uuid-old-inactive', localDate: oldDate },
+      ];
+
+      const recentMembers = getRecentTrialMembers();
+
+      expect(recentMembers).toHaveLength(0);
+    });
+
+    it('should return check-in statistics for trial members', () => {
+      const now = new Date();
+      const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      mockData.members = [
+        { internalId: 'uuid-1', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Trial', lastName: 'Member', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: oneMonthAgo, mergedIntoId: null },
+      ];
+
+      mockData.checkIns = [
+        { id: 'ci-1', internalMemberId: 'uuid-1', localDate: '2026-01-10' },
+        { id: 'ci-2', internalMemberId: 'uuid-1', localDate: '2026-01-15' },
+        { id: 'ci-3', internalMemberId: 'uuid-1', localDate: '2026-01-20' },
+      ];
+
+      const recentMembers = getRecentTrialMembers();
+
+      expect(recentMembers).toHaveLength(1);
+      expect(recentMembers[0].checkInCount).toBe(3);
+      expect(recentMembers[0].lastCheckInDate).toBe('2026-01-20');
+    });
+
+    it('should return null lastCheckInDate for members with no check-ins', () => {
+      const now = new Date();
+      const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      mockData.members = [
+        { internalId: 'uuid-1', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Trial', lastName: 'NoCheckIn', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: oneMonthAgo, mergedIntoId: null },
+      ];
+
+      const recentMembers = getRecentTrialMembers();
+
+      expect(recentMembers).toHaveLength(1);
+      expect(recentMembers[0].checkInCount).toBe(0);
+      expect(recentMembers[0].lastCheckInDate).toBeNull();
+    });
+
+    it('should exclude inactive and merged trial members', () => {
+      const now = new Date();
+      const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      mockData.members = [
+        { internalId: 'uuid-active', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Active', lastName: 'Trial', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: oneMonthAgo, mergedIntoId: null },
+        { internalId: 'uuid-inactive', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Inactive', lastName: 'Trial', email: null, phone: null, birthday: null, status: 'INACTIVE', createdAtUtc: oneMonthAgo, mergedIntoId: null },
+        { internalId: 'uuid-merged', membershipId: null, memberType: 'TRIAL', memberLifecycleStage: 'TRIAL', firstName: 'Merged', lastName: 'Trial', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: oneMonthAgo, mergedIntoId: 'uuid-active' },
+      ];
+
+      const recentMembers = getRecentTrialMembers();
+
+      expect(recentMembers).toHaveLength(1);
+      expect(recentMembers[0].member.firstName).toBe('Active');
+    });
   });
 });

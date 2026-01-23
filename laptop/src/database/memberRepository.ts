@@ -86,10 +86,62 @@ export function searchMembers(searchQuery: string): Member[] {
  */
 export function getTrialMembers(): Member[] {
   return query<Member>(
-    `SELECT * FROM Member 
-     WHERE memberLifecycleStage = 'TRIAL' 
+    `SELECT * FROM Member
+     WHERE memberLifecycleStage = 'TRIAL'
      ORDER BY createdAtUtc DESC`
   );
+}
+
+/**
+ * Trial member with activity information for dashboard display.
+ */
+export interface TrialMemberWithActivity {
+  member: Member;
+  lastCheckInDate: string | null;
+  checkInCount: number;
+}
+
+/**
+ * Get recent trial members - those created or active in the last 3 months.
+ * Returns trial members with their last check-in date and total check-in count.
+ */
+export function getRecentTrialMembers(): TrialMemberWithActivity[] {
+  const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Get trial members with check-in stats
+  const results = query<Member & { lastCheckInDate: string | null; checkInCount: number }>(
+    `SELECT m.*,
+            MAX(c.localDate) as lastCheckInDate,
+            COUNT(c.id) as checkInCount
+     FROM Member m
+     LEFT JOIN CheckIn c ON c.internalMemberId = m.internalId
+     WHERE m.memberLifecycleStage = 'TRIAL'
+       AND m.status = 'ACTIVE'
+       AND m.mergedIntoId IS NULL
+       AND (m.createdAtUtc >= ? OR c.localDate >= ?)
+     GROUP BY m.internalId
+     ORDER BY COALESCE(MAX(c.localDate), m.createdAtUtc) DESC`,
+    [threeMonthsAgo, threeMonthsAgo.substring(0, 10)]
+  );
+
+  return results.map(row => ({
+    member: row,
+    lastCheckInDate: row.lastCheckInDate,
+    checkInCount: row.checkInCount
+  }));
+}
+
+/**
+ * Get count of trial members (for stats display).
+ */
+export function getTrialMemberCount(): number {
+  const result = query<{ count: number }>(
+    `SELECT COUNT(*) as count FROM Member
+     WHERE memberLifecycleStage = 'TRIAL'
+       AND status = 'ACTIVE'
+       AND mergedIntoId IS NULL`
+  );
+  return result[0]?.count || 0;
 }
 
 /**
@@ -116,18 +168,18 @@ export function upsertMember(member: Member): void {
   execute(
     `INSERT INTO Member (
       internalId, membershipId, memberLifecycleStage, status,
-      firstName, lastName, birthday, gender, email, phone, address,
+      firstName, lastName, birthDate, gender, email, phone, address,
       zipCode, city, guardianName, guardianPhone, guardianEmail,
-      feeCategory, expiresOn, photoUri, mergedIntoId,
-      createdAtUtc, updatedAtUtc, deviceId, syncedAtUtc, syncVersion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      memberType, expiresOn, photoPath, mergedIntoId,
+      createdAtUtc, updatedAtUtc, syncedAtUtc, syncVersion
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(internalId) DO UPDATE SET
       membershipId = excluded.membershipId,
       memberLifecycleStage = excluded.memberLifecycleStage,
       status = excluded.status,
       firstName = excluded.firstName,
       lastName = excluded.lastName,
-      birthday = excluded.birthday,
+      birthDate = excluded.birthDate,
       gender = excluded.gender,
       email = excluded.email,
       phone = excluded.phone,
@@ -137,12 +189,11 @@ export function upsertMember(member: Member): void {
       guardianName = excluded.guardianName,
       guardianPhone = excluded.guardianPhone,
       guardianEmail = excluded.guardianEmail,
-      feeCategory = excluded.feeCategory,
+      memberType = excluded.memberType,
       expiresOn = excluded.expiresOn,
-      photoUri = excluded.photoUri,
+      photoPath = excluded.photoPath,
       mergedIntoId = excluded.mergedIntoId,
       updatedAtUtc = excluded.updatedAtUtc,
-      deviceId = excluded.deviceId,
       syncVersion = syncVersion + 1`,
     [
       member.internalId,
@@ -151,7 +202,7 @@ export function upsertMember(member: Member): void {
       member.status,
       member.firstName,
       member.lastName,
-      member.birthday,
+      member.birthDate,
       member.gender,
       member.email,
       member.phone,
@@ -161,13 +212,12 @@ export function upsertMember(member: Member): void {
       member.guardianName,
       member.guardianPhone,
       member.guardianEmail,
-      member.feeCategory,
+      member.memberType,
       member.expiresOn,
-      member.photoUri,
+      member.photoPath,
       member.mergedIntoId,
       member.createdAtUtc || now,
       now,
-      member.deviceId,
       member.syncedAtUtc,
       member.syncVersion || 0
     ]
@@ -315,8 +365,6 @@ export interface DuplicateMatch {
 /**
  * Find potential duplicates for a given member.
  * Matches based on:
- * - Same phone number (high confidence)
- * - Same email (high confidence)
  * - Similar names registered within 30 days (medium/low confidence)
  * 
  * @param targetMember The member to find duplicates for
@@ -328,41 +376,6 @@ export function findPotentialDuplicates(targetMember: Member): DuplicateMatch[] 
   // Skip if member is already merged
   if (targetMember.mergedIntoId) {
     return [];
-  }
-  
-  // Match by phone number (high confidence)
-  if (targetMember.phone) {
-    const phoneMatches = query<Member>(
-      `SELECT * FROM Member 
-       WHERE phone = ? AND internalId != ? AND mergedIntoId IS NULL AND status = 'ACTIVE'`,
-      [targetMember.phone, targetMember.internalId]
-    );
-    for (const match of phoneMatches) {
-      duplicates.push({
-        member: match,
-        matchType: 'phone',
-        confidence: 'high'
-      });
-    }
-  }
-  
-  // Match by email (high confidence)
-  if (targetMember.email) {
-    const emailMatches = query<Member>(
-      `SELECT * FROM Member 
-       WHERE email = ? AND internalId != ? AND mergedIntoId IS NULL AND status = 'ACTIVE'`,
-      [targetMember.email, targetMember.internalId]
-    );
-    for (const match of emailMatches) {
-      // Avoid duplicating if already matched by phone
-      if (!duplicates.some(d => d.member.internalId === match.internalId)) {
-        duplicates.push({
-          member: match,
-          matchType: 'email',
-          confidence: 'high'
-        });
-      }
-    }
   }
   
   // Match by similar name (medium/low confidence)
@@ -379,18 +392,15 @@ export function findPotentialDuplicates(targetMember: Member): DuplicateMatch[] 
     [targetMember.internalId, targetMember.firstName, targetMember.lastName, thirtyDaysAgo]
   );
   for (const match of nameMatches) {
-    // Avoid duplicating if already matched by phone/email
-    if (!duplicates.some(d => d.member.internalId === match.internalId)) {
-      // High confidence if birthday also matches
-      const confidence = match.birthday && match.birthday === targetMember.birthday 
-        ? 'high' 
+      // High confidence if birthDate also matches
+      const confidence = match.birthDate && match.birthDate === targetMember.birthDate
+        ? 'high'
         : 'medium';
       duplicates.push({
         member: match,
         matchType: 'name',
         confidence
       });
-    }
   }
   
   return duplicates;

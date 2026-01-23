@@ -5,7 +5,7 @@
  * @see [prd.md] - Financial Transactions Management
  */
 
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Wallet, Plus, Download, ChevronDown, Settings, Printer, BarChart3 } from 'lucide-react';
 import { TransactionTable, TransactionDialog, YearSettingsDialog, CategoryTotals, MemberFeeStatusTable, MemberHistoryDialog, TransactionFilterBar, applyTransactionFilters, DEFAULT_FILTERS, PrintView, FinanceCharts, QuickFeePaymentDialog, ConsolidateFeePaymentsDialog } from '../components/finance';
 import type { TransactionFilters } from '../components/finance';
@@ -22,6 +22,7 @@ import {
   createFiscalYear,
   updateFiscalYear,
   getFeeRatesForYear,
+  setFeeRate,
   getClosingBalances,
   getPendingFeePayments,
   createPendingFeePayment,
@@ -29,6 +30,7 @@ import {
 } from '../database';
 import { getAllMembers } from '../database/memberRepository';
 import { exportKassebog } from '../utils';
+import { MEMBER_TYPE_LABELS } from '../types';
 import type {
   TransactionWithLines,
   TransactionDisplayRow,
@@ -36,6 +38,7 @@ import type {
   TransactionFormData,
   FiscalYear,
   FeeRate,
+  MemberType,
   PendingFeePaymentWithMember,
   PaymentMethod,
 } from '../types';
@@ -60,6 +63,15 @@ export function FinancePage() {
   const [pendingPayments, setPendingPayments] = useState<PendingFeePaymentWithMember[]>(() => 
     getPendingFeePayments(currentYear)
   );
+  const [feeRateDrafts, setFeeRateDrafts] = useState<Record<MemberType, string>>(() => {
+    const initialRates = getFeeRatesForYear(currentYear);
+    return {
+      ADULT: String(initialRates.find((r) => r.memberType === 'ADULT')?.feeAmount ?? ''),
+      CHILD: String(initialRates.find((r) => r.memberType === 'CHILD')?.feeAmount ?? ''),
+      CHILD_PLUS: String(initialRates.find((r) => r.memberType === 'CHILD_PLUS')?.feeAmount ?? ''),
+    };
+  });
+  const [feeRateError, setFeeRateError] = useState<string | null>(null);
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<TransactionFormData | undefined>(undefined);
@@ -78,6 +90,14 @@ export function FinancePage() {
   const handlePrint = useCallback(() => {
     window.print();
   }, []);
+
+  useEffect(() => {
+    setFeeRateDrafts({
+      ADULT: String(feeRates.find((r) => r.memberType === 'ADULT')?.feeAmount ?? ''),
+      CHILD: String(feeRates.find((r) => r.memberType === 'CHILD')?.feeAmount ?? ''),
+      CHILD_PLUS: String(feeRates.find((r) => r.memberType === 'CHILD_PLUS')?.feeAmount ?? ''),
+    });
+  }, [feeRates]);
 
   // Reload data when year changes (after initial render)
   if (loadedYear !== null && loadedYear !== selectedYear) {
@@ -121,6 +141,37 @@ export function FinancePage() {
     setFeeRates(getFeeRatesForYear(selectedYear));
     setPendingPayments(getPendingFeePayments(selectedYear));
   }, [selectedYear]);
+
+  const selectedFiscalYear = useMemo(() => getFiscalYear(selectedYear), [selectedYear, fiscalYears]);
+
+  const handleFeeRateChange = (memberType: MemberType, value: string) => {
+    setFeeRateDrafts((prev) => ({
+      ...prev,
+      [memberType]: value,
+    }));
+  };
+
+  const handleSaveFeeRates = () => {
+    setFeeRateError(null);
+    if (selectedFiscalYear?.isClosed) {
+      setFeeRateError('Regnskabsåret er lukket og kan ikke redigeres.');
+      return;
+    }
+
+    const parsedRates: { memberType: MemberType; amount: number }[] = [
+      { memberType: 'ADULT', amount: parseFloat(feeRateDrafts.ADULT) },
+      { memberType: 'CHILD', amount: parseFloat(feeRateDrafts.CHILD) },
+      { memberType: 'CHILD_PLUS', amount: parseFloat(feeRateDrafts.CHILD_PLUS) },
+    ];
+
+    if (parsedRates.some((rate) => Number.isNaN(rate.amount) || rate.amount < 0)) {
+      setFeeRateError('Alle satser skal være tal, og de må ikke være negative.');
+      return;
+    }
+
+    parsedRates.forEach((rate) => setFeeRate(selectedYear, rate.memberType, rate.amount));
+    setFeeRates(getFeeRatesForYear(selectedYear));
+  };
 
   // Calculate display rows with running balances
   const displayRows: TransactionDisplayRow[] = useMemo(() => {
@@ -525,6 +576,85 @@ export function FinancePage() {
         )}
         {activeTab === 'fees' && (
           <div className="space-y-4">
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium text-gray-700">Kontingentsatser for {selectedYear}</h3>
+                {selectedFiscalYear?.isClosed && (
+                  <span className="text-xs text-red-600">Lukket år</span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {MEMBER_TYPE_LABELS.ADULT}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={feeRateDrafts.ADULT}
+                      onChange={(e) => handleFeeRateChange('ADULT', e.target.value)}
+                      disabled={selectedFiscalYear?.isClosed}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      DKK
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {MEMBER_TYPE_LABELS.CHILD}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={feeRateDrafts.CHILD}
+                      onChange={(e) => handleFeeRateChange('CHILD', e.target.value)}
+                      disabled={selectedFiscalYear?.isClosed}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      DKK
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {MEMBER_TYPE_LABELS.CHILD_PLUS}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={feeRateDrafts.CHILD_PLUS}
+                      onChange={(e) => handleFeeRateChange('CHILD_PLUS', e.target.value)}
+                      disabled={selectedFiscalYear?.isClosed}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      DKK
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {feeRateError && (
+                <p className="mt-2 text-sm text-red-600">{feeRateError}</p>
+              )}
+              <div className="mt-3 flex justify-end">
+                <button
+                  onClick={handleSaveFeeRates}
+                  disabled={selectedFiscalYear?.isClosed}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Gem satser
+                </button>
+              </div>
+            </div>
             {/* Action buttons for pending payments */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">

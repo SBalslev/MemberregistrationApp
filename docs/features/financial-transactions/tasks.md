@@ -4,6 +4,7 @@
 **PRD:** [prd.md](prd.md)
 **Created:** 2026-01-19
 **Completed:** 2026-01-20
+**Updated:** 2026-01-23
 **Status:** ✅ COMPLETE
 
 ---
@@ -257,6 +258,14 @@
 
 - [x] FinancePage works on smaller screens
 - [x] Responsive controls and layout
+
+### Task 3.5: Fee rates and age-based fee category
+
+**Status:** ✅ Complete
+
+- [x] Add UI to edit fee rates per fiscal year in the Kontingent tab
+- [x] Default under-18 members to child fee categories, with Barn+ as a manual override
+- [x] Enforce adult fee category for members 18 and older
 
 ---
 

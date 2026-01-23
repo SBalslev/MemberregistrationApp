@@ -32,8 +32,8 @@ const DISCIPLINE_OPTIONS: { value: PracticeType; label: string }[] = [
 ];
 
 const LEVEL_OPTIONS: { value: TrainerLevel; label: string }[] = [
-  { value: 'FULL', label: 'Fuld traener' },
-  { value: 'ASSISTANT', label: 'Assistent' },
+  { value: 'FULL', label: 'Fuld træner' },
+  { value: 'ASSISTANT', label: 'Hjælpetræner' },
 ];
 
 export function DisciplineEditor({
@@ -71,7 +71,7 @@ export function DisciplineEditor({
       onSave();
     } catch (error) {
       console.error('Failed to save discipline:', error);
-      alert('Kunne ikke gemme disciplin. Proev igen.');
+      alert('Kunne ikke gemme disciplin. Prøv igen.');
     } finally {
       setIsSubmitting(false);
     }
@@ -85,7 +85,7 @@ export function DisciplineEditor({
       onDelete?.();
     } catch (error) {
       console.error('Failed to delete discipline:', error);
-      alert('Kunne ikke slette disciplin. Proev igen.');
+      alert('Kunne ikke slette disciplin. Prøv igen.');
     } finally {
       setIsSubmitting(false);
       setShowDeleteConfirm(false);
@@ -114,7 +114,7 @@ export function DisciplineEditor({
           </select>
           {isEditing && (
             <p className="text-xs text-gray-500 mt-1">
-              Disciplin kan ikke aendres. Slet og tilfoej en ny hvis noedvendigt.
+              Disciplin kan ikke ændres. Slet og tilføj en ny hvis nødvendigt.
             </p>
           )}
         </div>
@@ -156,7 +156,7 @@ export function DisciplineEditor({
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
-            {isEditing ? 'Gem aendringer' : 'Tilfoej disciplin'}
+            {isEditing ? 'Gem ændringer' : 'Tilføj disciplin'}
           </button>
           <button
             onClick={onCancel}
@@ -183,7 +183,7 @@ export function DisciplineEditor({
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-2">Slet disciplin?</h3>
             <p className="text-gray-600 mb-4">
-              Er du sikker paa, at du vil slette denne disciplin kvalifikation?
+              Er du sikker på, at du vil slette denne disciplin kvalifikation?
             </p>
             <div className="flex gap-3">
               <button

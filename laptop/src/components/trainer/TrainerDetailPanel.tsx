@@ -114,8 +114,8 @@ export function TrainerDetailPanel({ memberId, onTrainerUpdated }: TrainerDetail
                 <GraduationCap className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <p className="font-medium text-gray-900">Traener</p>
-                <p className="text-sm text-gray-500">Marker som traener</p>
+                <p className="font-medium text-gray-900">Træner</p>
+                <p className="text-sm text-gray-500">Marker som træner</p>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -139,7 +139,7 @@ export function TrainerDetailPanel({ memberId, onTrainerUpdated }: TrainerDetail
               </div>
               <div>
                 <p className="font-medium text-gray-900">Skydeleder certifikat</p>
-                <p className="text-sm text-gray-500">Range Officer certificering</p>
+                <p className="text-sm text-gray-500">Skydeleder certificering</p>
               </div>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -177,7 +177,7 @@ export function TrainerDetailPanel({ memberId, onTrainerUpdated }: TrainerDetail
                 <Award className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                <p className="font-medium text-gray-900">Disciplin kvalifikationer</p>
+                <p className="font-medium text-gray-900">Træning</p>
                 <p className="text-sm text-gray-500">{disciplines.length} discipliner</p>
               </div>
             </div>
@@ -189,13 +189,13 @@ export function TrainerDetailPanel({ memberId, onTrainerUpdated }: TrainerDetail
               className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Tilfoej
+              Tilføj
             </button>
           </div>
 
           {disciplines.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-4">
-              Ingen disciplin kvalifikationer tilfojet
+              Ingen træning tilføjet
             </p>
           ) : (
             <ul className="space-y-2">
@@ -275,9 +275,9 @@ function formatDisciplineName(discipline: PracticeType): string {
 function formatLevel(level: TrainerLevel): string {
   switch (level) {
     case 'FULL':
-      return 'Fuld traener';
+      return 'Fuld træner';
     case 'ASSISTANT':
-      return 'Assistent';
+      return 'Hjælpetræner';
     default:
       return level;
   }

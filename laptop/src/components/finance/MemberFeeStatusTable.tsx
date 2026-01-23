@@ -8,6 +8,7 @@ import { Check, X, AlertCircle, Filter, Clock, CreditCard } from 'lucide-react';
 import type { TransactionWithLines, FeeRate, PendingFeePaymentWithMember } from '../../types';
 import type { Member } from '../../types/entities';
 import { MEMBER_TYPE_LABELS } from '../../types';
+import { getEffectiveMemberType } from '../../utils/feeCategory';
 
 // Extended fee status for internal use (includes computed fields)
 interface FeeStatusRow {
@@ -54,7 +55,7 @@ export function MemberFeeStatusTable({
       .filter((m) => m.status === 'ACTIVE')
       .map((member) => {
         // Find expected fee based on fee category
-        const feeCategory = member.feeCategory || 'ADULT';
+        const feeCategory = getEffectiveMemberType(member);
         const feeRate = feeRates.find(
           (fr) => fr.fiscalYear === year && fr.memberType === feeCategory
         );

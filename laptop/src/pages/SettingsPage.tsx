@@ -104,7 +104,7 @@ export function SettingsPage() {
       setImportStatus('importing');
       try {
         const buffer = await file.arrayBuffer();
-        importDatabase(new Uint8Array(buffer));
+        await importDatabase(new Uint8Array(buffer));
         setImportStatus('success');
         setTimeout(() => {
           setImportStatus('idle');
@@ -129,7 +129,7 @@ export function SettingsPage() {
     }
 
     try {
-      clearDatabase();
+      await clearDatabase();
       window.location.reload();
     } catch (error) {
       console.error('Failed to clear database:', error);

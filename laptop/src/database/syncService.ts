@@ -14,6 +14,7 @@ import { execute, query } from './db';
 import type { NewMemberRegistration } from '../types/entities';
 import { getAllMembers } from './memberRepository';
 import { processPhoto } from '../utils/photoStorage';
+import { getFeeCategoryFromBirthDate } from '../utils/feeCategory';
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
@@ -283,7 +284,7 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
   if (payload.entities.newMemberRegistrations) {
     for (const reg of payload.entities.newMemberRegistrations) {
       try {
-        const added = await processRegistration(reg, payload.deviceId);
+        const added = await processRegistration(reg);
         if (added === 'added') {
           result.registrationsAdded++;
           if (reg.photoBase64) {
@@ -419,8 +420,7 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
  * NewMemberRegistration entities instead of Member entities.
  */
 async function processRegistration(
-  reg: SyncableNewMemberRegistration,
-  sourceDeviceId: string
+  reg: SyncableNewMemberRegistration
 ): Promise<'added' | 'updated' | 'skipped'> {
   const now = new Date().toISOString();
   
@@ -461,7 +461,7 @@ async function processRegistration(
     // Update existing member with registration data
     execute(
       `UPDATE Member SET
-        firstName = ?, lastName = ?, birthday = ?, gender = ?,
+        firstName = ?, lastName = ?, birthDate = ?, gender = ?,
         email = ?, phone = ?, address = ?, zipCode = ?, city = ?,
         guardianName = ?, guardianPhone = ?, guardianEmail = ?,
         photoPath = ?, photoThumbnail = ?, updatedAtUtc = ?, syncVersion = ?
@@ -528,15 +528,17 @@ async function processRegistration(
   // FR-7.3: Create new trial member from registration data
   execute(
     `INSERT INTO Member (
-      internalId, membershipId, firstName, lastName, birthday, gender,
-      email, phone, address, zipCode, city,
+      internalId, membershipId, memberLifecycleStage, status,
+      firstName, lastName, birthDate, gender, email, phone, address, zipCode, city,
       guardianName, guardianPhone, guardianEmail,
-      photoPath, photoThumbnail, memberType, status, registeredByDeviceId,
-      createdAtUtc, updatedAtUtc, syncVersion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      photoPath, photoThumbnail, memberType,
+      createdAtUtc, updatedAtUtc, syncVersion, syncedAtUtc
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       internalId,
       null, // membershipId - to be assigned later
+      'TRIAL', // memberLifecycleStage
+      'ACTIVE', // status
       reg.firstName,
       reg.lastName,
       reg.birthDate ?? null,
@@ -551,12 +553,11 @@ async function processRegistration(
       reg.guardianEmail ?? null,
       newPhotoPath,
       newPhotoThumbnail,
-      'TRIAL', // memberType - convert to trial member
-      'ACTIVE', // status
-      sourceDeviceId,
+      getFeeCategoryFromBirthDate(reg.birthDate ?? null),
       reg.createdAtUtc,
       now,
-      reg.syncVersion
+      reg.syncVersion,
+      now
     ]
   );
 
@@ -653,8 +654,8 @@ async function processMember(
       firstName, lastName, birthDate, gender, email, phone,
       address, zipCode, city, guardianName, guardianPhone, guardianEmail,
       expiresOn, photoPath, photoThumbnail, mergedIntoId, memberType,
-      createdAtUtc, updatedAtUtc, deviceId, syncVersion, syncedAtUtc
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      createdAtUtc, updatedAtUtc, syncVersion, syncedAtUtc
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       member.internalId,
       member.membershipId ?? null,
@@ -676,10 +677,9 @@ async function processMember(
       photoPath,
       photoThumbnail,
       member.mergedIntoId ?? null,
-      'ADULT', // memberType for fee tracking
+      getFeeCategoryFromBirthDate(member.birthDate ?? null),
       member.createdAtUtc,
       member.modifiedAtUtc,
-      member.deviceId,
       member.syncVersion,
       now
     ]
@@ -746,7 +746,7 @@ export function getMemberDataForFullSync(): SyncableMember[] {
     status: m.status,
     firstName: m.firstName,
     lastName: m.lastName,
-    birthDate: m.birthday,
+    birthDate: m.birthDate,
     gender: m.gender,
     email: m.email,
     phone: m.phone,
@@ -760,7 +760,7 @@ export function getMemberDataForFullSync(): SyncableMember[] {
     registrationPhotoPath: m.registrationPhotoPath,
     // Don't send photoBase64 from laptop - photos are stored as data URLs already
     mergedIntoId: m.mergedIntoId,
-    deviceId: m.deviceId || 'laptop-master',
+    deviceId: 'laptop-master',
     syncVersion: m.syncVersion,
     createdAtUtc: m.createdAtUtc,
     modifiedAtUtc: m.updatedAtUtc
@@ -816,7 +816,7 @@ export async function processInitialSyncPayload(payload: SyncPayload): Promise<I
   if (payload.entities.newMemberRegistrations) {
     for (const reg of payload.entities.newMemberRegistrations) {
       try {
-        const addResult = await processRegistration(reg, payload.deviceId);
+        const addResult = await processRegistration(reg);
         if (addResult === 'added') result.registrationsAdded++;
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';

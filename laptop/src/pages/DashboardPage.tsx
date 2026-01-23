@@ -13,14 +13,14 @@ import {
   Clock,
   AlertTriangle,
 } from 'lucide-react';
-import { getMemberCountByStatus, getRegistrationCounts } from '../database';
+import { getMemberCountByStatus, getTrialMemberCount, getRecentTrialMembers, type TrialMemberWithActivity } from '../database';
 import { useAppStore } from '../store';
 
 interface Stats {
   activeMembers: number;
   inactiveMembers: number;
-  pendingRegistrations: number;
-  approvedRegistrations: number;
+  trialMemberCount: number;
+  recentTrialMembers: TrialMemberWithActivity[];
   equipmentOut: number;
   onlineDevices: number;
   pendingConflicts: number;
@@ -28,12 +28,11 @@ interface Stats {
 
 function getInitialStats(): Stats {
   const memberCounts = getMemberCountByStatus();
-  const regCounts = getRegistrationCounts();
   return {
     activeMembers: memberCounts.ACTIVE,
     inactiveMembers: memberCounts.INACTIVE,
-    pendingRegistrations: regCounts.PENDING,
-    approvedRegistrations: regCounts.APPROVED,
+    trialMemberCount: getTrialMemberCount(),
+    recentTrialMembers: getRecentTrialMembers(),
     equipmentOut: 0, // TODO: Load from equipment repo
     onlineDevices: 0, // TODO: Load from device discovery
     pendingConflicts: 0, // TODO: Load from conflicts
@@ -61,10 +60,10 @@ export function DashboardPage() {
         />
         <StatCard
           icon={UserPlus}
-          label="Afventende tilmeldinger"
-          value={stats.pendingRegistrations}
-          color={stats.pendingRegistrations > 0 ? 'amber' : 'green'}
-          highlight={stats.pendingRegistrations > 0}
+          label="Prøvemedlemmer"
+          value={stats.trialMemberCount}
+          color={stats.trialMemberCount > 0 ? 'amber' : 'green'}
+          highlight={stats.trialMemberCount > 0}
         />
         <StatCard
           icon={Package}
@@ -82,34 +81,56 @@ export function DashboardPage() {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pending Registrations */}
+        {/* Trial Members */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">
-              Afventende tilmeldinger
+              Prøvemedlemmer
             </h2>
-            {stats.pendingRegistrations > 0 && (
+            {stats.trialMemberCount > 0 && (
               <span className="bg-amber-100 text-amber-700 text-sm font-medium px-3 py-1 rounded-full">
-                {stats.pendingRegistrations} afventer
+                {stats.trialMemberCount} mangler medlemsnummer
               </span>
             )}
           </div>
 
-          {stats.pendingRegistrations === 0 ? (
+          {stats.recentTrialMembers.length === 0 ? (
             <div className="flex items-center gap-3 text-gray-500 py-8 justify-center">
               <CheckCircle className="w-5 h-5 text-green-500" />
-              <span>Ingen afventende tilmeldinger</span>
+              <span>Ingen aktive prøvemedlemmer</span>
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-gray-600">
-                Der er {stats.pendingRegistrations} tilmeldinger der venter på godkendelse.
+              <p className="text-gray-600 text-sm mb-3">
+                Seneste 3 måneder (oprettet eller aktiv)
               </p>
-              <button 
-                onClick={() => setCurrentPage('registrations')}
+              <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+                {stats.recentTrialMembers.slice(0, 5).map(({ member, lastCheckInDate, checkInCount }) => (
+                  <div key={member.internalId} className="py-2 flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {member.firstName} {member.lastName}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {checkInCount > 0
+                          ? `${checkInCount} check-in${checkInCount > 1 ? 's' : ''} - senest ${lastCheckInDate}`
+                          : `Oprettet ${member.createdAtUtc.substring(0, 10)}`
+                        }
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {stats.recentTrialMembers.length > 5 && (
+                <p className="text-sm text-gray-500">
+                  + {stats.recentTrialMembers.length - 5} flere...
+                </p>
+              )}
+              <button
+                onClick={() => setCurrentPage('members')}
                 className="text-blue-600 hover:text-blue-700 font-medium text-sm"
               >
-                Gå til tilmeldinger →
+                Se alle medlemmer →
               </button>
             </div>
           )}

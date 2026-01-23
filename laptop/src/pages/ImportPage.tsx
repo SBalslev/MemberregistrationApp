@@ -17,6 +17,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { bulkInsertMembers, getMemberById } from '../database';
+import { getFeeCategoryFromBirthDate } from '../utils/feeCategory';
 import type { Member, MemberStatus, Gender } from '../types';
 
 // ===== Types =====
@@ -55,7 +56,8 @@ const MEMBER_FIELDS: { key: keyof Member; label: string; required: boolean }[] =
   { key: 'email', label: 'Email', required: false },
   { key: 'phone', label: 'Telefon', required: false },
   { key: 'status', label: 'Status', required: false },
-  { key: 'birthday', label: 'Fødselsdato', required: false },
+  { key: 'birthDate', label: 'Fødselsdato', required: false },
+  { key: 'expiresOn', label: 'Udløbsdato', required: false },
   { key: 'address', label: 'Adresse', required: false },
   { key: 'zipCode', label: 'Postnummer', required: false },
   { key: 'city', label: 'By', required: false },
@@ -67,14 +69,25 @@ const MEMBER_FIELDS: { key: keyof Member; label: string; required: boolean }[] =
 
 // ===== CSV Parsing =====
 
-function parseCsv(text: string): CsvParseResult {
+export function detectDelimiter(firstLine: string): string {
+  // Count occurrences of common delimiters
+  const semicolons = (firstLine.match(/;/g) || []).length;
+  const commas = (firstLine.match(/,/g) || []).length;
+  // Use semicolon if it appears more often, otherwise comma
+  return semicolons > commas ? ';' : ',';
+}
+
+export function parseCsv(text: string): CsvParseResult {
   const lines = text.split(/\r?\n/).filter(line => line.trim());
   if (lines.length === 0) {
     return { headers: [], rows: [], rowCount: 0 };
   }
 
-  const headers = parseCSVLine(lines[0]);
-  const rows = lines.slice(1).map(line => parseCSVLine(line));
+  // Auto-detect delimiter from first line
+  const delimiter = detectDelimiter(lines[0]);
+
+  const headers = parseCSVLine(lines[0], delimiter);
+  const rows = lines.slice(1).map(line => parseCSVLine(line, delimiter));
 
   return {
     headers,
@@ -83,7 +96,7 @@ function parseCsv(text: string): CsvParseResult {
   };
 }
 
-function parseCSVLine(line: string): string[] {
+export function parseCSVLine(line: string, delimiter: string = ','): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -104,7 +117,7 @@ function parseCSVLine(line: string): string[] {
     } else {
       if (char === '"') {
         inQuotes = true;
-      } else if (char === ',') {
+      } else if (char === delimiter) {
         result.push(current.trim());
         current = '';
       } else {
@@ -119,7 +132,7 @@ function parseCSVLine(line: string): string[] {
 
 // ===== Auto-detect column mapping =====
 
-function autoDetectMapping(headers: string[]): ColumnMapping[] {
+export function autoDetectMapping(headers: string[]): ColumnMapping[] {
   const mappings: ColumnMapping[] = [];
   
   const headerMap: Record<string, keyof Member> = {
@@ -140,10 +153,10 @@ function autoDetectMapping(headers: string[]): ColumnMapping[] {
     'telefon': 'phone',
     'mobil': 'phone',
     'status': 'status',
-    'birth_date': 'birthday',
-    'birthdate': 'birthday',
-    'birthday': 'birthday',
-    'fødselsdato': 'birthday',
+    'birth_date': 'birthDate',
+    'birthdate': 'birthDate',
+    'birthday': 'birthDate',
+    'fødselsdato': 'birthDate',
     'address': 'address',
     'adresse': 'address',
     'zip_code': 'zipCode',
@@ -153,6 +166,9 @@ function autoDetectMapping(headers: string[]): ColumnMapping[] {
     'by': 'city',
     'gender': 'gender',
     'køn': 'gender',
+    'expires_on': 'expiresOn',
+    'expireson': 'expiresOn',
+    'udløbsdato': 'expiresOn',
   };
 
   for (const header of headers) {
@@ -169,7 +185,7 @@ function autoDetectMapping(headers: string[]): ColumnMapping[] {
 
 // ===== Validation =====
 
-function validateMemberData(data: Partial<Member>): { errors: string[]; warnings: string[] } {
+export function validateMemberData(data: Partial<Member>): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -195,7 +211,7 @@ function validateMemberData(data: Partial<Member>): { errors: string[]; warnings
   }
 
   // Birthday format
-  if (data.birthday && !/^\d{4}-\d{2}-\d{2}$/.test(data.birthday)) {
+  if (data.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(data.birthDate)) {
     warnings.push('Fødselsdato skal være YYYY-MM-DD format');
   }
 
@@ -207,7 +223,7 @@ function validateMemberData(data: Partial<Member>): { errors: string[]; warnings
   return { errors, warnings };
 }
 
-function normalizeStatus(value: string): MemberStatus {
+export function normalizeStatus(value: string): MemberStatus {
   const upper = value?.toUpperCase()?.trim();
   if (upper === 'INACTIVE' || upper === 'INAKTIV' || upper === '0' || upper === 'FALSE') {
     return 'INACTIVE';
@@ -215,7 +231,7 @@ function normalizeStatus(value: string): MemberStatus {
   return 'ACTIVE';
 }
 
-function normalizeGender(value: string): Gender | null {
+export function normalizeGender(value: string): Gender | null {
   const upper = value?.toUpperCase()?.trim();
   if (upper === 'MALE' || upper === 'M' || upper === 'MAND') return 'MALE';
   if (upper === 'FEMALE' || upper === 'F' || upper === 'KVINDE' || upper === 'K') return 'FEMALE';
@@ -223,7 +239,7 @@ function normalizeGender(value: string): Gender | null {
   return null;
 }
 
-function normalizeDateString(value: string): string | null {
+export function normalizeDateString(value: string): string | null {
   if (!value?.trim()) return null;
   
   // Try parsing different date formats
@@ -320,6 +336,7 @@ export function ImportPage() {
     const validMembers: ParsedMember[] = [];
     const invalidMembers: ParsedMember[] = [];
     const duplicates: ParsedMember[] = [];
+    const seenMembershipIds = new Set<string>();
 
     const now = new Date().toISOString();
 
@@ -345,8 +362,11 @@ export function ImportPage() {
             case 'gender':
               memberData.gender = normalizeGender(value);
               break;
-            case 'birthday':
-              memberData.birthday = normalizeDateString(value);
+            case 'birthDate':
+              memberData.birthDate = normalizeDateString(value);
+              break;
+            case 'expiresOn':
+              memberData.expiresOn = normalizeDateString(value);
               break;
             default:
               (memberData as Record<string, unknown>)[mapping.memberField] = value;
@@ -357,8 +377,18 @@ export function ImportPage() {
       const { errors, warnings } = validateMemberData(memberData);
       
       // Check for duplicates in database
-      const isDuplicate = memberData.membershipId ? 
-        getMemberById(memberData.membershipId) !== null : false;
+      const normalizedMembershipId = memberData.membershipId?.trim() || '';
+      let isDuplicate = false;
+
+      if (normalizedMembershipId) {
+        if (seenMembershipIds.has(normalizedMembershipId)) {
+          isDuplicate = true;
+          warnings.push('Dublet medlemsnummer i CSV');
+        } else {
+          seenMembershipIds.add(normalizedMembershipId);
+          isDuplicate = getMemberById(normalizedMembershipId) !== null;
+        }
+      }
 
       const parsed: ParsedMember = {
         rowIndex: i + 2, // +2 for 1-indexed and header row
@@ -393,7 +423,7 @@ export function ImportPage() {
     setStep('importing');
     setImportProgress(0);
 
-    const membersToImport = includeDuplicates 
+    const membersToImport = includeDuplicates
       ? [...previewState.validMembers, ...previewState.duplicates]
       : previewState.validMembers;
 
@@ -401,62 +431,96 @@ export function ImportPage() {
     let imported = 0;
     let errors = 0;
 
+    console.log(`[Import] Starting import of ${totalCount} members (includeDuplicates: ${includeDuplicates})`);
+    console.log(`[Import] Valid: ${previewState.validMembers.length}, Duplicates: ${previewState.duplicates.length}, Invalid: ${previewState.invalidMembers.length}`);
+
     // Convert to full Member objects and import in batches
     const BATCH_SIZE = 50;
     const members: Member[] = [];
 
-    for (const parsed of membersToImport) {
+
+    for (let idx = 0; idx < membersToImport.length; idx++) {
+      const parsed = membersToImport[idx];
       // Generate internalId from membershipId for imported members
       const membershipId = parsed.data.membershipId || '';
-      const internalId = crypto.randomUUID();
+      const existingMember = membershipId ? getMemberById(membershipId) : null;
+      const internalId = existingMember?.internalId ?? crypto.randomUUID();
+
+      // Log first member for debugging
+      if (idx === 0) {
+        console.log('[Import] First member parsed data:', parsed.data);
+      }
       
+      const birthDate = parsed.data.birthDate ?? existingMember?.birthDate ?? null;
+      const memberType = getFeeCategoryFromBirthDate(birthDate, existingMember?.memberType);
+
       const member: Member = {
         internalId,
         membershipId: membershipId || null,
-        memberLifecycleStage: membershipId ? 'FULL' : 'TRIAL',
-        firstName: parsed.data.firstName || '',
-        lastName: parsed.data.lastName || '',
-        birthday: parsed.data.birthday || null,
-        gender: parsed.data.gender || null,
-        email: parsed.data.email || null,
-        phone: parsed.data.phone || null,
-        address: parsed.data.address || null,
-        zipCode: parsed.data.zipCode || null,
-        city: parsed.data.city || null,
-        guardianName: parsed.data.guardianName || null,
-        guardianPhone: parsed.data.guardianPhone || null,
-        guardianEmail: parsed.data.guardianEmail || null,
-        feeCategory: 'ADULT',
-        status: parsed.data.status || 'ACTIVE',
-        expiresOn: null,
-        photoUri: null,
+        memberLifecycleStage: existingMember?.memberLifecycleStage ?? (membershipId ? 'FULL' : 'TRIAL'),
+        firstName: parsed.data.firstName ?? existingMember?.firstName ?? '',
+        lastName: parsed.data.lastName ?? existingMember?.lastName ?? '',
+        birthDate,
+        gender: parsed.data.gender ?? existingMember?.gender ?? null,
+        email: parsed.data.email ?? existingMember?.email ?? null,
+        phone: parsed.data.phone ?? existingMember?.phone ?? null,
+        address: parsed.data.address ?? existingMember?.address ?? null,
+        zipCode: parsed.data.zipCode ?? existingMember?.zipCode ?? null,
+        city: parsed.data.city ?? existingMember?.city ?? null,
+        guardianName: parsed.data.guardianName ?? existingMember?.guardianName ?? null,
+        guardianPhone: parsed.data.guardianPhone ?? existingMember?.guardianPhone ?? null,
+        guardianEmail: parsed.data.guardianEmail ?? existingMember?.guardianEmail ?? null,
+        memberType,
+        status: parsed.data.status ?? existingMember?.status ?? 'ACTIVE',
+        expiresOn: parsed.data.expiresOn ?? existingMember?.expiresOn ?? null,
         registrationPhotoPath: null,
-        photoPath: null,
-        photoThumbnail: null,
-        mergedIntoId: null,
-        deviceId: null,
-        createdAtUtc: parsed.data.createdAtUtc || new Date().toISOString(),
-        updatedAtUtc: parsed.data.updatedAtUtc || new Date().toISOString(),
-        syncedAtUtc: null,
-        syncVersion: 0
+        photoPath: existingMember?.photoPath ?? null,
+        photoThumbnail: existingMember?.photoThumbnail ?? null,
+        mergedIntoId: existingMember?.mergedIntoId ?? null,
+        createdAtUtc: existingMember?.createdAtUtc ?? parsed.data.createdAtUtc ?? new Date().toISOString(),
+        updatedAtUtc: parsed.data.updatedAtUtc ?? new Date().toISOString(),
+        syncedAtUtc: existingMember?.syncedAtUtc ?? null,
+        syncVersion: existingMember?.syncVersion ?? 0
       };
       members.push(member);
     }
 
     // Import in batches with progress updates
-    try {
-      for (let i = 0; i < members.length; i += BATCH_SIZE) {
-        const batch = members.slice(i, i + BATCH_SIZE);
+    const errorDetails: string[] = [];
+
+    for (let i = 0; i < members.length; i += BATCH_SIZE) {
+      const batch = members.slice(i, i + BATCH_SIZE);
+
+      // Try batch insert first
+      try {
         bulkInsertMembers(batch);
         imported += batch.length;
-        setImportProgress(Math.round((imported / totalCount) * 100));
-        
-        // Allow UI to update
-        await new Promise(resolve => setTimeout(resolve, 10));
+      } catch (batchErr) {
+        console.error('Batch import failed, trying individual inserts:', batchErr);
+
+        // Fall back to individual inserts to identify which ones fail
+        for (const member of batch) {
+          try {
+            bulkInsertMembers([member]);
+            imported++;
+          } catch (individualErr) {
+            errors++;
+            const errMsg = individualErr instanceof Error ? individualErr.message : String(individualErr);
+            const detail = `Row ${member.membershipId || member.firstName + ' ' + member.lastName}: ${errMsg}`;
+            errorDetails.push(detail);
+            console.error('Failed to import member:', member, individualErr);
+          }
+        }
       }
-    } catch (err) {
-      console.error('Import error:', err);
-      errors++;
+
+      setImportProgress(Math.round(((i + batch.length) / totalCount) * 100));
+
+      // Allow UI to update
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+
+    if (errorDetails.length > 0) {
+      console.error('Import errors:', errorDetails);
     }
 
     setImportResult({
@@ -563,13 +627,13 @@ export function ImportPage() {
             Fundet {csvData.rowCount} rækker. Vælg hvilket felt hver kolonne svarer til.
           </p>
 
-          <div className="space-y-3 mb-6">
+          <div className="space-y-3 mb-6 max-h-96 overflow-y-auto pr-2">
             {columnMappings.map((mapping, index) => (
               <div key={index} className="flex items-center gap-4">
                 <div className="w-48 text-sm font-medium text-gray-700 truncate" title={mapping.csvColumn}>
                   {mapping.csvColumn}
                 </div>
-                <ArrowRight className="w-4 h-4 text-gray-400" />
+                <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <select
                   value={mapping.memberField}
                   onChange={(e) => updateMapping(index, e.target.value as keyof Member | '')}

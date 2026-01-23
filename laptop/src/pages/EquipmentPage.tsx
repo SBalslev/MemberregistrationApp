@@ -33,12 +33,12 @@ export function EquipmentPage() {
       // Get all equipment items
       const items = query<EquipmentItem>('SELECT * FROM EquipmentItem ORDER BY name');
       
-      // Get active checkouts
+      // Get active checkouts (where not yet checked in)
       const checkouts = query<EquipmentCheckout & { memberName: string }>(`
-        SELECT ec.*, m.name as memberName 
-        FROM EquipmentCheckout ec 
-        JOIN Member m ON ec.memberId = m.id 
-        WHERE ec.returnedAtUtc IS NULL
+        SELECT ec.*, (m.firstName || ' ' || m.lastName) as memberName
+        FROM EquipmentCheckout ec
+        JOIN Member m ON ec.internalMemberId = m.internalId
+        WHERE ec.checkedInAtUtc IS NULL
       `);
 
       // Merge checkout info

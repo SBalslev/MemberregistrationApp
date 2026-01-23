@@ -62,15 +62,15 @@ export function TrainersPage() {
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Traenere</h1>
-              <p className="text-gray-600 mt-1">{filteredTrainers.length} traenere</p>
+              <h1 className="text-2xl font-bold text-gray-900">Trænere</h1>
+              <p className="text-gray-600 mt-1">{filteredTrainers.length} trænere</p>
             </div>
             <button
               onClick={() => setShowAddModal(true)}
               className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
             >
               <Plus className="w-5 h-5" />
-              Tilfoej traener
+              Tilføj træner
             </button>
           </div>
 
@@ -79,7 +79,7 @@ export function TrainersPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Soeg efter navn eller medlemsnummer..."
+              placeholder="Søg efter navn eller medlemsnummer..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
@@ -92,9 +92,9 @@ export function TrainersPage() {
           {filteredTrainers.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <GraduationCap className="w-12 h-12 mb-4 text-gray-300" />
-              <p>Ingen traenere fundet</p>
+              <p>Ingen trænere fundet</p>
               {searchQuery && (
-                <p className="text-sm mt-1">Proev at aendre din soegning</p>
+                <p className="text-sm mt-1">Prøv at ændre din søgning</p>
               )}
             </div>
           ) : (
@@ -148,7 +148,7 @@ export function TrainersPage() {
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-500">
             <GraduationCap className="w-16 h-16 mb-4 text-gray-300" />
-            <p>Vaelg en traener for at se detaljer</p>
+            <p>Vælg en træner for at se detaljer</p>
           </div>
         )}
       </div>
@@ -208,7 +208,7 @@ function AddTrainerModal({ onClose, onTrainerAdded, existingTrainerIds }: AddTra
             <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
               <GraduationCap className="w-5 h-5 text-blue-600" />
             </div>
-            <h2 className="text-xl font-bold text-gray-900">Tilfoej traener</h2>
+            <h2 className="text-xl font-bold text-gray-900">Tilføj træner</h2>
           </div>
           <button
             onClick={onClose}
@@ -224,7 +224,7 @@ function AddTrainerModal({ onClose, onTrainerAdded, existingTrainerIds }: AddTra
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Soeg efter medlem..."
+              placeholder="Søg efter medlem..."
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
@@ -232,7 +232,7 @@ function AddTrainerModal({ onClose, onTrainerAdded, existingTrainerIds }: AddTra
             />
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Soeg efter navn eller medlemsnummer for at tilfoeje en traener
+            Søg efter navn eller medlemsnummer for at tilføje en træner
           </p>
         </div>
 
@@ -245,7 +245,7 @@ function AddTrainerModal({ onClose, onTrainerAdded, existingTrainerIds }: AddTra
           ) : searchQuery.trim().length < 2 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-500">
               <User className="w-10 h-10 mb-3 text-gray-300" />
-              <p className="text-sm">Indtast mindst 2 tegn for at soege</p>
+              <p className="text-sm">Indtast mindst 2 tegn for at søge</p>
             </div>
           ) : searchResults.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-500">
