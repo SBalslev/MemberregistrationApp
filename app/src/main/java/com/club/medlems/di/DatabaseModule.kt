@@ -5,7 +5,9 @@ import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.club.medlems.data.db.AppDatabase
+import com.club.medlems.data.sync.SyncJson
 import dagger.Module
+import kotlinx.serialization.json.Json
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
@@ -451,13 +453,78 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * MIGRATION_13_14: Sync Reliability - Outbox Queue
+     *
+     * Adds persistent outbox queue for guaranteed sync delivery.
+     * - sync_outbox: Pending changes waiting to be synced
+     * - sync_outbox_delivery: Per-device delivery tracking
+     * - sync_processed_messages: Idempotency tracking to prevent duplicate processing
+     *
+     * @see [sync-reliability/prd.md] - Sync Reliability Hardening
+     */
+    private val MIGRATION_13_14 = object : Migration(13, 14) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Create sync_outbox table
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS sync_outbox (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    entityType TEXT NOT NULL,
+                    entityId TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    createdAtUtc TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    lastAttemptUtc TEXT,
+                    lastError TEXT,
+                    nextRetryUtc TEXT,
+                    status TEXT NOT NULL DEFAULT 'PENDING'
+                )
+            """.trimIndent())
+
+            // Create indices for sync_outbox
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_outbox_status_createdAtUtc ON sync_outbox(status, createdAtUtc)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_outbox_entityType_entityId ON sync_outbox(entityType, entityId)")
+
+            // Create sync_outbox_delivery table
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS sync_outbox_delivery (
+                    outboxId TEXT NOT NULL,
+                    deviceId TEXT NOT NULL,
+                    deliveredAtUtc TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    lastAttemptUtc TEXT,
+                    lastError TEXT,
+                    PRIMARY KEY (outboxId, deviceId),
+                    FOREIGN KEY (outboxId) REFERENCES sync_outbox(id) ON DELETE CASCADE
+                )
+            """.trimIndent())
+
+            // Create indices for sync_outbox_delivery
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_outbox_delivery_outboxId ON sync_outbox_delivery(outboxId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_outbox_delivery_deviceId ON sync_outbox_delivery(deviceId)")
+
+            // Create sync_processed_messages table for idempotency
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS sync_processed_messages (
+                    messageId TEXT NOT NULL PRIMARY KEY,
+                    sourceDeviceId TEXT NOT NULL,
+                    processedAtUtc TEXT NOT NULL
+                )
+            """.trimIndent())
+
+            // Create index for cleanup queries
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_sync_processed_messages_processedAtUtc ON sync_processed_messages(processedAtUtc)")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13).fallbackToDestructiveMigration().build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14).fallbackToDestructiveMigration().build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()
@@ -481,6 +548,12 @@ object DatabaseModule {
     fun trainerInfoDao(db: AppDatabase) = db.trainerInfoDao()
     @Provides
     fun trainerDisciplineDao(db: AppDatabase) = db.trainerDisciplineDao()
+    @Provides
+    fun syncOutboxDao(db: AppDatabase) = db.syncOutboxDao()
+
+    @Provides
+    @Singleton
+    fun provideSyncJson(): Json = SyncJson.json
 
     @Provides
     @Singleton

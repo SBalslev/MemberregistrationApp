@@ -8,7 +8,7 @@
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 
 // Schema version matching Android app
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 // SQL.js instance (singleton)
 let SQL: SqlJsStatic | null = null;
@@ -525,6 +525,46 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('ProcessedSyncMessage table created');
   }
 
+  // ===== Migration: Schema v13 - SKV Registration =====
+  const skvRegistrationCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='SKVRegistration'");
+  if (skvRegistrationCheck.length === 0 || skvRegistrationCheck[0].values.length === 0) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS SKVRegistration (
+        id TEXT PRIMARY KEY NOT NULL,
+        memberId TEXT NOT NULL,
+        skvLevel INTEGER NOT NULL DEFAULT 6,
+        status TEXT NOT NULL DEFAULT 'not_started',
+        lastApprovedDate TEXT,
+        createdAtUtc TEXT NOT NULL,
+        updatedAtUtc TEXT NOT NULL,
+        FOREIGN KEY (memberId) REFERENCES Member(internalId)
+      )
+    `);
+    db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_SKVRegistration_memberId ON SKVRegistration(memberId)');
+    migrationsRun.push('SKVRegistration table created');
+  }
+
+  const skvWeaponCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='SKVWeapon'");
+  if (skvWeaponCheck.length === 0 || skvWeaponCheck[0].values.length === 0) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS SKVWeapon (
+        id TEXT PRIMARY KEY NOT NULL,
+        skvRegistrationId TEXT NOT NULL,
+        model TEXT NOT NULL,
+        description TEXT,
+        serial TEXT NOT NULL,
+        type TEXT NOT NULL,
+        caliber TEXT,
+        lastReviewedDate TEXT,
+        createdAtUtc TEXT NOT NULL,
+        updatedAtUtc TEXT NOT NULL,
+        FOREIGN KEY (skvRegistrationId) REFERENCES SKVRegistration(id) ON DELETE CASCADE
+      )
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_SKVWeapon_registrationId ON SKVWeapon(skvRegistrationId)');
+    migrationsRun.push('SKVWeapon table created');
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -870,6 +910,35 @@ async function createSchema(): Promise<void> {
       processedAtUtc TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ProcessedSyncMessage_processedAt ON ProcessedSyncMessage(processedAtUtc);
+
+    -- ===== SKV Registration Tables =====
+
+    CREATE TABLE IF NOT EXISTS SKVRegistration (
+      id TEXT PRIMARY KEY NOT NULL,
+      memberId TEXT NOT NULL,
+      skvLevel INTEGER NOT NULL DEFAULT 6,
+      status TEXT NOT NULL DEFAULT 'not_started',
+      lastApprovedDate TEXT,
+      createdAtUtc TEXT NOT NULL,
+      updatedAtUtc TEXT NOT NULL,
+      FOREIGN KEY (memberId) REFERENCES Member(internalId)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_SKVRegistration_memberId ON SKVRegistration(memberId);
+
+    CREATE TABLE IF NOT EXISTS SKVWeapon (
+      id TEXT PRIMARY KEY NOT NULL,
+      skvRegistrationId TEXT NOT NULL,
+      model TEXT NOT NULL,
+      description TEXT,
+      serial TEXT NOT NULL,
+      type TEXT NOT NULL,
+      caliber TEXT,
+      lastReviewedDate TEXT,
+      createdAtUtc TEXT NOT NULL,
+      updatedAtUtc TEXT NOT NULL,
+      FOREIGN KEY (skvRegistrationId) REFERENCES SKVRegistration(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_SKVWeapon_registrationId ON SKVWeapon(skvRegistrationId);
 
     -- Schema version metadata
     CREATE TABLE IF NOT EXISTS _schema_version (

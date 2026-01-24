@@ -36,6 +36,9 @@ import com.club.medlems.data.dao.MemberDao
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberStatus
 import com.club.medlems.data.entity.MemberType
+import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.data.sync.SyncOutboxManager
+import com.club.medlems.network.TrustManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -79,7 +82,10 @@ data class RegistrationState(
 @HiltViewModel
 class RegistrationViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val memberDao: MemberDao
+    private val memberDao: MemberDao,
+    private val syncOutboxManager: SyncOutboxManager,
+    private val syncManager: SyncManager,
+    private val trustManager: TrustManager
 ) : ViewModel() {
     
     private val _state = MutableStateFlow(RegistrationState())
@@ -234,6 +240,16 @@ class RegistrationViewModel @Inject constructor(
                 
                 withContext(Dispatchers.IO) {
                     memberDao.upsert(member)
+                    // Encode photo for sync if available
+                    val photoBase64 = try {
+                        val photoFile = File(photoPath)
+                        if (photoFile.exists()) {
+                            android.util.Base64.encodeToString(photoFile.readBytes(), android.util.Base64.NO_WRAP)
+                        } else null
+                    } catch (e: Exception) { null }
+                    // Queue trial member for sync and trigger reactive sync
+                    syncOutboxManager.queueMember(member, trustManager.getThisDeviceId(), photoBase64 = photoBase64)
+                    syncManager.notifyEntityChanged("Member", member.internalId)
                     saveRegistrationInfo(internalId, photoPath)
                 }
                 

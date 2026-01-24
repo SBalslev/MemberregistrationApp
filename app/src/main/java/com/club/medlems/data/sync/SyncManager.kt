@@ -15,12 +15,16 @@ import com.club.medlems.network.TrustManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
@@ -41,6 +45,7 @@ import kotlin.time.Duration.Companion.seconds
  * 
  * @see [design.md FR-18] - Sync API Protocol Specification
  */
+@OptIn(FlowPreview::class)
 @Singleton
 class SyncManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -51,13 +56,15 @@ class SyncManager @Inject constructor(
     private val trustManager: TrustManager,
     private val conflictRepository: ConflictRepository,
     private val syncLogManager: SyncLogManager,
-    private val quickReconnectManager: QuickReconnectManager
+    private val quickReconnectManager: QuickReconnectManager,
+    private val syncOutboxManager: SyncOutboxManager
 ) {
     companion object {
         private const val TAG = "SyncManager"
         private val SYNC_INTERVAL = 5.minutes
         private val RETRY_DELAY = 30.seconds
         private val CONNECTIVITY_CHECK_DELAY = 5.seconds
+        private val SYNC_DEBOUNCE = 2.seconds
     }
     
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -86,8 +93,60 @@ class SyncManager @Inject constructor(
     private val _discoveryProgress = MutableStateFlow(DiscoveryProgress())
     val discoveryProgress: StateFlow<DiscoveryProgress> = _discoveryProgress.asStateFlow()
 
+    // Sync trigger flow for reactive sync (FR-2)
+    private val _syncTrigger = MutableSharedFlow<SyncTrigger>(extraBufferCapacity = 10)
+
+    // Failed outbox count for status UI
+    private val _failedOutboxCount = MutableStateFlow(0)
+    val failedOutboxCount: StateFlow<Int> = _failedOutboxCount.asStateFlow()
+
+    // Combined sync status state for UI (FR-4)
+    private val _syncStatusState = MutableStateFlow<SyncStatusState>(SyncStatusState.Idle)
+    val syncStatusState: StateFlow<SyncStatusState> = _syncStatusState.asStateFlow()
+
     /** Last known sync timestamp for incremental pulls */
     private var lastPullTimestamp: Instant = Instant.DISTANT_PAST
+
+    init {
+        // Start debounced sync trigger consumer
+        scope.launch {
+            _syncTrigger
+                .debounce(SYNC_DEBOUNCE.inWholeMilliseconds)
+                .collect { trigger ->
+                    Log.d(TAG, "Processing sync trigger: $trigger")
+                    if (_isNetworkAvailable.value && _connectedPeers.value.isNotEmpty()) {
+                        syncNow()
+                    }
+                }
+        }
+
+        // Observe outbox counts for status updates
+        scope.launch {
+            syncOutboxManager.observePendingCount().collect { count ->
+                _pendingChangesCount.value = count
+                updateSyncStatusState()
+            }
+        }
+
+        scope.launch {
+            syncOutboxManager.observeFailedCount().collect { count ->
+                _failedOutboxCount.value = count
+                updateSyncStatusState()
+            }
+        }
+
+        // Update sync status when state changes
+        scope.launch {
+            combine(
+                _syncState,
+                _isNetworkAvailable,
+                _connectedPeers,
+                _lastSyncTime
+            ) { syncState, networkAvailable, peers, lastSync ->
+                updateSyncStatusState()
+            }.collect { }
+        }
+    }
     
     /**
      * Starts the sync system.
@@ -95,13 +154,25 @@ class SyncManager @Inject constructor(
      * - Starts mDNS discovery
      * - Starts the sync API server
      * - Begins periodic sync loop
-     * 
+     * - Triggers AppStart sync
+     *
      * @param deviceInfo This device's information
      */
     fun start(deviceInfo: DeviceInfo) {
         Log.i(TAG, "Starting sync manager for device: ${deviceInfo.name}")
         syncLogManager.info("Sync", "Starting sync manager for device: ${deviceInfo.name}")
-        
+
+        // Recover any entries stuck in IN_PROGRESS from a previous crash
+        scope.launch {
+            syncOutboxManager.recoverStaleInProgressEntries()
+            syncOutboxManager.cleanup()
+        }
+
+        // Trigger app start sync after initialization (FR-2.3.2)
+        scope.launch {
+            _syncTrigger.emit(SyncTrigger.AppStart)
+        }
+
         // Save device info
         trustManager.saveThisDeviceInfo(deviceInfo)
         
@@ -153,6 +224,11 @@ class SyncManager @Inject constructor(
                     )
                     Log.i(TAG, "Quick reconnect found ${quickResults.size}/$trustedDeviceCount devices")
                     syncLogManager.info("Discovery", "Quick reconnect: ${quickResults.size}/$trustedDeviceCount devices")
+
+                    // Trigger sync for newly discovered devices (FR-2.3.1)
+                    quickResults.values.forEach { device ->
+                        notifyDeviceDiscovered(device.deviceId, device.deviceName)
+                    }
                 }
 
                 // If all trusted devices found, skip mDNS discovery
@@ -191,6 +267,7 @@ class SyncManager @Inject constructor(
             discoveryService.discoveredDevices.collect { mdnsDevices ->
                 // Merge mDNS discoveries with quick reconnect results
                 val currentPeers = _connectedPeers.value.toMutableList()
+                val newDevices = mutableListOf<DiscoveredDevice>()
                 for (device in mdnsDevices) {
                     val existingIndex = currentPeers.indexOfFirst { it.deviceId == device.deviceId }
                     if (existingIndex >= 0) {
@@ -198,9 +275,15 @@ class SyncManager @Inject constructor(
                         currentPeers[existingIndex] = device
                     } else {
                         currentPeers.add(device)
+                        newDevices.add(device)
                     }
                 }
                 _connectedPeers.value = currentPeers
+
+                // Trigger sync for newly discovered devices (FR-2.3.1)
+                newDevices.forEach { device ->
+                    notifyDeviceDiscovered(device.deviceId, device.deviceName)
+                }
 
                 // Update discovery progress
                 val foundTrusted = currentPeers.count { peer ->
@@ -314,12 +397,15 @@ class SyncManager @Inject constructor(
             // Update last sync time
             _lastSyncTime.value = Clock.System.now()
             _lastSyncResult.value = totalResult
-            
+
             // Update pending changes count
             updatePendingChangesCount()
-            
+
+            // Cleanup old completed entries and processed messages
+            syncOutboxManager.cleanup()
+
             _syncState.value = if (totalResult.hasErrors) SyncState.ERROR else SyncState.IDLE
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Sync failed with exception", e)
             _syncState.value = SyncState.ERROR
@@ -371,7 +457,7 @@ class SyncManager @Inject constructor(
             }
 
             // Push our changes (filtered based on peer type)
-            val pushResult = pushChangesToPeer(baseUrl, peer.deviceType)
+            val pushResult = pushChangesToPeer(baseUrl, peer.deviceId, peer.deviceType)
             result = result.combine(pushResult)
 
             // Pull their changes
@@ -392,33 +478,47 @@ class SyncManager @Inject constructor(
     }
     
     /**
-     * Pushes local changes to a peer.
-     * 
+     * Pushes local changes to a peer using the outbox queue.
+     *
+     * This method uses the persistent outbox to ensure at-least-once delivery.
+     * On success, outbox entries are marked as delivered to this peer.
+     * On failure, entries remain in the outbox for retry.
+     *
      * @param baseUrl The peer's API base URL
+     * @param peerDeviceId The peer's device ID (for per-device delivery tracking)
      * @param peerDeviceType The type of peer device (affects what data we push)
      */
     private suspend fun pushChangesToPeer(
         baseUrl: String,
+        peerDeviceId: String,
         peerDeviceType: DeviceType
     ): SyncResult {
-        val deviceId = trustManager.getThisDeviceId()
-        
-        // Collect unsynced entities (filtered based on destination type)
-        val entities = collectUnsyncedEntities(deviceId, peerDeviceType)
-        
+        // Collect entities from the outbox (FR-1 - Persistent Outbox Queue)
+        val (entities, outboxIds) = syncOutboxManager.collectEntitiesForDevice(peerDeviceId, peerDeviceType)
+
         if (entities.isEmpty) {
-            Log.d(TAG, "No changes to push")
+            Log.d(TAG, "No changes to push to $peerDeviceId")
             return SyncResult()
         }
-        
-        Log.d(TAG, "Pushing ${entities.totalCount} entities to $baseUrl")
-        
-        val response = syncClient.pushChanges(baseUrl, entities)
-        
+
+        Log.d(TAG, "Pushing ${entities.totalCount} entities (${outboxIds.size} outbox entries) to $baseUrl")
+
+        // Record delivery attempt for each outbox entry
+        outboxIds.forEach { outboxId ->
+            syncOutboxManager.recordDeliveryAttempt(outboxId, peerDeviceId)
+        }
+
+        val response = syncClient.pushChanges(baseUrl, entities, outboxIds)
+
         return when (response.status) {
             SyncResponseStatus.OK -> {
-                // Mark pushed entities as synced
+                // Mark outbox entries as delivered to this peer (FR-1.3)
+                val acknowledgedIds = response.acknowledgedOutboxIds.ifEmpty { outboxIds }
+                syncOutboxManager.markDeliveredToDevice(acknowledgedIds, peerDeviceId)
+
+                // Also mark in legacy system for compatibility
                 markEntitiesSynced(entities)
+
                 SyncResult(
                     membersProcessed = entities.members.size,
                     checkInsProcessed = entities.checkIns.size,
@@ -433,8 +533,29 @@ class SyncManager @Inject constructor(
                 }
                 SyncResult(conflicts = response.conflicts)
             }
+            SyncResponseStatus.UNAUTHORIZED -> {
+                // Permanent error - don't retry (401 is a client error)
+                val errorMsg = response.errorMessage ?: "Authentication failed"
+                outboxIds.forEach { outboxId ->
+                    syncOutboxManager.recordFailedAttempt(outboxId, errorMsg, httpStatusCode = 401)
+                }
+                SyncResult(errorMessage = errorMsg)
+            }
+            SyncResponseStatus.UPGRADE_REQUIRED -> {
+                // Permanent error - don't retry (schema incompatible)
+                val errorMsg = response.errorMessage ?: "App upgrade required"
+                outboxIds.forEach { outboxId ->
+                    syncOutboxManager.recordFailedAttempt(outboxId, errorMsg, httpStatusCode = 426)
+                }
+                SyncResult(errorMessage = errorMsg)
+            }
             else -> {
-                SyncResult(errorMessage = response.errorMessage ?: "Push failed: ${response.status}")
+                // Transient error - retry with backoff (5xx server errors)
+                val errorMsg = response.errorMessage ?: "Push failed: ${response.status}"
+                outboxIds.forEach { outboxId ->
+                    syncOutboxManager.recordFailedAttempt(outboxId, errorMsg)
+                }
+                SyncResult(errorMessage = errorMsg)
             }
         }
     }
@@ -495,8 +616,112 @@ class SyncManager @Inject constructor(
      * Updates the count of pending (unsynced) changes.
      */
     private suspend fun updatePendingChangesCount() {
-        val since = _lastSyncTime.value ?: Instant.DISTANT_PAST
-        _pendingChangesCount.value = syncRepository.getPendingChangesCount(since)
+        // Now uses outbox count instead of querying entities directly
+        // The count is updated via the observePendingCount flow
+    }
+
+    // === Reactive Sync Triggers (FR-2) ===
+
+    /**
+     * Notifies that an entity changed, triggering a debounced sync.
+     *
+     * Call this after inserting/updating entities to trigger reactive sync.
+     * The actual sync is debounced by 2 seconds to batch rapid changes.
+     *
+     * @param entityType The type of entity (e.g., "CheckIn", "PracticeSession")
+     * @param entityId The UUID of the entity
+     * @param operation The operation type ("INSERT", "UPDATE", "DELETE")
+     */
+    fun notifyEntityChanged(entityType: String, entityId: String, operation: String = "INSERT") {
+        scope.launch {
+            _syncTrigger.emit(SyncTrigger.EntityChanged(entityType, entityId, operation))
+        }
+    }
+
+    /**
+     * Triggers sync when a new device is discovered.
+     */
+    fun notifyDeviceDiscovered(deviceId: String, deviceName: String) {
+        scope.launch {
+            _syncTrigger.emit(SyncTrigger.DeviceDiscovered(deviceId, deviceName))
+        }
+    }
+
+    /**
+     * Triggers manual sync (bypasses debounce).
+     */
+    fun triggerManualSync() {
+        scope.launch {
+            if (_isNetworkAvailable.value && _connectedPeers.value.isNotEmpty()) {
+                syncNow()
+            }
+        }
+    }
+
+    // === Sync Status (FR-4) ===
+
+    /**
+     * Updates the combined sync status state for UI.
+     */
+    private fun updateSyncStatusState() {
+        val state = when {
+            !_isNetworkAvailable.value -> SyncStatusState.Offline
+            _connectedPeers.value.isEmpty() -> SyncStatusState.NoPeers
+            _syncState.value == SyncState.SYNCING -> SyncStatusState.Syncing()
+            _failedOutboxCount.value > 0 -> SyncStatusState.Error(
+                message = "${_failedOutboxCount.value} synkroniseringer fejlet",
+                failedCount = _failedOutboxCount.value,
+                canRetry = true
+            )
+            _pendingChangesCount.value > 0 -> SyncStatusState.Pending(
+                count = _pendingChangesCount.value,
+                lastSyncTime = _lastSyncTime.value
+            )
+            _lastSyncTime.value != null -> SyncStatusState.Synced(
+                lastSyncTime = _lastSyncTime.value!!,
+                connectedPeerCount = _connectedPeers.value.size
+            )
+            else -> SyncStatusState.Idle
+        }
+        _syncStatusState.value = state
+    }
+
+    /**
+     * Gets detailed sync status for the status detail sheet.
+     */
+    suspend fun getSyncStatusDetail(): SyncStatusDetail {
+        val peers = _connectedPeers.value.map { peer ->
+            PeerSyncStatus(
+                deviceId = peer.deviceId,
+                deviceName = peer.deviceName,
+                deviceType = peer.deviceType,
+                lastSyncTime = null, // TODO: Track per-peer sync time
+                pendingForPeer = syncOutboxManager.getPendingForDevice(peer.deviceId).size
+            )
+        }
+
+        return SyncStatusDetail(
+            state = _syncStatusState.value,
+            pendingCount = _pendingChangesCount.value,
+            failedCount = _failedOutboxCount.value,
+            lastSyncTime = _lastSyncTime.value,
+            connectedPeers = peers,
+            isNetworkAvailable = _isNetworkAvailable.value
+        )
+    }
+
+    /**
+     * Retries all failed outbox entries.
+     */
+    suspend fun retryFailedEntries() {
+        val failed = syncOutboxManager.getFailedEntries()
+        failed.forEach { entry ->
+            syncOutboxManager.retryFailed(entry.id)
+        }
+        // Trigger sync after resetting
+        if (failed.isNotEmpty()) {
+            triggerManualSync()
+        }
     }
     
     /**

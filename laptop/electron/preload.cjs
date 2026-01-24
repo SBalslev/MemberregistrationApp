@@ -131,7 +131,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Get the path to a member's photo file
   getPhotoPath: (internalId) =>
-    ipcRenderer.invoke('photo:get-path', { internalId })
+    ipcRenderer.invoke('photo:get-path', { internalId }),
+
+  // ===== File Save API =====
+
+  // Show save dialog
+  showSaveDialog: (options) => ipcRenderer.invoke('file:show-save-dialog', options),
+
+  // Save file
+  saveFile: (payload) => ipcRenderer.invoke('file:save', payload)
 });
 
 // Expose platform info

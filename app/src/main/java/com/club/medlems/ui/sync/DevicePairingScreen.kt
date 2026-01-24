@@ -277,7 +277,11 @@ fun DevicePairingScreen(
                             device = device,
                             isPairing = pairingState is PairingState.Pairing &&
                                 (pairingState as PairingState.Pairing).deviceName == device.deviceName,
-                            onPair = { viewModel.pairWithDevice(device) }
+                            onPair = {
+                                laptopIpAddress = device.address.hostAddress.orEmpty()
+                                pairingCode = ""
+                                showPairingDialog = true
+                            }
                         )
                     }
                 }

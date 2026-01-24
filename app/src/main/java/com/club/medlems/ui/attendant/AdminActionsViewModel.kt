@@ -31,13 +31,19 @@ import kotlin.random.Random
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.entity.SessionSource
+import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.data.sync.SyncOutboxManager
+import com.club.medlems.network.TrustManager
 
 @HiltViewModel
 class AdminActionsViewModel @Inject constructor(
     private val memberDao: MemberDao,
     private val checkInDao: CheckInDao,
     private val practiceSessionDao: PracticeSessionDao,
-    private val scanEventDao: ScanEventDao
+    private val scanEventDao: ScanEventDao,
+    private val syncOutboxManager: SyncOutboxManager,
+    private val syncManager: SyncManager,
+    private val trustManager: TrustManager
 ) : ViewModel() {
 
     // Expose active members to support search/select UI
@@ -71,6 +77,7 @@ class AdminActionsViewModel @Inject constructor(
             }
         } else false
         val existingCheckIn = checkInDao.firstForDate(member.internalId, localDate)
+        val deviceId = trustManager.getThisDeviceId()
         return@withContext if (existingCheckIn == null) {
             val checkIn = CheckIn(
                 id = UUID.randomUUID().toString(),
@@ -81,30 +88,40 @@ class AdminActionsViewModel @Inject constructor(
                 firstOfDayFlag = true
             )
             checkInDao.insert(checkIn)
+            // Queue check-in for sync and trigger reactive sync
+            syncOutboxManager.queueCheckIn(checkIn, deviceId)
+            syncManager.notifyEntityChanged("CheckIn", checkIn.id)
+
             val scanEventId = UUID.randomUUID().toString()
-            scanEventDao.insert(
-                ScanEvent(
-                    id = scanEventId,
-                    internalMemberId = member.internalId,
-                    membershipId = id,
-                    createdAtUtc = now,
-                    type = ScanEventType.FIRST_SCAN,
-                    linkedCheckInId = checkIn.id
-                )
+            val scanEvent = ScanEvent(
+                id = scanEventId,
+                internalMemberId = member.internalId,
+                membershipId = id,
+                createdAtUtc = now,
+                type = ScanEventType.FIRST_SCAN,
+                linkedCheckInId = checkIn.id
             )
+            scanEventDao.insert(scanEvent)
+            // Queue scan event for sync and trigger reactive sync
+            syncOutboxManager.queueScanEvent(scanEvent, deviceId)
+            syncManager.notifyEntityChanged("ScanEvent", scanEventId)
+
             val isTrial = member.memberType == MemberType.TRIAL
             ScanOutcome.First(id, scanEventId, birthday = birthdayTodayOrSince, isTrial = isTrial)
         } else {
             val scanEventId = UUID.randomUUID().toString()
-            scanEventDao.insert(
-                ScanEvent(
-                    id = scanEventId,
-                    internalMemberId = member.internalId,
-                    membershipId = id,
-                    createdAtUtc = now,
-                    type = ScanEventType.REPEAT_SCAN
-                )
+            val scanEvent = ScanEvent(
+                id = scanEventId,
+                internalMemberId = member.internalId,
+                membershipId = id,
+                createdAtUtc = now,
+                type = ScanEventType.REPEAT_SCAN
             )
+            scanEventDao.insert(scanEvent)
+            // Queue scan event for sync and trigger reactive sync
+            syncOutboxManager.queueScanEvent(scanEvent, deviceId)
+            syncManager.notifyEntityChanged("ScanEvent", scanEventId)
+
             val isTrial = member.memberType == MemberType.TRIAL
             ScanOutcome.Repeat(id, scanEventId, birthday = birthdayTodayOrSince, isTrial = isTrial)
         }

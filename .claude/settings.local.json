@@ -16,7 +16,15 @@
       "Bash(npm run typecheck:*)",
       "Bash(npx tsc --noEmit)",
       "Bash(./gradlew :app:compileTrainerDebugKotlin:*)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(echo:*)",
+      "Bash(npx vitest:*)",
+      "Bash(./gradlew :app:testDebugUnitTest:*)",
+      "Bash(./gradlew :app:testMemberDebugUnitTest:*)",
+      "Bash(./gradlew:*)",
+      "Bash(dir:*)"
     ]
   }
 }

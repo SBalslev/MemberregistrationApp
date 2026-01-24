@@ -9,6 +9,9 @@ import com.club.medlems.data.entity.EquipmentCheckout
 import com.club.medlems.data.entity.EquipmentItem
 import com.club.medlems.data.entity.EquipmentStatus
 import com.club.medlems.data.entity.EquipmentType
+import com.club.medlems.data.sync.OutboxOperation
+import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.data.sync.SyncOutboxManager
 import com.club.medlems.network.TrustManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -33,7 +36,9 @@ class EquipmentRepository @Inject constructor(
     private val equipmentItemDao: EquipmentItemDao,
     private val equipmentCheckoutDao: EquipmentCheckoutDao,
     private val memberDao: MemberDao,
-    private val trustManager: TrustManager
+    private val trustManager: TrustManager,
+    private val syncOutboxManager: SyncOutboxManager,
+    private val syncManager: SyncManager
 ) {
     companion object {
         private const val TAG = "EquipmentRepository"
@@ -221,10 +226,14 @@ class EquipmentRepository @Inject constructor(
             
             // Update equipment status
             equipmentItemDao.updateStatus(equipmentId, EquipmentStatus.CheckedOut, now)
-            
+
             // Create checkout record
             equipmentCheckoutDao.insert(checkout)
-            
+
+            // Queue checkout for sync and trigger reactive sync
+            syncOutboxManager.queueEquipmentCheckout(checkout, deviceId, OutboxOperation.INSERT)
+            syncManager.notifyEntityChanged("EquipmentCheckout", checkout.id)
+
             Log.i(TAG, "Checked out equipment ${equipment.serialNumber} to member $membershipId")
             Result.success(checkout)
         } catch (e: Exception) {
@@ -259,7 +268,7 @@ class EquipmentRepository @Inject constructor(
             
             val deviceId = trustManager.getThisDeviceId()
             val now = Clock.System.now()
-            
+
             // Update checkout record
             equipmentCheckoutDao.checkIn(
                 id = checkoutId,
@@ -268,10 +277,18 @@ class EquipmentRepository @Inject constructor(
                 notes = notes?.take(500),
                 modifiedAt = now
             )
-            
+
+            // Get the updated checkout record for queueing
+            val updatedCheckout = equipmentCheckoutDao.get(checkoutId)
+            if (updatedCheckout != null) {
+                // Queue updated checkout for sync and trigger reactive sync
+                syncOutboxManager.queueEquipmentCheckout(updatedCheckout, deviceId, OutboxOperation.UPDATE)
+                syncManager.notifyEntityChanged("EquipmentCheckout", checkoutId)
+            }
+
             // Update equipment status back to available
             equipmentItemDao.updateStatus(checkout.equipmentId, EquipmentStatus.Available, now)
-            
+
             Log.i(TAG, "Checked in equipment from checkout $checkoutId")
             Result.success(Unit)
         } catch (e: Exception) {

@@ -4,9 +4,11 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Settings, Database, Wifi, Download, Upload, Trash2, CheckCircle, AlertCircle, HardDrive } from 'lucide-react';
+import { Settings, Database, Wifi, Download, Upload, Trash2, CheckCircle, AlertCircle, HardDrive, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { isElectron, getElectronAPI } from '../types/electron';
 import { exportDatabase, importDatabase, clearDatabase } from '../database';
+import { buildSkvExportWorkbook } from '../utils/skvExport';
 
 interface AppSettings {
   autoSync: boolean;
@@ -48,6 +50,7 @@ export function SettingsPage() {
   });
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
   const [importStatus, setImportStatus] = useState<'idle' | 'importing' | 'success' | 'error'>('idle');
+  const [skvExportStatus, setSkvExportStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
 
   useEffect(() => {
     // Load device info if running in Electron (async operation)
@@ -120,6 +123,45 @@ export function SettingsPage() {
     input.click();
   }
 
+  async function handleSkvExport() {
+    setSkvExportStatus('exporting');
+    try {
+      const { workbook, filename } = buildSkvExportWorkbook();
+      const api = isElectron() ? getElectronAPI() : undefined;
+
+      if (api?.showSaveDialog && api?.saveFile) {
+        const result = await api.showSaveDialog({
+          defaultPath: filename,
+          filters: [{ name: 'Excel', extensions: ['xlsx'] }]
+        });
+
+        if (!result || result.canceled || !result.filePath) {
+          setSkvExportStatus('idle');
+          return;
+        }
+
+        const data = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+        const saveResult = await api.saveFile({
+          filePath: result.filePath,
+          data: new Uint8Array(data)
+        });
+
+        if (!saveResult?.success) {
+          throw new Error(saveResult?.error || 'SKV export mislykkedes');
+        }
+      } else {
+        XLSX.writeFile(workbook, filename);
+      }
+
+      setSkvExportStatus('success');
+      setTimeout(() => setSkvExportStatus('idle'), 3000);
+    } catch (error) {
+      console.error('SKV export failed:', error);
+      setSkvExportStatus('error');
+      setTimeout(() => setSkvExportStatus('idle'), 3000);
+    }
+  }
+
   async function handleClearDatabase() {
     if (!confirm('Er du sikker på at du vil slette alle data? Dette kan ikke fortrydes.')) {
       return;
@@ -179,6 +221,39 @@ export function SettingsPage() {
                   )}
                 </span>
               </div>
+            )}
+          </div>
+        </section>
+
+        {/* Administration */}
+        <section className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <FileSpreadsheet className="w-5 h-5" />
+            Administration
+          </h2>
+          <div className="bg-white rounded-xl border border-gray-200">
+            <div className="p-4 flex items-center justify-between">
+              <div>
+                <div className="font-medium text-gray-900">SKV eksport</div>
+                <div className="text-sm text-gray-500">Eksporter SKV registreringer og våben</div>
+              </div>
+              <button
+                onClick={handleSkvExport}
+                disabled={skvExportStatus === 'exporting'}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                {skvExportStatus === 'exporting' ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : skvExportStatus === 'success' ? (
+                  <CheckCircle className="w-5 h-5" />
+                ) : (
+                  <Download className="w-5 h-5" />
+                )}
+                {skvExportStatus === 'success' ? 'Eksporteret!' : 'Eksporter SKV'}
+              </button>
+            </div>
+            {skvExportStatus === 'error' && (
+              <div className="px-4 pb-4 text-sm text-red-600">Eksport mislykkedes. Prøv igen.</div>
             )}
           </div>
         </section>

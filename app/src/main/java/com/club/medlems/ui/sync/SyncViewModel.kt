@@ -9,8 +9,11 @@ import com.club.medlems.data.sync.DiscoveryProgress
 import com.club.medlems.data.sync.SyncLogEntry
 import com.club.medlems.data.sync.SyncLogManager
 import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.data.sync.SyncOutboxManager
 import com.club.medlems.data.sync.SyncResult
 import com.club.medlems.data.sync.SyncState
+import com.club.medlems.data.sync.SyncStatusDetail
+import com.club.medlems.data.sync.SyncStatusState
 import com.club.medlems.domain.prefs.DeviceConfigPreferences
 import com.club.medlems.network.DeviceDiscoveryService
 import com.club.medlems.network.DiscoveredDevice
@@ -42,7 +45,8 @@ class SyncViewModel @Inject constructor(
     private val trustManager: TrustManager,
     private val syncLogManager: SyncLogManager,
     private val deviceConfigPreferences: DeviceConfigPreferences,
-    private val syncClient: SyncClient
+    private val syncClient: SyncClient,
+    private val syncOutboxManager: SyncOutboxManager
 ) : ViewModel() {
     
     private var syncManagerStarted = false
@@ -74,7 +78,10 @@ class SyncViewModel @Inject constructor(
 
     /** Discovery progress for tiered discovery UI feedback */
     val discoveryProgress: StateFlow<DiscoveryProgress> = syncManager.discoveryProgress
-    
+
+    /** Detailed sync status state for reliability UI */
+    val syncStatusState: StateFlow<SyncStatusState> = syncManager.syncStatusState
+
     /** This device's info */
     val thisDeviceInfo: DeviceInfo?
         get() = trustManager.getThisDeviceInfo()
@@ -223,15 +230,7 @@ class SyncViewModel @Inject constructor(
      */
     fun pairWithDevice(device: DiscoveredDevice) {
         viewModelScope.launch {
-            _pairingState.value = PairingState.Pairing(device.deviceName)
-            
-            try {
-                // Add to trusted devices
-                trustManager.addTrustedDevice(device.toDeviceInfo())
-                _pairingState.value = PairingState.Success(device.deviceName)
-            } catch (e: Exception) {
-                _pairingState.value = PairingState.Error(e.message ?: "Pairing failed")
-            }
+            _pairingState.value = PairingState.Error("Parring kræver kode")
         }
     }
 
@@ -284,6 +283,27 @@ class SyncViewModel @Inject constructor(
     fun clearLogs() {
         syncLogManager.clear()
     }
+
+    /**
+     * Retries all failed outbox entries.
+     */
+    fun retryFailedEntries() {
+        viewModelScope.launch {
+            syncManager.retryFailedEntries()
+        }
+    }
+
+    /**
+     * Gets detailed sync status information.
+     * @return Status detail including pending, failed counts and per-device status
+     */
+    suspend fun getSyncStatusDetail(): SyncStatusDetail = syncManager.getSyncStatusDetail()
+
+    /**
+     * Gets the pending outbox count.
+     */
+    fun getPendingOutboxCount(): kotlinx.coroutines.flow.Flow<Int> =
+        syncOutboxManager.observePendingCount()
 }
 
 /**

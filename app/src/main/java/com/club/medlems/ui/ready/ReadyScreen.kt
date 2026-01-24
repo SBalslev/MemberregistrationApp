@@ -69,6 +69,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontWeight
+import com.club.medlems.ui.sync.SyncStatusIndicator
+import com.club.medlems.ui.sync.SyncStatusDetailSheet
 
 private const val TAG = "ReadyScreen"
 private val cameraExecutor by lazy { Executors.newSingleThreadExecutor() }
@@ -107,6 +109,7 @@ fun ReadyScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val diagnosticsEnabled by vm.diagnosticPrefs.diagnosticsEnabled.collectAsState()
     var showDiagnosticPanel by remember { mutableStateOf(false) }
+    var showSyncDetailSheet by remember { mutableStateOf(false) }
     var hasCameraPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCameraPermission = granted
@@ -336,6 +339,14 @@ fun ReadyScreen(
                             )
                         }
                     }
+
+                    // Sync status indicator (top-center)
+                    SyncStatusIndicator(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp),
+                        onClick = { showSyncDetailSheet = true }
+                    )
                 }
                 // Instruction banner between camera and leaderboard
                 ElevatedCard(
@@ -382,7 +393,14 @@ fun ReadyScreen(
                 }
             }
         }
-        
+
+        // Sync status detail sheet
+        if (showSyncDetailSheet) {
+            SyncStatusDetailSheet(
+                onDismiss = { showSyncDetailSheet = false }
+            )
+        }
+
         // Diagnostic panel dialog
         if (showDiagnosticPanel) {
             AlertDialog(

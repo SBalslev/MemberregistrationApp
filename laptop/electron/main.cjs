@@ -5,7 +5,7 @@
  * @see [design.md FR-18] - Sync Protocol Specification
  */
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
@@ -988,6 +988,32 @@ ipcMain.handle('photo:get-path', (event, { internalId }) => {
     photoPath: exists ? photoPath : null,
     exists
   };
+});
+
+// ===== File Save API =====
+
+ipcMain.handle('file:show-save-dialog', async (event, options = {}) => {
+  const defaultFileName = options.defaultPath || 'SKV-export.xlsx';
+  const defaultPath = path.join(app.getPath('documents'), defaultFileName);
+
+  const result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath,
+    filters: options.filters || [{ name: 'Excel', extensions: ['xlsx'] }]
+  });
+
+  return { canceled: result.canceled, filePath: result.filePath || null };
+});
+
+ipcMain.handle('file:save', async (event, { filePath, data }) => {
+  try {
+    if (!filePath) {
+      return { success: false, error: 'No file path provided' };
+    }
+    fs.writeFileSync(filePath, Buffer.from(data));
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 
 // IPC handler for renderer responding to data requests

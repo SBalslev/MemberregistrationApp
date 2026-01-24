@@ -155,23 +155,25 @@ class SyncClient @Inject constructor(
      */
     suspend fun pushChanges(
         baseUrl: String,
-        entities: SyncEntities
+        entities: SyncEntities,
+        outboxIds: List<String> = emptyList()
     ): SyncResponse {
         // Use persistent token if available, otherwise generate a device token for local network sync
-        val authToken = trustManager.getPersistentToken() 
-            ?: trustManager.generateDeviceToken(trustManager.getThisDeviceInfo() 
+        val authToken = trustManager.getPersistentToken()
+            ?: trustManager.generateDeviceToken(trustManager.getThisDeviceInfo()
                 ?: return SyncResponse(
                     status = SyncResponseStatus.UNAUTHORIZED,
                     timestamp = Clock.System.now(),
                     errorMessage = "Device not configured"
                 ))
-        
+
         return withRetry(MAX_RETRIES) {
             val payload = SyncPayload(
                 schemaVersion = SyncSchemaVersion.version,
                 deviceId = trustManager.getThisDeviceId(),
                 timestamp = Clock.System.now(),
-                entities = entities
+                entities = entities,
+                outboxIds = outboxIds
             )
             
             val response = client.post("$baseUrl/api/sync/push") {

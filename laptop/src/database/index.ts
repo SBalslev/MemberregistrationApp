@@ -2,6 +2,7 @@ export { initDatabase, getDatabase, query, execute, transaction, exportDatabase,
 export * from './memberRepository';
 export * from './registrationRepository';
 export * from './financeRepository';
+export * from './skvRepository';
 export * from './syncService';
 export * from './trustManager';
 export * from './photoMigration';

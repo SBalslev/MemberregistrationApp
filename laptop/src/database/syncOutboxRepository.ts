@@ -6,7 +6,6 @@
  */
 
 import { execute, query, transaction } from './db';
-import type { SqlValue } from 'sql.js';
 
 // ===== Backoff Configuration =====
 // Delays in seconds: 0s, 5s, 15s, 60s, 5min, 15min

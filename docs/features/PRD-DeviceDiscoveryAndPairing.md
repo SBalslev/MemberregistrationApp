@@ -18,6 +18,7 @@ This document explores improvements to the device pairing and discovery system f
    - Tablet scans and exchanges device info
    - Laptop issues persistent JWT auth token
    - Device added to trusted list
+    - Manual pairing requires a 6-digit code entry, and discovered devices open the code dialog instead of pairing directly
 
 3. **Polling-Based Sync**
    - 5-minute automatic sync intervals

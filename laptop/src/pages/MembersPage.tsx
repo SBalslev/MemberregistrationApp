@@ -3,9 +3,10 @@
  */
 
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge } from 'lucide-react';
-import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers } from '../database';
+import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge, Edit2 } from 'lucide-react';
+import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, getDefaultSkvRegistration, SKV_WEAPON_TYPES, SKV_CALIBERS } from '../database';
 import type { Member, Gender } from '../types';
+import type { SkvRegistration, SkvWeapon, SkvStatus } from '../database/skvRepository';
 import type { MergeResult } from '../database/memberRepository';
 import { useAppStore } from '../store';
 import { getPhotoSrc } from '../utils/photoStorage';
@@ -374,6 +375,11 @@ export function MembersPage() {
 function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemberUpdated: () => void }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAssignIdModal, setShowAssignIdModal] = useState(false);
+  const [skvRegistration, setSkvRegistration] = useState<SkvRegistration | null>(null);
+  const [skvWeapons, setSkvWeapons] = useState<SkvWeapon[]>([]);
+  const [showSkvModal, setShowSkvModal] = useState(false);
+  const [showWeaponModal, setShowWeaponModal] = useState(false);
+  const [editingWeapon, setEditingWeapon] = useState<SkvWeapon | null>(null);
   const { setSelectedMember } = useAppStore();
 
   // Calculate days since registration for trial members
@@ -385,6 +391,26 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
   // Get photo source - prefer full photo (photoPath) for detail view, fallback to older fields
   const photoSource = member.photoPath || member.registrationPhotoPath;
   const photoSrc = getPhotoSrc(photoSource);
+
+  useEffect(() => {
+    const registration = getSkvRegistration(member.internalId);
+    setSkvRegistration(registration);
+    if (registration) {
+      setSkvWeapons(getSkvWeaponsByRegistrationId(registration.id));
+    } else {
+      setSkvWeapons([]);
+    }
+  }, [member.internalId]);
+
+  function refreshSkv() {
+    const registration = getSkvRegistration(member.internalId);
+    setSkvRegistration(registration);
+    if (registration) {
+      setSkvWeapons(getSkvWeaponsByRegistrationId(registration.id));
+    } else {
+      setSkvWeapons([]);
+    }
+  }
 
   return (
     <div className="p-6">
@@ -457,6 +483,99 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
         </div>
       )}
 
+      {/* SKV */}
+      <div className="mt-6 pt-4 border-t border-gray-200">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-900">SKV</h3>
+          <button
+            onClick={() => setShowSkvModal(true)}
+            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+          >
+            Rediger SKV
+          </button>
+        </div>
+        <div className="space-y-4">
+          <DetailRow
+            label="Status"
+            value={formatSkvStatus(skvRegistration?.status ?? 'not_started')}
+          />
+          <DetailRow
+            label="SKV niveau"
+            value={`${skvRegistration?.skvLevel ?? 6}`}
+          />
+          <DetailRow
+            label="Senest godkendt"
+            value={skvRegistration?.lastApprovedDate ? formatDate(skvRegistration.lastApprovedDate) : '-'}
+          />
+        </div>
+
+        <div className="mt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-semibold text-gray-900">Våben</h4>
+            <button
+              onClick={() => {
+                setEditingWeapon(null);
+                setShowWeaponModal(true);
+              }}
+              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              Tilføj våben
+            </button>
+          </div>
+
+          {skvWeapons.length === 0 ? (
+            <p className="text-sm text-gray-500">Ingen registrerede våben</p>
+          ) : (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="text-left px-3 py-2">Model</th>
+                    <th className="text-left px-3 py-2">Type</th>
+                    <th className="text-left px-3 py-2">Kaliber</th>
+                    <th className="text-left px-3 py-2">Serienr.</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {skvWeapons.map((weapon) => (
+                    <tr key={weapon.id} className="border-t border-gray-200">
+                      <td className="px-3 py-2 text-gray-900">{weapon.model}</td>
+                      <td className="px-3 py-2 text-gray-700">{weapon.type}</td>
+                      <td className="px-3 py-2 text-gray-700">{weapon.caliber || '-'}</td>
+                      <td className="px-3 py-2 text-gray-700">{weapon.serial}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          onClick={() => {
+                            setEditingWeapon(weapon);
+                            setShowWeaponModal(true);
+                          }}
+                          className="p-1 text-gray-500 hover:text-gray-700"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm('Vil du slette dette våben?')) {
+                              deleteSkvWeapon(weapon.id);
+                              refreshSkv();
+                            }
+                          }}
+                          className="p-1 text-gray-500 hover:text-red-600"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Actions */}
       <div className="mt-8 space-y-3">
         {/* Assign Member ID button for trial members */}
@@ -521,6 +640,47 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
           }}
         />
       )}
+
+      {showSkvModal && (
+        <SkvRegistrationModal
+          memberId={member.internalId}
+          registration={skvRegistration ?? getDefaultSkvRegistration(member.internalId)}
+          onClose={() => setShowSkvModal(false)}
+          onSave={(values) => {
+            const saved = upsertSkvRegistration(values);
+            setSkvRegistration(saved);
+            refreshSkv();
+            setShowSkvModal(false);
+          }}
+        />
+      )}
+
+      {showWeaponModal && (
+        <SkvWeaponModal
+          weapon={editingWeapon}
+          onClose={() => {
+            setShowWeaponModal(false);
+            setEditingWeapon(null);
+          }}
+          onSave={(values) => {
+            const registration = ensureSkvRegistration(member.internalId);
+            if (editingWeapon) {
+              updateSkvWeapon({
+                ...editingWeapon,
+                ...values
+              });
+            } else {
+              addSkvWeapon({
+                ...values,
+                skvRegistrationId: registration.id
+              });
+            }
+            refreshSkv();
+            setShowWeaponModal(false);
+            setEditingWeapon(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -565,6 +725,290 @@ function formatGender(gender: string | null): string {
     case 'OTHER': return 'Andet';
     default: return '-';
   }
+}
+
+function formatSkvStatus(status: SkvStatus): string {
+  switch (status) {
+    case 'approved':
+      return 'Godkendt';
+    case 'requested':
+      return 'Anmodet';
+    default:
+      return 'Ikke startet';
+  }
+}
+
+interface SkvRegistrationModalProps {
+  memberId: string;
+  registration: SkvRegistration;
+  onClose: () => void;
+  onSave: (values: { memberId: string; skvLevel: number; status: SkvStatus; lastApprovedDate: string | null }) => void;
+}
+
+function SkvRegistrationModal({ memberId, registration, onClose, onSave }: SkvRegistrationModalProps) {
+  const [skvLevel, setSkvLevel] = useState<number>(registration.skvLevel ?? 6);
+  const [status, setStatus] = useState<SkvStatus>(registration.status ?? 'not_started');
+  const [lastApprovedDate, setLastApprovedDate] = useState<string>(registration.lastApprovedDate ?? '');
+  const [error, setError] = useState<string | null>(null);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (status === 'approved' && !lastApprovedDate) {
+      setError('Senest godkendt dato er påkrævet ved godkendt status.');
+      return;
+    }
+    setError(null);
+    onSave({
+      memberId,
+      skvLevel,
+      status,
+      lastApprovedDate: lastApprovedDate || null
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-lg font-bold text-gray-900">SKV registrering</h2>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Status
+            </label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as SkvStatus)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="not_started">Ikke startet</option>
+              <option value="requested">Anmodet</option>
+              <option value="approved">Godkendt</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              SKV niveau
+            </label>
+            <select
+              value={skvLevel}
+              onChange={(e) => setSkvLevel(Number(e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              {[1, 2, 3, 4, 5, 6].map((level) => (
+                <option key={level} value={level}>SKV {level}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Senest godkendt
+            </label>
+            <input
+              type="date"
+              value={lastApprovedDate}
+              onChange={(e) => setLastApprovedDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+            {status === 'approved' && !lastApprovedDate && (
+              <p className="text-xs text-red-600 mt-1">Påkrævet ved godkendt status</p>
+            )}
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100"
+            >
+              Annuller
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Gem
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+interface SkvWeaponModalProps {
+  weapon: SkvWeapon | null;
+  onClose: () => void;
+  onSave: (values: Omit<SkvWeapon, 'id' | 'createdAtUtc' | 'updatedAtUtc' | 'skvRegistrationId'>) => void;
+}
+
+function SkvWeaponModal({ weapon, onClose, onSave }: SkvWeaponModalProps) {
+  const [model, setModel] = useState(weapon?.model ?? '');
+  const [description, setDescription] = useState(weapon?.description ?? '');
+  const [serial, setSerial] = useState(weapon?.serial ?? '');
+  const [type, setType] = useState(weapon?.type ?? '');
+  const [caliber, setCaliber] = useState(weapon?.caliber ?? '');
+  const [lastReviewedDate, setLastReviewedDate] = useState(weapon?.lastReviewedDate ?? '');
+  const [error, setError] = useState<string | null>(null);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!model.trim() || !serial.trim() || !type.trim()) {
+      setError('Model, serienummer og type er påkrævet.');
+      return;
+    }
+    setError(null);
+    onSave({
+      model: model.trim().slice(0, 100),
+      description: description.trim().slice(0, 500) || null,
+      serial: serial.trim().slice(0, 100),
+      type: type.trim().slice(0, 50),
+      caliber: caliber.trim().slice(0, 50) || null,
+      lastReviewedDate: lastReviewedDate || null
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-lg font-bold text-gray-900">{weapon ? 'Rediger våben' : 'Tilføj våben'}</h2>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Model <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              maxLength={100}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              required
+            >
+              <option value="">Vælg type</option>
+              {SKV_WEAPON_TYPES.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Kaliber
+            </label>
+            <select
+              value={caliber}
+              onChange={(e) => setCaliber(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Vælg kaliber</option>
+              {SKV_CALIBERS.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Serienummer <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={serial}
+              onChange={(e) => setSerial(e.target.value)}
+              maxLength={100}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Beskrivelse
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={500}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Sidst gennemgået
+            </label>
+            <input
+              type="date"
+              value={lastReviewedDate}
+              onChange={(e) => setLastReviewedDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100"
+            >
+              Annuller
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Gem
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 // Modal for merging two member records

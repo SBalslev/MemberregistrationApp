@@ -86,6 +86,12 @@ export interface ElectronAPI {
 
   /** Get the path to a member's photo file */
   getPhotoPath?: (internalId: string) => Promise<{ photoPath: string | null; exists: boolean }>;
+
+  /** Show a save dialog and return the selected path */
+  showSaveDialog?: (options: { defaultPath: string; filters?: { name: string; extensions: string[] }[] }) => Promise<{ canceled: boolean; filePath: string | null }>;
+
+  /** Save a file from the renderer */
+  saveFile?: (payload: { filePath: string; data: Uint8Array }) => Promise<{ success: boolean; error?: string }>;
 }
 
 /** Result of photo processing */

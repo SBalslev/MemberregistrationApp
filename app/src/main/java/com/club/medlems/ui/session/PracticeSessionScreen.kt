@@ -36,6 +36,9 @@ import kotlinx.datetime.DateTimeUnit
 import java.util.UUID
 import com.club.medlems.ui.util.IdleCountdown
 import com.club.medlems.domain.prefs.LastClassificationStore
+import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.data.sync.SyncOutboxManager
+import com.club.medlems.network.TrustManager
 import javax.inject.Inject
 import com.club.medlems.domain.ClassificationOptions
 import com.club.medlems.ui.common.Formatters
@@ -45,7 +48,10 @@ class PracticeSessionViewModel @javax.inject.Inject constructor(
     private val practiceSessionDao: PracticeSessionDao,
     private val scanEventDao: ScanEventDao,
     private val lastStore: LastClassificationStore,
-    private val memberDao: MemberDao
+    private val memberDao: MemberDao,
+    private val syncOutboxManager: SyncOutboxManager,
+    private val syncManager: SyncManager,
+    private val trustManager: TrustManager
 ) : androidx.lifecycle.ViewModel() {
     fun getLast(memberId: String): Pair<PracticeType?, String?> = lastStore.get(memberId)
     var saving by mutableStateOf(false)
@@ -82,6 +88,9 @@ class PracticeSessionViewModel @javax.inject.Inject constructor(
                 source = SessionSource.kiosk
             )
             practiceSessionDao.insert(session)
+            // Queue practice session for sync and trigger reactive sync
+            syncOutboxManager.queuePracticeSession(session, trustManager.getThisDeviceId())
+            syncManager.notifyEntityChanged("PracticeSession", session.id)
             scanEventDao.linkSession(scanEventId, session.id)
             lastStore.set(memberId, type, classification)
             saving = false

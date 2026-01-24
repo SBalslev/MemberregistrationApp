@@ -208,7 +208,6 @@ import {
   queueCheckIn,
   queuePracticeSession,
   queueEquipmentCheckout,
-  getPendingEntries,
   getPendingForDevice,
   getPendingCount,
   getFailedCount,
@@ -661,6 +660,7 @@ describe('Sync Outbox Repository', () => {
     });
 
     it('should handle invalid JSON gracefully', () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       mockOutboxEntries.set('bad-entry', {
         id: 'bad-entry',
         entityType: 'Member',
@@ -678,14 +678,12 @@ describe('Sync Outbox Repository', () => {
       expect(result.outboxIds).toContain('bad-entry');
       // But the parsed member isn't added due to JSON error
       // (depends on implementation - may log error)
+      consoleError.mockRestore();
     });
   });
 
   describe('Backoff Delay Calculation', () => {
     it('should use correct backoff delays', () => {
-      // Expected delays: 0s, 5s, 15s, 60s, 300s (5min), 900s (15min)
-      const expectedDelays = [0, 5, 15, 60, 300, 900];
-
       // The implementation uses these values internally
       // We can verify by checking the nextRetryUtc after each failure
       mockOutboxEntries.set('entry-backoff', {

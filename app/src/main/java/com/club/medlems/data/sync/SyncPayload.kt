@@ -13,18 +13,24 @@ import kotlinx.serialization.Serializable
 data class SyncPayload(
     /** Schema version for compatibility checking */
     val schemaVersion: String = SyncSchemaVersion.version,
-    
+
     /** Device sending this payload */
     val deviceId: String,
-    
+
     /** Type of device sending this payload (for conflict resolution) */
     val deviceType: DeviceType = DeviceType.MEMBER_TABLET,
-    
+
     /** Timestamp when this payload was created */
     val timestamp: Instant,
-    
+
     /** Entity changes grouped by type */
-    val entities: SyncEntities = SyncEntities()
+    val entities: SyncEntities = SyncEntities(),
+
+    /** Unique message ID for idempotency (FR-3) */
+    val messageId: String = java.util.UUID.randomUUID().toString(),
+
+    /** IDs of outbox entries included in this payload (for delivery acknowledgment) */
+    val outboxIds: List<String> = emptyList()
 )
 
 /**
@@ -86,21 +92,27 @@ enum class SyncResponseStatus {
 data class SyncResponse(
     /** Overall status of the sync operation */
     val status: SyncResponseStatus,
-    
+
     /** Number of entities successfully accepted */
     val acceptedCount: Int = 0,
-    
+
     /** List of conflicts detected (for equipment checkouts) */
     val conflicts: List<SyncConflict> = emptyList(),
-    
+
     /** Error message if status is ERROR */
     val errorMessage: String? = null,
-    
+
     /** Required schema version if UPGRADE_REQUIRED */
     val requiredSchemaVersion: String? = null,
-    
+
     /** Timestamp of this response */
-    val timestamp: Instant
+    val timestamp: Instant,
+
+    /** Acknowledged outbox entry IDs (for delivery confirmation) */
+    val acknowledgedOutboxIds: List<String> = emptyList(),
+
+    /** Message ID being acknowledged (for idempotency) */
+    val acknowledgedMessageId: String? = null
 )
 
 /**

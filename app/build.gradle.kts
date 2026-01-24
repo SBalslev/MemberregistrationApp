@@ -23,7 +23,7 @@ android {
         targetSdk = 34
     // Auto-incrementing versionCode: use epoch seconds so each build is higher
     versionCode = (System.currentTimeMillis() / 1000L).toInt()
-        versionName = "1.3.18"
+        versionName = "1.3.19"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -106,7 +106,12 @@ android {
         kotlinCompilerExtensionVersion = "1.5.11"
     }
     packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" 
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
     }
 }
 
@@ -193,8 +198,20 @@ dependencies {
 
     // Testing
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.mockito:mockito-inline:5.2.0")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // Android instrumented test dependencies for sync reliability
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    androidTestImplementation("androidx.test:core:1.5.0")
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("androidx.test:rules:1.5.0")
+    androidTestImplementation("com.google.dagger:hilt-android-testing:2.49")
+    kspAndroidTest("com.google.dagger:hilt-android-compiler:2.49")
 }

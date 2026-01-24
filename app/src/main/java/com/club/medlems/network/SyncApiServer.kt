@@ -10,6 +10,7 @@ import com.club.medlems.data.sync.SyncEntities
 import com.club.medlems.data.sync.SyncJson
 import com.club.medlems.data.sync.SyncPayload
 import com.club.medlems.data.sync.SyncPullRequest
+import com.club.medlems.data.sync.SyncOutboxManager
 import com.club.medlems.data.sync.SyncRepository
 import com.club.medlems.data.sync.SyncResponse
 import com.club.medlems.data.sync.SyncResponseStatus
@@ -60,7 +61,8 @@ import javax.inject.Singleton
 class SyncApiServer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val trustManager: TrustManager,
-    private val syncRepository: SyncRepository
+    private val syncRepository: SyncRepository,
+    private val syncOutboxManager: SyncOutboxManager
 ) {
     companion object {
         private const val TAG = "SyncApiServer"
@@ -395,22 +397,42 @@ class SyncApiServer @Inject constructor(
                     )
                     return@post
                 }
-                
+
+                // Check idempotency - has this message already been processed? (FR-3)
+                if (syncOutboxManager.isMessageProcessed(payload.messageId)) {
+                    Log.d(TAG, "Duplicate message ${payload.messageId} - already processed")
+                    call.respond(
+                        SyncResponse(
+                            status = SyncResponseStatus.OK,
+                            timestamp = Clock.System.now(),
+                            acceptedCount = 0,
+                            acknowledgedMessageId = payload.messageId,
+                            acknowledgedOutboxIds = payload.outboxIds
+                        )
+                    )
+                    return@post
+                }
+
                 // Apply the sync payload
                 val result = syncRepository.applySyncPayload(payload, deviceId)
-                
+
+                // Record message as processed for idempotency (FR-3)
+                syncOutboxManager.recordProcessedMessage(payload.messageId, deviceId)
+
                 val status = if (result.hasConflicts) {
                     SyncResponseStatus.CONFLICT
                 } else {
                     SyncResponseStatus.OK
                 }
-                
+
                 call.respond(
                     SyncResponse(
                         status = status,
                         timestamp = Clock.System.now(),
                         acceptedCount = result.totalProcessed,
-                        conflicts = result.conflicts
+                        conflicts = result.conflicts,
+                        acknowledgedMessageId = payload.messageId,
+                        acknowledgedOutboxIds = payload.outboxIds
                     )
                 )
             }
