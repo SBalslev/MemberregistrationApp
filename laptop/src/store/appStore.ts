@@ -161,6 +161,51 @@ export const useAppStore = create<AppState>((set) => ({
           state.updateDeviceStatus(device.id, true);
           console.log('[Sync] Device', device.name, 'is online');
 
+          // Step 1.5: Request a valid auth token from the tablet
+          // Get this laptop's actual device ID from the Electron API
+          let laptopDeviceId = 'laptop-master';
+          let laptopName = 'Laptop';
+          if (typeof window !== 'undefined' && window.electronAPI?.getDeviceInfo) {
+            try {
+              const laptopInfo = await window.electronAPI.getDeviceInfo();
+              laptopDeviceId = laptopInfo?.deviceId || laptopDeviceId;
+              laptopName = laptopInfo?.deviceName || laptopName;
+            } catch (e) {
+              console.warn('[Sync] Could not get laptop device info:', e);
+            }
+          }
+
+          console.log('[Sync] Requesting auth token from', device.name, 'for device:', laptopDeviceId);
+          const tokenResponse = await fetch(`${baseUrl}/api/sync/request-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              deviceId: laptopDeviceId,
+              deviceName: laptopName,
+              deviceType: 'LAPTOP'
+            }),
+            signal: AbortSignal.timeout(5000)
+          });
+
+          if (!tokenResponse.ok) {
+            console.log('[Sync] Token request failed for', device.name, ':', tokenResponse.status);
+            continue;
+          }
+
+          const tokenData = await tokenResponse.json();
+          if (!tokenData.success || !tokenData.authToken) {
+            console.log('[Sync] Invalid token response from', device.name);
+            continue;
+          }
+
+          const authToken = tokenData.authToken;
+          console.log('[Sync] Got valid auth token from', device.name);
+
+          const authHeaders = {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+          };
+
           // Step 2: Collect entities from outbox for this device
           const outboxData = collectEntitiesForDevice(device.id);
           const hasOutboxEntries = outboxData.outboxIds.length > 0;
@@ -185,7 +230,7 @@ export const useAppStore = create<AppState>((set) => ({
 
           const pushPayload = {
             schemaVersion: SYNC_SCHEMA_VERSION,
-            deviceId: 'laptop-master',
+            deviceId: laptopDeviceId,
             deviceType: 'LAPTOP',
             timestamp: new Date().toISOString(),
             messageId,
@@ -201,7 +246,7 @@ export const useAppStore = create<AppState>((set) => ({
 
           const pushResponse = await fetch(`${baseUrl}/api/sync/push`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: authHeaders,
             body: JSON.stringify(pushPayload),
             signal: AbortSignal.timeout(30000)
           });
@@ -230,8 +275,12 @@ export const useAppStore = create<AppState>((set) => ({
           console.log('[Sync] Pulling data from', device.name);
           const pullResponse = await fetch(`${baseUrl}/api/sync/pull`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ since: '1970-01-01T00:00:00Z' }),
+            headers: authHeaders,
+            body: JSON.stringify({
+              since: '1970-01-01T00:00:00Z',
+              deviceId: laptopDeviceId,
+              schemaVersion: SYNC_SCHEMA_VERSION
+            }),
             signal: AbortSignal.timeout(30000)
           });
 

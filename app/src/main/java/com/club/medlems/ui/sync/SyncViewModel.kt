@@ -31,6 +31,8 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import java.util.UUID
 import javax.inject.Inject
+import com.club.medlems.network.SyncApiServer
+import kotlin.random.Random
 
 /**
  * ViewModel for sync-related UI components.
@@ -46,7 +48,8 @@ class SyncViewModel @Inject constructor(
     private val syncLogManager: SyncLogManager,
     private val deviceConfigPreferences: DeviceConfigPreferences,
     private val syncClient: SyncClient,
-    private val syncOutboxManager: SyncOutboxManager
+    private val syncOutboxManager: SyncOutboxManager,
+    private val syncApiServer: SyncApiServer
 ) : ViewModel() {
     
     private var syncManagerStarted = false
@@ -126,9 +129,13 @@ class SyncViewModel @Inject constructor(
     
     private val _pairingState = MutableStateFlow<PairingState>(PairingState.Idle)
     val pairingState: StateFlow<PairingState> = _pairingState.asStateFlow()
-    
+
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    // Generated pairing code for other devices to connect to this tablet
+    private val _generatedPairingCode = MutableStateFlow<GeneratedPairingCode?>(null)
+    val generatedPairingCode: StateFlow<GeneratedPairingCode?> = _generatedPairingCode.asStateFlow()
     
     // Sync result event for showing feedback to user
     private val _syncResultEvent = MutableStateFlow<SyncResultEvent?>(null)
@@ -235,21 +242,22 @@ class SyncViewModel @Inject constructor(
     }
 
     /**
-     * Pairs with a laptop device using a 6-digit pairing code.
+     * Pairs with another device using a 6-digit pairing code.
      * This is the secure pairing method for production use.
-     * 
-     * @param baseUrl The URL of the laptop (e.g., "http://192.168.1.100:8085")
-     * @param pairingCode The 6-digit code shown on the laptop
+     * Works with both laptops and tablets.
+     *
+     * @param baseUrl The URL of the device (e.g., "http://192.168.1.100:8085")
+     * @param pairingCode The 6-digit code shown on the other device
      */
     fun pairWithCode(baseUrl: String, pairingCode: String) {
         viewModelScope.launch {
-            _pairingState.value = PairingState.Pairing("laptop")
-            
+            _pairingState.value = PairingState.Pairing("enhed")
+
             try {
                 val result = syncClient.pairWithDevice(baseUrl, pairingCode)
-                
+
                 if (result.success) {
-                    _pairingState.value = PairingState.Success("Laptop")
+                    _pairingState.value = PairingState.Success(result.deviceName ?: "Enhed")
                 } else {
                     _pairingState.value = PairingState.Error(
                         result.errorMessage ?: "Parring mislykkedes"
@@ -269,7 +277,47 @@ class SyncViewModel @Inject constructor(
             trustManager.revokeTrust(deviceId)
         }
     }
-    
+
+    /**
+     * Generates a 6-digit pairing code for other devices to connect to this tablet.
+     * The code is valid for 5 minutes.
+     *
+     * @param expectedDeviceType The type of device expected to pair (default: any tablet)
+     */
+    fun generatePairingCode(expectedDeviceType: DeviceType = DeviceType.MEMBER_TABLET) {
+        viewModelScope.launch {
+            // Generate a random 6-digit code
+            val code = String.format("%06d", Random.nextInt(1000000))
+            val expiresAtMillis = System.currentTimeMillis() + 5 * 60 * 1000 // 5 minutes
+
+            // Get this device's IP address
+            val ipAddress = discoveryService.getLocalIpAddress()
+
+            // Register the pairing code with the server
+            syncApiServer.registerPendingPairing(
+                token = code,
+                expectedDeviceType = expectedDeviceType,
+                deviceName = "Device", // Will be provided by connecting device
+                expiresAtMillis = expiresAtMillis
+            )
+
+            _generatedPairingCode.value = GeneratedPairingCode(
+                code = code,
+                ipAddress = ipAddress ?: "Unknown",
+                expiresAtMillis = expiresAtMillis
+            )
+
+            syncLogManager.info("Pairing", "Generated pairing code: $code (expires in 5 min)")
+        }
+    }
+
+    /**
+     * Clears the generated pairing code.
+     */
+    fun clearGeneratedPairingCode() {
+        _generatedPairingCode.value = null
+    }
+
     /**
      * Resets the pairing state to idle.
      */
@@ -364,4 +412,22 @@ sealed class SyncResultEvent {
     data class Success(val recordsSynced: Int) : SyncResultEvent()
     /** Sync failed with error */
     data class Error(val message: String) : SyncResultEvent()
+}
+
+/**
+ * Represents a generated pairing code that other devices can use to connect.
+ */
+data class GeneratedPairingCode(
+    /** The 6-digit pairing code */
+    val code: String,
+    /** This device's IP address for the other device to connect to */
+    val ipAddress: String,
+    /** When this code expires (epoch milliseconds) */
+    val expiresAtMillis: Long
+) {
+    /** Whether this code has expired */
+    fun isExpired(): Boolean = System.currentTimeMillis() > expiresAtMillis
+
+    /** Remaining time in seconds */
+    fun remainingSeconds(): Int = ((expiresAtMillis - System.currentTimeMillis()) / 1000).toInt().coerceAtLeast(0)
 }

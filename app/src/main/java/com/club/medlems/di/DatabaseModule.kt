@@ -463,6 +463,7 @@ object DatabaseModule {
      *
      * @see [sync-reliability/prd.md] - Sync Reliability Hardening
      */
+    @Suppress("ClassName")
     private val MIGRATION_13_14 = object : Migration(13, 14) {
         override fun migrate(db: SupportSQLiteDatabase) {
             // Create sync_outbox table
@@ -518,13 +519,54 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * MIGRATION_14_15: Make membershipId nullable in CheckIn table
+     *
+     * The membershipId column was changed to nullable in the entity definition
+     * (to support trial members who don't have a membershipId yet), but the
+     * database schema wasn't updated. SQLite doesn't support ALTER COLUMN,
+     * so we recreate the table.
+     */
+    private val MIGRATION_14_15 = object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Recreate CheckIn table with membershipId as nullable
+            db.execSQL("ALTER TABLE CheckIn RENAME TO CheckIn_old")
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS CheckIn (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    internalMemberId TEXT NOT NULL,
+                    membershipId TEXT,
+                    createdAtUtc TEXT NOT NULL,
+                    localDate TEXT NOT NULL,
+                    firstOfDayFlag INTEGER NOT NULL DEFAULT 1,
+                    deviceId TEXT,
+                    syncVersion INTEGER NOT NULL DEFAULT 0,
+                    syncedAtUtc TEXT
+                )
+            """.trimIndent())
+
+            db.execSQL("""
+                INSERT INTO CheckIn (id, internalMemberId, membershipId, createdAtUtc, localDate, firstOfDayFlag, deviceId, syncVersion, syncedAtUtc)
+                SELECT id, internalMemberId, membershipId, createdAtUtc, localDate, firstOfDayFlag, deviceId, syncVersion, syncedAtUtc
+                FROM CheckIn_old
+            """.trimIndent())
+
+            db.execSQL("DROP TABLE CheckIn_old")
+
+            // Recreate indices
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_CheckIn_membershipId_localDate ON CheckIn(membershipId, localDate)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_CheckIn_internalMemberId_localDate ON CheckIn(internalMemberId, localDate)")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14).fallbackToDestructiveMigration().build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15).fallbackToDestructiveMigration().build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()

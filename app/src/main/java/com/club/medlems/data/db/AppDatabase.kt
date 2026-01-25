@@ -47,7 +47,7 @@ import com.club.medlems.data.sync.SyncProcessedMessage
         SyncOutboxDelivery::class,
         SyncProcessedMessage::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 @TypeConverters(AppConverters::class)

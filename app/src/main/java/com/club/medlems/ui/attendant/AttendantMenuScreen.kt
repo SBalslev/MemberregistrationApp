@@ -84,9 +84,14 @@ fun AttendantMenuScreen(
             pinInput = ""
         } else {
             // When locked view is visible, focus the PIN field and show keyboard
-            // Small delay is usually not needed; request immediately.
-            pinFocus.requestFocus()
-            keyboard?.show()
+            // Delay needed to ensure TextField is composed before requesting focus
+            kotlinx.coroutines.delay(100)
+            try {
+                pinFocus.requestFocus()
+                keyboard?.show()
+            } catch (e: IllegalStateException) {
+                // FocusRequester not yet attached - ignore
+            }
         }
     }
     var showManual by remember { mutableStateOf(false) }

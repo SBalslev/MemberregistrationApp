@@ -242,16 +242,15 @@ class SyncClient @Inject constructor(
             )
         
         return try {
-            val request = PairingRequest(
-                code = pairingCode,
-                deviceId = trustManager.getThisDeviceId(),
-                deviceName = deviceInfo.name,
-                deviceType = deviceInfo.type.name
+            // Use the proper PairingRequest format expected by the server
+            val request = com.club.medlems.data.sync.PairingRequest(
+                trustToken = pairingCode,
+                device = deviceInfo
             )
-            
+
             val response = client.post("$baseUrl/api/pair") {
                 contentType(ContentType.Application.Json)
-                setBody(SyncJson.json.encodeToString(PairingRequest.serializer(), request))
+                setBody(SyncJson.json.encodeToString(com.club.medlems.data.sync.PairingRequest.serializer(), request))
             }
             
             val responseText = response.bodyAsText()
@@ -259,22 +258,29 @@ class SyncClient @Inject constructor(
             
             when (response.status.value) {
                 200 -> {
-                    val pairingResponse = SyncJson.json.decodeFromString<PairingResponse>(responseText)
+                    val pairingResponse = SyncJson.json.decodeFromString<com.club.medlems.data.sync.PairingResponse>(responseText)
                     // Store the persistent token
-                    trustManager.savePersistentToken(pairingResponse.authToken)
-                    // Store the laptop as trusted device
-                    trustManager.addTrustedDevice(
-                        com.club.medlems.data.sync.DeviceInfo(
-                            id = pairingResponse.laptopDeviceId,
-                            name = pairingResponse.laptopName,
-                            type = com.club.medlems.data.sync.DeviceType.LAPTOP,
+                    if (pairingResponse.authToken != null) {
+                        trustManager.savePersistentToken(pairingResponse.authToken)
+                    }
+                    // Add all trusted devices from the response
+                    var pairedDeviceName = "Enhed"
+                    for (device in pairingResponse.trustedDevices) {
+                        // Skip ourselves
+                        if (device.id == trustManager.getThisDeviceId()) continue
+                        // Add to trusted devices
+                        trustManager.addTrustedDevice(device.copy(
                             lastSeenUtc = Clock.System.now(),
-                            pairedAtUtc = Clock.System.now(),
+                            pairedAtUtc = device.pairedAtUtc ?: Clock.System.now(),
                             isTrusted = true
-                        )
-                    )
-                    Log.i(TAG, "Successfully paired with ${pairingResponse.laptopName}")
-                    PairingResult(success = true)
+                        ))
+                        // First non-self device is likely the one we just paired with
+                        if (pairedDeviceName == "Enhed") {
+                            pairedDeviceName = device.name
+                        }
+                    }
+                    Log.i(TAG, "Successfully paired with $pairedDeviceName")
+                    PairingResult(success = true, deviceName = pairedDeviceName)
                 }
                 401 -> {
                     val errorResponse = try {
@@ -350,25 +356,6 @@ class SyncClient @Inject constructor(
 /**
  * Request body for pairing with a laptop.
  */
-@kotlinx.serialization.Serializable
-data class PairingRequest(
-    val code: String,
-    val deviceId: String,
-    val deviceName: String,
-    val deviceType: String
-)
-
-/**
- * Response from successful pairing.
- */
-@kotlinx.serialization.Serializable
-data class PairingResponse(
-    val success: Boolean,
-    val authToken: String,
-    val laptopDeviceId: String,
-    val laptopName: String
-)
-
 /**
  * Error response from failed requests.
  */
@@ -383,5 +370,6 @@ data class ErrorResponse(
 data class PairingResult(
     val success: Boolean,
     val errorMessage: String? = null,
-    val isRateLimited: Boolean = false
+    val isRateLimited: Boolean = false,
+    val deviceName: String? = null
 )

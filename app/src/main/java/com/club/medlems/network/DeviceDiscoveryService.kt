@@ -113,7 +113,7 @@ class DeviceDiscoveryService @Inject constructor(
             // Acquire multicast lock for mDNS
             acquireMulticastLock()
 
-            val localAddress = getLocalIpAddress()
+            val localAddress = getLocalIpAddressInternal()
             if (localAddress == null) {
                 _advertisingState.value = AdvertisingState.ERROR
                 return Result.failure(IllegalStateException("No local IP address found"))
@@ -192,7 +192,7 @@ class DeviceDiscoveryService @Inject constructor(
             // Acquire multicast lock if not already held
             acquireMulticastLock()
 
-            val localAddress = getLocalIpAddress()
+            val localAddress = getLocalIpAddressInternal()
             if (localAddress == null) {
                 _discoveryState.value = DiscoveryState.ERROR
                 return Result.failure(IllegalStateException("No local IP address found"))
@@ -366,7 +366,7 @@ class DeviceDiscoveryService @Inject constructor(
         val serviceName = nsdInfo.serviceName
 
         // Skip self-discovery by checking if this is our own IP
-        val localAddress = getLocalIpAddress()
+        val localAddress = getLocalIpAddressInternal()
         if (localAddress != null && host.hostAddress == localAddress.hostAddress) {
             Log.d(TAG, "NSD: Skipping self-discovery at ${host.hostAddress}")
             syncLogManager.debug("NSD", "Skipping self: ${host.hostAddress}")
@@ -519,7 +519,7 @@ class DeviceDiscoveryService @Inject constructor(
      * Probes common IPs on the same /24 subnet for /api/sync/status.
      */
     suspend fun scanSubnet(): Result<Int> = withContext(Dispatchers.IO) {
-        val localAddress = getLocalIpAddress()
+        val localAddress = getLocalIpAddressInternal()
         if (localAddress == null) {
             syncLogManager.error("Scan", "No local IP address found")
             return@withContext Result.failure(IllegalStateException("No local IP address found"))
@@ -819,7 +819,13 @@ class DeviceDiscoveryService @Inject constructor(
         multicastLock = null
     }
 
-    private fun getLocalIpAddress(): InetAddress? {
+    /**
+     * Gets the local IP address of this device as a string.
+     * @return The IP address string (e.g., "192.168.1.100") or null if not available
+     */
+    fun getLocalIpAddress(): String? = getLocalIpAddressInternal()?.hostAddress
+
+    private fun getLocalIpAddressInternal(): InetAddress? {
         try {
             NetworkInterface.getNetworkInterfaces()?.toList()?.forEach { networkInterface ->
                 if (networkInterface.isUp && !networkInterface.isLoopback) {

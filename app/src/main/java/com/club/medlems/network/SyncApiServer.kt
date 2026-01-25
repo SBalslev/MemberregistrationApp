@@ -28,6 +28,7 @@ import io.ktor.server.cio.CIOApplicationEngine
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -194,7 +195,7 @@ class SyncApiServer @Inject constructor(
                     call.respond(HttpStatusCode.ServiceUnavailable, "Server not configured")
                     return@get
                 }
-                
+
                 val response = SyncStatusResponse(
                     isHealthy = true,
                     schemaVersion = SyncSchemaVersion.version,
@@ -203,6 +204,37 @@ class SyncApiServer @Inject constructor(
                     lastSyncTimestamp = null
                 )
                 call.respond(response)
+            }
+
+            // Token request endpoint - allows trusted devices to get a valid auth token
+            // This is needed because the laptop stores a different token format than what we validate
+            post("/api/sync/request-token") {
+                val request = try {
+                    call.receive<TokenRequest>()
+                } catch (e: Exception) {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        TokenResponse(success = false, errorMessage = "Invalid request format")
+                    )
+                    return@post
+                }
+
+                // Check if this device is in our trusted list
+                val trustedDevice = trustManager.getTrustedDevices().find { it.id == request.deviceId }
+                if (trustedDevice == null) {
+                    Log.w(TAG, "Token request from untrusted device: ${request.deviceId}")
+                    call.respond(
+                        HttpStatusCode.Unauthorized,
+                        TokenResponse(success = false, errorMessage = "Device not trusted")
+                    )
+                    return@post
+                }
+
+                // Generate a token for this device
+                val token = trustManager.generateDeviceToken(trustedDevice)
+                Log.i(TAG, "Generated token for trusted device: ${trustedDevice.name}")
+
+                call.respond(TokenResponse(success = true, authToken = token))
             }
             
             // Device pairing handshake endpoint
@@ -291,15 +323,21 @@ class SyncApiServer @Inject constructor(
                 
                 // Remove used token
                 pendingPairingTokens.remove(request.trustToken)
-                
-                // Get list of other trusted devices for trust propagation
-                val trustedDevices = trustManager.getTrustedDevices()
-                
+
+                // Get list of trusted devices including this server for trust propagation
+                val trustedDevices = trustManager.getTrustedDevices().toMutableList()
+                // Include this device (the server) in the list so the client knows who they paired with
+                currentDeviceInfo?.let { thisDevice ->
+                    if (trustedDevices.none { it.id == thisDevice.id }) {
+                        trustedDevices.add(thisDevice.copy(isTrusted = true))
+                    }
+                }
+
                 Log.i(TAG, "Device paired successfully: ${pairedDevice.name} (${pairedDevice.id})")
-                
+
                 // Notify callback
                 onDevicePaired?.invoke(pairedDevice)
-                
+
                 call.respond(
                     PairingResponse.success(
                         authToken = persistentJwt,
@@ -329,12 +367,13 @@ class SyncApiServer @Inject constructor(
                 val request = try {
                     call.receive<SyncPullRequest>()
                 } catch (e: Exception) {
+                    Log.e(TAG, "Failed to parse SyncPullRequest", e)
                     call.respond(
                         HttpStatusCode.BadRequest,
                         SyncResponse(
                             status = SyncResponseStatus.ERROR,
                             timestamp = Clock.System.now(),
-                            errorMessage = "Invalid request format"
+                            errorMessage = "Invalid request format: ${e.message}"
                         )
                     )
                     return@post
@@ -370,16 +409,22 @@ class SyncApiServer @Inject constructor(
                     )
                     return@post
                 }
-                
+
+                // Read raw body for detailed error logging
+                val rawBody = call.receiveText()
+                Log.d(TAG, "Push request body (first 2000 chars): ${rawBody.take(2000)}")
+
                 val payload = try {
-                    call.receive<SyncPayload>()
+                    SyncJson.json.decodeFromString(SyncPayload.serializer(), rawBody)
                 } catch (e: Exception) {
+                    Log.e(TAG, "Failed to parse SyncPayload: ${e.message}", e)
+                    Log.e(TAG, "Raw body causing error: ${rawBody.take(500)}")
                     call.respond(
                         HttpStatusCode.BadRequest,
                         SyncResponse(
                             status = SyncResponseStatus.ERROR,
                             timestamp = Clock.System.now(),
-                            errorMessage = "Invalid payload format"
+                            errorMessage = "Invalid payload format: ${e.message}"
                         )
                     )
                     return@post
@@ -470,3 +515,23 @@ enum class ServerState {
     RUNNING,
     ERROR
 }
+
+/**
+ * Request for a device token from a trusted device.
+ */
+@kotlinx.serialization.Serializable
+data class TokenRequest(
+    val deviceId: String,
+    val deviceName: String? = null,
+    val deviceType: String? = null
+)
+
+/**
+ * Response containing the generated token.
+ */
+@kotlinx.serialization.Serializable
+data class TokenResponse(
+    val success: Boolean,
+    val authToken: String? = null,
+    val errorMessage: String? = null
+)

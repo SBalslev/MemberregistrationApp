@@ -102,8 +102,11 @@ fun DevicePairingScreen(
     
     var isLogExpanded by remember { mutableStateOf(false) }
     var showPairingDialog by remember { mutableStateOf(false) }
+    var showGeneratedCodeDialog by remember { mutableStateOf(false) }
     var pairingCode by remember { mutableStateOf("") }
-    var laptopIpAddress by remember { mutableStateOf("") }
+    var targetIpAddress by remember { mutableStateOf("") }
+
+    val generatedCode by viewModel.generatedPairingCode.collectAsState()
     
     val snackbarHostState = remember { SnackbarHostState() }
     
@@ -203,18 +206,41 @@ fun DevicePairingScreen(
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Manual pairing button
-            Button(
-                onClick = { showPairingDialog = true },
-                modifier = Modifier.fillMaxWidth()
+            // Pairing buttons row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Key,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Par med kode")
+                // Generate code button - allow other devices to connect to this tablet
+                OutlinedButton(
+                    onClick = {
+                        viewModel.generatePairingCode()
+                        showGeneratedCodeDialog = true
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Key,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Generer kode")
+                }
+
+                // Enter code button - connect to another device
+                Button(
+                    onClick = { showPairingDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Key,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Indtast kode")
+                }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -278,7 +304,7 @@ fun DevicePairingScreen(
                             isPairing = pairingState is PairingState.Pairing &&
                                 (pairingState as PairingState.Pairing).deviceName == device.deviceName,
                             onPair = {
-                                laptopIpAddress = device.address.hostAddress.orEmpty()
+                                targetIpAddress = device.address.hostAddress.orEmpty()
                                 pairingCode = ""
                                 showPairingDialog = true
                             }
@@ -299,7 +325,7 @@ fun DevicePairingScreen(
         }
     }
     
-    // Pairing code dialog
+    // Pairing code dialog - enter code from another device
     if (showPairingDialog) {
         PairingCodeDialog(
             pairingCode = pairingCode,
@@ -309,20 +335,31 @@ fun DevicePairingScreen(
                     pairingCode = newCode
                 }
             },
-            laptopIpAddress = laptopIpAddress,
-            onIpAddressChange = { laptopIpAddress = it },
+            targetIpAddress = targetIpAddress,
+            onIpAddressChange = { targetIpAddress = it },
             isPairing = pairingState is PairingState.Pairing,
             onPair = {
-                val baseUrl = if (laptopIpAddress.contains(":")) {
-                    "http://$laptopIpAddress"
+                val baseUrl = if (targetIpAddress.contains(":")) {
+                    "http://$targetIpAddress"
                 } else {
-                    "http://$laptopIpAddress:8085"
+                    "http://$targetIpAddress:8085"
                 }
                 viewModel.pairWithCode(baseUrl, pairingCode)
             },
             onDismiss = {
                 showPairingDialog = false
                 pairingCode = ""
+            }
+        )
+    }
+
+    // Generated code dialog - show code for other devices to connect
+    if (showGeneratedCodeDialog && generatedCode != null) {
+        GeneratedCodeDialog(
+            generatedCode = generatedCode!!,
+            onDismiss = {
+                showGeneratedCodeDialog = false
+                viewModel.clearGeneratedPairingCode()
             }
         )
     }
@@ -335,7 +372,7 @@ fun DevicePairingScreen(
 private fun PairingCodeDialog(
     pairingCode: String,
     onCodeChange: (String) -> Unit,
-    laptopIpAddress: String,
+    targetIpAddress: String,
     onIpAddressChange: (String) -> Unit,
     isPairing: Boolean,
     onPair: () -> Unit,
@@ -353,7 +390,7 @@ private fun PairingCodeDialog(
         },
         title = {
             Text(
-                text = "Par med laptop",
+                text = "Par med enhed",
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -364,18 +401,18 @@ private fun PairingCodeDialog(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "Indtast laptoppens IP-adresse og den 6-cifrede kode som vises på laptoppens skærm.",
+                    text = "Indtast IP-adressen og den 6-cifrede kode fra den anden enhed.",
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // IP Address field
                 OutlinedTextField(
-                    value = laptopIpAddress,
+                    value = targetIpAddress,
                     onValueChange = onIpAddressChange,
-                    label = { Text("Laptop IP-adresse") },
+                    label = { Text("IP-adresse") },
                     placeholder = { Text("192.168.1.100") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -440,7 +477,7 @@ private fun PairingCodeDialog(
         confirmButton = {
             Button(
                 onClick = onPair,
-                enabled = pairingCode.length == 6 && laptopIpAddress.isNotBlank() && !isPairing
+                enabled = pairingCode.length == 6 && targetIpAddress.isNotBlank() && !isPairing
             ) {
                 Text("Par")
             }
@@ -451,6 +488,132 @@ private fun PairingCodeDialog(
                 enabled = !isPairing
             ) {
                 Text("Annuller")
+            }
+        }
+    )
+}
+
+/**
+ * Dialog showing the generated pairing code for other devices to connect.
+ */
+@Composable
+private fun GeneratedCodeDialog(
+    generatedCode: GeneratedPairingCode,
+    onDismiss: () -> Unit
+) {
+    var remainingSeconds by remember { mutableStateOf(generatedCode.remainingSeconds()) }
+
+    // Update remaining time every second
+    LaunchedEffect(generatedCode) {
+        while (remainingSeconds > 0) {
+            kotlinx.coroutines.delay(1000)
+            remainingSeconds = generatedCode.remainingSeconds()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Devices,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = {
+            Text(
+                text = "Parringskode",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Indtast denne kode på den anden enhed:",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Display the 6-digit code
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    generatedCode.code.forEach { digit ->
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    RoundedCornerShape(8.dp)
+                                )
+                        ) {
+                            Text(
+                                text = digit.toString(),
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // IP address
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "IP-adresse:",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = generatedCode.ipAddress,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Countdown timer
+                val minutes = remainingSeconds / 60
+                val seconds = remainingSeconds % 60
+                Text(
+                    text = if (remainingSeconds > 0) {
+                        "Udløber om: ${minutes}:${seconds.toString().padStart(2, '0')}"
+                    } else {
+                        "Koden er udløbet"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (remainingSeconds > 60)
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    else
+                        MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Luk")
             }
         }
     )

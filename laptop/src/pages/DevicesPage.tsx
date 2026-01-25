@@ -9,7 +9,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Tablet, Laptop, Wifi, WifiOff, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, X, Shield } from 'lucide-react';
 import { isElectron, getElectronAPI } from '../types/electron';
-import { query, saveTrustedDevice, getTrustedDevices } from '../database';
+import { query, saveTrustedDevice, getTrustedDevices, getMemberDataForFullSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
+import { collectEntitiesForDevice, markDeliveredToDeviceBatch, recordFailedAttempt } from '../database/syncOutboxRepository';
 import type { DeviceInfo } from '../types/entities';
 
 export function DevicesPage() {
@@ -474,7 +475,7 @@ export function DevicesPage() {
 
                     {/* Actions */}
                     <div className="pt-4 space-y-2">
-                      <button 
+                      <button
                         className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                         disabled={isSyncing || !selectedDevice.ipAddress}
                         onClick={async () => {
@@ -484,32 +485,186 @@ export function DevicesPage() {
                           }
                           setIsSyncing(true);
                           setSyncMessage(null);
-                          console.log('[Sync] Starting sync with:', selectedDevice.name, 'at', selectedDevice.ipAddress);
+
+                          const baseUrl = `http://${selectedDevice.ipAddress}:${selectedDevice.port || 8085}`;
+                          console.log('[Sync] Starting bidirectional sync with:', selectedDevice.name, 'at', baseUrl);
+
+                          let membersPushed = 0;
+                          let checkInsReceived = 0;
+                          let sessionsReceived = 0;
+
                           try {
-                            // Trigger sync with the selected device by fetching their status
-                            const url = `http://${selectedDevice.ipAddress}:${selectedDevice.port || 8085}/api/sync/status`;
-                            console.log('[Sync] Fetching:', url);
-                            const response = await fetch(url, { 
-                              method: 'GET',
-                              signal: AbortSignal.timeout(5000) // 5 second timeout
+                            // Step 1: Check if device is online
+                            const statusResponse = await fetch(`${baseUrl}/api/sync/status`, {
+                              signal: AbortSignal.timeout(3000)
                             });
-                            console.log('[Sync] Response:', response.status, response.ok);
-                            if (response.ok) {
-                              const data = await response.json();
-                              console.log('[Sync] Data:', data);
-                              setSyncMessage({ type: 'success', text: `Forbindelse til ${selectedDevice.name} OK` });
-                              // Update device as online
-                              setDevices(prev => prev.map(d => 
-                                d.id === selectedDevice.id 
-                                  ? { ...d, isOnline: true, lastSeenUtc: new Date().toISOString() }
-                                  : d
-                              ));
-                            } else {
-                              setSyncMessage({ type: 'error', text: `Kunne ikke synkronisere med ${selectedDevice.name} (${response.status})` });
+
+                            if (!statusResponse.ok) {
+                              setSyncMessage({ type: 'error', text: `Enhed ${selectedDevice.name} svarer ikke (${statusResponse.status})` });
+                              return;
                             }
+
+                            // Step 1.5: Request a valid auth token from the tablet
+                            // This is needed because the tablet generates its own JWT format
+                            // Get this laptop's actual device ID from the Electron API
+                            const api = getElectronAPI();
+                            const laptopInfo = await api?.getDeviceInfo?.();
+                            const laptopDeviceId = laptopInfo?.deviceId || 'laptop-master';
+                            const laptopName = laptopInfo?.deviceName || 'Laptop';
+
+                            console.log('[Sync] Requesting auth token from tablet for device:', laptopDeviceId);
+                            const tokenResponse = await fetch(`${baseUrl}/api/sync/request-token`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                deviceId: laptopDeviceId,
+                                deviceName: laptopName,
+                                deviceType: 'LAPTOP'
+                              }),
+                              signal: AbortSignal.timeout(5000)
+                            });
+
+                            if (!tokenResponse.ok) {
+                              const errorText = await tokenResponse.text();
+                              console.error('[Sync] Token request failed:', tokenResponse.status, errorText);
+                              setSyncMessage({ type: 'error', text: `Kunne ikke få auth-token: ${tokenResponse.status}` });
+                              return;
+                            }
+
+                            const tokenData = await tokenResponse.json();
+                            if (!tokenData.success || !tokenData.authToken) {
+                              console.error('[Sync] Token response invalid:', tokenData);
+                              setSyncMessage({ type: 'error', text: tokenData.errorMessage || 'Kunne ikke få auth-token' });
+                              return;
+                            }
+
+                            const authToken = tokenData.authToken;
+                            console.log('[Sync] Got valid auth token from tablet');
+
+                            const authHeaders = {
+                              'Authorization': `Bearer ${authToken}`,
+                              'Content-Type': 'application/json'
+                            };
+
+                            // Update device as online
+                            setDevices(prev => prev.map(d =>
+                              d.id === selectedDevice.id
+                                ? { ...d, isOnline: true, lastSeenUtc: new Date().toISOString() }
+                                : d
+                            ));
+
+                            // Step 2: Collect entities from outbox for this device
+                            const outboxData = collectEntitiesForDevice(selectedDevice.id);
+                            const hasOutboxEntries = outboxData.outboxIds.length > 0;
+
+                            let memberData: object[];
+                            let outboxIds: string[];
+
+                            if (hasOutboxEntries) {
+                              console.log(`[Sync] Pushing ${outboxData.outboxIds.length} outbox entries`);
+                              memberData = outboxData.members;
+                              outboxIds = outboxData.outboxIds;
+                            } else {
+                              memberData = getMemberDataForFullSync();
+                              outboxIds = [];
+                              console.log(`[Sync] Outbox empty, pushing all ${memberData.length} members`);
+                            }
+
+                            // Generate unique message ID for idempotency
+                            const messageId = crypto.randomUUID();
+
+                            const pushPayload = {
+                              schemaVersion: SYNC_SCHEMA_VERSION,
+                              deviceId: laptopDeviceId,
+                              deviceType: 'LAPTOP',
+                              timestamp: new Date().toISOString(),
+                              messageId,
+                              outboxIds,
+                              entities: {
+                                members: memberData,
+                                checkIns: outboxData.checkIns || [],
+                                practiceSessions: outboxData.practiceSessions || [],
+                                equipmentCheckouts: outboxData.equipmentCheckouts || [],
+                                newMemberRegistrations: []
+                              }
+                            };
+
+                            // Step 3: Push data to tablet
+                            console.log('[Sync] Pushing data to', selectedDevice.name);
+                            console.log('[Sync] Push payload:', JSON.stringify(pushPayload, null, 2).substring(0, 1000) + '...');
+                            const pushResponse = await fetch(`${baseUrl}/api/sync/push`, {
+                              method: 'POST',
+                              headers: authHeaders,
+                              body: JSON.stringify(pushPayload),
+                              signal: AbortSignal.timeout(30000)
+                            });
+
+                            if (pushResponse.ok) {
+                              const pushResult = await pushResponse.json();
+                              console.log('[Sync] Push result:', pushResult);
+                              membersPushed = memberData.length;
+
+                              // Mark outbox entries as delivered
+                              if (outboxIds.length > 0) {
+                                markDeliveredToDeviceBatch(outboxIds, selectedDevice.id);
+                                console.log(`[Sync] Marked ${outboxIds.length} outbox entries as delivered`);
+                              }
+                            } else {
+                              const errorBody = await pushResponse.text();
+                              console.error('[Sync] Push failed:', pushResponse.status, errorBody);
+                              if (outboxIds.length > 0) {
+                                for (const outboxId of outboxIds) {
+                                  recordFailedAttempt(outboxId, selectedDevice.id, `HTTP ${pushResponse.status}`);
+                                }
+                              }
+                            }
+
+                            // Step 4: Pull data from tablet
+                            console.log('[Sync] Pulling data from', selectedDevice.name);
+                            const pullResponse = await fetch(`${baseUrl}/api/sync/pull`, {
+                              method: 'POST',
+                              headers: authHeaders,
+                              body: JSON.stringify({
+                                since: '1970-01-01T00:00:00Z',
+                                deviceId: laptopDeviceId,
+                                schemaVersion: SYNC_SCHEMA_VERSION
+                              }),
+                              signal: AbortSignal.timeout(30000)
+                            });
+
+                            if (pullResponse.ok) {
+                              const pullData = await pullResponse.json() as SyncPayload;
+                              console.log('[Sync] Pull result:',
+                                `${pullData.entities?.checkIns?.length || 0} check-ins,`,
+                                `${pullData.entities?.practiceSessions?.length || 0} sessions`
+                              );
+
+                              if (pullData.entities) {
+                                const syncResult = await processSyncPayload(pullData);
+                                if (!syncResult.isDuplicate) {
+                                  checkInsReceived = syncResult.checkInsAdded || 0;
+                                  sessionsReceived = syncResult.sessionsAdded || 0;
+                                }
+                              }
+                            } else {
+                              console.warn('[Sync] Pull failed:', pullResponse.status);
+                            }
+
+                            // Show success message
+                            setSyncMessage({
+                              type: 'success',
+                              text: `Synkroniseret: ${membersPushed} medlemmer sendt, ${checkInsReceived} check-ins og ${sessionsReceived} sessioner modtaget`
+                            });
+
                           } catch (err) {
                             console.error('[Sync] Error syncing with device:', err);
                             setSyncMessage({ type: 'error', text: `Fejl ved synkronisering: ${err instanceof Error ? err.message : err}` });
+                            // Mark device as offline
+                            setDevices(prev => prev.map(d =>
+                              d.id === selectedDevice.id
+                                ? { ...d, isOnline: false }
+                                : d
+                            ));
                           } finally {
                             setIsSyncing(false);
                           }

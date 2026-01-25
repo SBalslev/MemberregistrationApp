@@ -771,18 +771,49 @@ export function markInitialSyncComplete(deviceId: string): void {
  * 
  * @see FR-23.5 - When existing Member Tablet pairs for first time, laptop pushes master member data
  */
+/**
+ * Validate and sanitize a date string.
+ * Returns null if the date is invalid (e.g., "1900-01-00" with day 0).
+ */
+function sanitizeDate(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+
+  // Check for invalid dates like "1900-01-00" (day 0) or "1900-00-01" (month 0)
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return null;
+
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const day = parseInt(parts[2], 10);
+
+  // Validate ranges
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+  if (year < 1900 || year > 2100) return null;
+
+  // Try to parse as a real date to catch things like Feb 30
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null; // Invalid date like Feb 30
+  }
+
+  return dateStr;
+}
+
 export function getMemberDataForFullSync(): SyncableMember[] {
   const members = getAllMembers();
-  
+  const now = new Date().toISOString();
+
   return members.map(m => ({
     internalId: m.internalId,
     membershipId: m.membershipId,
-    memberType: m.memberLifecycleStage as 'TRIAL' | 'FULL', // Android expects memberType
-    memberLifecycleStage: m.memberLifecycleStage as 'TRIAL' | 'FULL', // Keep for backward compat
-    status: m.status,
-    firstName: m.firstName,
-    lastName: m.lastName,
-    birthDate: m.birthDate,
+    memberType: (m.memberLifecycleStage === 'TRIAL' ? 'TRIAL' : 'FULL') as 'TRIAL' | 'FULL', // Android expects memberType
+    memberLifecycleStage: (m.memberLifecycleStage === 'TRIAL' ? 'TRIAL' : 'FULL') as 'TRIAL' | 'FULL', // Keep for backward compat
+    status: m.status || 'ACTIVE',
+    firstName: m.firstName || '',
+    lastName: m.lastName || '',
+    birthDate: sanitizeDate(m.birthDate), // LocalDate format: "1990-05-15", sanitized for invalid dates
     gender: m.gender,
     email: m.email,
     phone: m.phone,
@@ -797,9 +828,9 @@ export function getMemberDataForFullSync(): SyncableMember[] {
     // Don't send photoBase64 from laptop - photos are stored as data URLs already
     mergedIntoId: m.mergedIntoId,
     deviceId: 'laptop-master',
-    syncVersion: m.syncVersion,
-    createdAtUtc: m.createdAtUtc,
-    modifiedAtUtc: m.updatedAtUtc
+    syncVersion: m.syncVersion || 1,
+    createdAtUtc: m.createdAtUtc || now,
+    modifiedAtUtc: m.updatedAtUtc || m.createdAtUtc || now
   }));
 }
 

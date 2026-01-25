@@ -5,7 +5,7 @@
  * @see [design.md FR-15] - Push Confirmation
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -23,6 +23,7 @@ import { PushConfirmationDialog } from './PushConfirmationDialog';
 import { query } from '../database';
 import { getPendingCount, getFailedCount } from '../database/syncOutboxRepository';
 import type { DeviceInfo } from '../types/entities';
+import { isElectron, getElectronAPI } from '../types/electron';
 
 interface NavItem {
   id: string;
@@ -46,27 +47,96 @@ const navItems: NavItem[] = [
 ];
 
 export function Sidebar() {
-  const { currentPage, setCurrentPage, hasPendingChanges, isSyncing } = useAppStore();
+  const { currentPage, setCurrentPage, hasPendingChanges, isSyncing, pairedDevices, setPairedDevices, updateDeviceStatus } = useAppStore();
   const [showPushDialog, setShowPushDialog] = useState(false);
-  const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [outboxPending, setOutboxPending] = useState(0);
   const [outboxFailed, setOutboxFailed] = useState(0);
 
-  // Load paired devices for the push dialog
+  // Load paired devices from database into store on mount
   useEffect(() => {
     try {
       const dbDevices = query<DeviceInfo>(
         'SELECT id, name, type, lastSeenUtc, pairingDateUtc, ipAddress, port, isTrusted FROM TrustedDevice ORDER BY name ASC'
       );
-      setDevices(dbDevices.map(d => ({
+      setPairedDevices(dbDevices.map(d => ({
         ...d,
         isOnline: false, // Will be updated by discovery
         isTrusted: Boolean(d.isTrusted)
       })));
     } catch {
-      setDevices([]);
+      setPairedDevices([]);
     }
-  }, [showPushDialog]);
+  }, [setPairedDevices]);
+
+  // Subscribe to device discovery events and trigger initial scan
+  useEffect(() => {
+    if (!isElectron()) return;
+
+    const api = getElectronAPI();
+    if (!api) return;
+
+    // Subscribe to device discovery events to update online status
+    api.onDeviceDiscovered((device) => {
+      const deviceId = device.txt?.deviceId || device.name;
+      console.log('[Sidebar] Device discovered:', deviceId, device.host);
+      updateDeviceStatus(deviceId, true);
+    });
+
+    // Trigger a subnet scan to discover currently online devices
+    api.scanSubnet?.().then((foundDevices) => {
+      console.log('[Sidebar] Subnet scan found', foundDevices?.length || 0, 'devices');
+    }).catch((err) => {
+      console.error('[Sidebar] Subnet scan failed:', err);
+    });
+  }, [updateDeviceStatus]);
+
+  // Track if we've done initial probe
+  const hasProbed = useRef(false);
+  const devicesRef = useRef(pairedDevices);
+  devicesRef.current = pairedDevices;
+
+  // Probe function using ref to avoid dependency on pairedDevices
+  const probeDevices = useCallback(async () => {
+    const devices = devicesRef.current;
+    for (const device of devices) {
+      if (!device.ipAddress) continue;
+
+      const baseUrl = `http://${device.ipAddress}:${device.port || 8085}`;
+      try {
+        const response = await fetch(`${baseUrl}/api/sync/status`, {
+          signal: AbortSignal.timeout(3000)
+        });
+
+        if (response.ok) {
+          console.log('[Sidebar] Device', device.name, 'is online at', baseUrl);
+          updateDeviceStatus(device.id, true);
+        } else {
+          console.log('[Sidebar] Device', device.name, 'returned error:', response.status);
+          updateDeviceStatus(device.id, false);
+        }
+      } catch {
+        console.log('[Sidebar] Device', device.name, 'is offline (connection failed)');
+        updateDeviceStatus(device.id, false);
+      }
+    }
+  }, [updateDeviceStatus]);
+
+  // Probe devices on initial load and periodically
+  useEffect(() => {
+    // Do initial probe once devices are loaded
+    if (pairedDevices.length > 0 && !hasProbed.current) {
+      hasProbed.current = true;
+      probeDevices();
+    }
+
+    // Re-probe every 30 seconds
+    const interval = setInterval(probeDevices, 30000);
+
+    return () => clearInterval(interval);
+  }, [pairedDevices.length, probeDevices]);
+
+  // Use devices from store
+  const devices = pairedDevices;
 
   // Load outbox counts and refresh periodically
   useEffect(() => {
