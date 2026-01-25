@@ -50,6 +50,17 @@ enum class DeviceType {
 }
 
 /**
+ * Returns a user-friendly display name for this device type.
+ */
+fun DeviceType.toDisplayName(): String = when (this) {
+    DeviceType.LAPTOP -> "Laptop"
+    DeviceType.TRAINER_TABLET -> "Træner Tablet"
+    DeviceType.MEMBER_TABLET -> "Medlem Tablet"
+    DeviceType.DISPLAY_EQUIPMENT -> "Udstyr Display"
+    DeviceType.DISPLAY_PRACTICE -> "Træning Display"
+}
+
+/**
  * Information about a device in the sync network.
  *
  * @see [design.md FR-22] - Device Pairing Ceremony Flow

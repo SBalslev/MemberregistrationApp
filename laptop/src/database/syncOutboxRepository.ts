@@ -6,11 +6,52 @@
  */
 
 import { execute, query, transaction } from './db';
+import type { Member } from '../types';
+import type { SyncableMemberData } from '../types/electron';
 
 // ===== Backoff Configuration =====
 // Delays in seconds: 0s, 5s, 15s, 60s, 5min, 15min
 const BACKOFF_DELAYS = [0, 5, 15, 60, 300, 900];
 const MAX_ATTEMPTS = 10;
+const LAPTOP_DEVICE_ID = 'laptop-master';
+
+function toSyncableMember(member: Member): SyncableMemberData {
+  const now = new Date().toISOString();
+  const lifecycle = member.memberLifecycleStage === 'TRIAL' ? 'TRIAL' : 'FULL';
+
+  return {
+    internalId: member.internalId,
+    membershipId: member.membershipId,
+    memberType: lifecycle,
+    memberLifecycleStage: lifecycle,
+    status: member.status || 'ACTIVE',
+    firstName: member.firstName || '',
+    lastName: member.lastName || '',
+    birthDate: member.birthDate,
+    gender: member.gender,
+    email: member.email,
+    phone: member.phone,
+    address: member.address,
+    zipCode: member.zipCode,
+    city: member.city,
+    guardianName: member.guardianName,
+    guardianPhone: member.guardianPhone,
+    guardianEmail: member.guardianEmail,
+    expiresOn: member.expiresOn,
+    registrationPhotoPath: member.registrationPhotoPath,
+    mergedIntoId: member.mergedIntoId,
+    deviceId: LAPTOP_DEVICE_ID,
+    syncVersion: member.syncVersion || 1,
+    createdAtUtc: member.createdAtUtc || now,
+    modifiedAtUtc: member.updatedAtUtc || member.createdAtUtc || now
+  };
+}
+
+function isSyncableMember(candidate: unknown): candidate is SyncableMemberData {
+  if (!candidate || typeof candidate !== 'object') return false;
+  const record = candidate as Record<string, unknown>;
+  return typeof record.modifiedAtUtc === 'string' && typeof record.deviceId === 'string';
+}
 
 // ===== Types =====
 
@@ -70,9 +111,9 @@ export function queueForSync<T>(
 /**
  * Queues a Member entity for sync.
  */
-export function queueMember(member: object, operation: 'INSERT' | 'UPDATE' = 'INSERT'): string {
-  const internalId = (member as { internalId?: string }).internalId || '';
-  return queueForSync('Member', internalId, operation, member);
+export function queueMember(member: Member, operation: 'INSERT' | 'UPDATE' = 'INSERT'): string {
+  const payload = toSyncableMember(member);
+  return queueForSync('Member', member.internalId, operation, payload);
 }
 
 /**
@@ -340,7 +381,11 @@ export function collectEntitiesForDevice(deviceId: string): {
 
       switch (entry.entityType) {
         case 'Member':
-          result.members.push(entity);
+          if (isSyncableMember(entity)) {
+            result.members.push(entity);
+          } else {
+            result.members.push(toSyncableMember(entity as Member));
+          }
           break;
         case 'CheckIn':
           result.checkIns.push(entity);

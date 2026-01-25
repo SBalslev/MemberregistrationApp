@@ -202,6 +202,7 @@ vi.mock('./db', () => {
 });
 
 // Import after mocking
+import type { Member } from '../types';
 import {
   queueForSync,
   queueMember,
@@ -223,6 +224,34 @@ import {
 } from './syncOutboxRepository';
 
 describe('Sync Outbox Repository', () => {
+  const baseMember: Member = {
+    internalId: 'member-uuid',
+    membershipId: null,
+    memberLifecycleStage: 'FULL',
+    status: 'ACTIVE',
+    firstName: 'John',
+    lastName: 'Doe',
+    birthDate: null,
+    gender: null,
+    email: null,
+    phone: null,
+    address: null,
+    zipCode: null,
+    city: null,
+    guardianName: null,
+    guardianPhone: null,
+    guardianEmail: null,
+    memberType: 'ADULT',
+    expiresOn: null,
+    registrationPhotoPath: null,
+    photoPath: null,
+    photoThumbnail: null,
+    mergedIntoId: null,
+    createdAtUtc: '2026-01-01T00:00:00Z',
+    updatedAtUtc: '2026-01-01T00:00:00Z',
+    syncedAtUtc: null,
+    syncVersion: 1
+  };
   beforeEach(() => {
     vi.clearAllMocks();
     mockOutboxEntries.clear();
@@ -248,8 +277,7 @@ describe('Sync Outbox Repository', () => {
     });
 
     it('should queue a Member entity for sync', () => {
-      const member = { internalId: 'member-uuid', firstName: 'John', lastName: 'Doe' };
-      const outboxId = queueMember(member, 'INSERT');
+      const outboxId = queueMember(baseMember, 'INSERT');
 
       expect(outboxId).toBe('mock-uuid-12345');
       const entry = mockOutboxEntries.get(outboxId);
@@ -259,8 +287,7 @@ describe('Sync Outbox Repository', () => {
     });
 
     it('should queue a Member UPDATE operation', () => {
-      const member = { internalId: 'member-uuid', firstName: 'John', lastName: 'Updated' };
-      queueMember(member, 'UPDATE');
+      queueMember({ ...baseMember, lastName: 'Updated' }, 'UPDATE');
 
       const entry = mockOutboxEntries.get('mock-uuid-12345');
       expect(entry.operation).toBe('UPDATE');
@@ -720,7 +747,7 @@ describe('Sync Outbox Edge Cases', () => {
   });
 
   it('should handle missing internalId in member', () => {
-    const member = { firstName: 'No', lastName: 'Id' }; // No internalId
+    const member = { firstName: 'No', lastName: 'Id' } as unknown as Member; // No internalId
     queueMember(member);
 
     const entry = mockOutboxEntries.get('mock-uuid-12345');

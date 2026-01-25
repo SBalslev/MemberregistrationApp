@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.club.medlems.data.sync.DeviceInfo
 import com.club.medlems.data.sync.DeviceType
+import com.club.medlems.data.sync.toDisplayName
 import com.club.medlems.data.sync.DiscoveryPhase
 import com.club.medlems.data.sync.DiscoveryProgress
 import com.club.medlems.data.sync.SyncLogEntry
@@ -174,9 +175,12 @@ class SyncViewModel @Inject constructor(
             // Start SyncManager if not already started
             if (!syncManagerStarted) {
                 val deviceType = deviceConfigPreferences.getDeviceType()
+                // Use configured name if set, otherwise use role-based name with device model
+                val deviceName = deviceConfigPreferences.getDeviceName().takeIf { it.isNotBlank() }
+                    ?: "${deviceType.toDisplayName()} (${android.os.Build.MODEL})"
                 val deviceInfo = DeviceInfo(
                     id = trustManager.getThisDeviceId(),
-                    name = android.os.Build.MODEL,
+                    name = deviceName,
                     type = deviceType,
                     pairedAtUtc = Clock.System.now()
                 )
