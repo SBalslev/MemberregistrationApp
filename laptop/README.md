@@ -1,75 +1,69 @@
-# React + TypeScript + Vite
+# Medlems Admin (Laptop App)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Master admin app for ISS Skydning membership management. This Electron and React app is the laptop hub for member data, device pairing, sync, equipment, finance, and reporting.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Members management with trial member workflow and membership ID assignment
+- Device pairing with 6-digit pairing codes
+- Device rename and unpair controls
+- Sync hub with periodic pull every 5 minutes and manual sync
+- Equipment management and conflict resolution
+- Finance module with exports
+- SKV export to Excel
+- Local database export and import for backup
 
-## React Compiler
+## Requirements
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+- Node.js 18+
+- npm
 
-Note: This will impact Vite dev & build performances.
+## Run in development
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Run Electron locally
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev:electron
 ```
+
+## Build
+
+```bash
+npm run build
+```
+
+## Windows installer
+
+```bash
+npm run build:win
+```
+
+## Pairing and sync
+
+- Open Devices page on the laptop
+- Start a pairing session to show a 6-digit code
+- Enter the code on the tablet pairing screen
+- Sync runs automatically every 5 minutes and can be triggered manually
+- Rename the laptop in Settings and remove devices in Devices when needed
+
+## Backup and restore
+
+- Settings page supports database export and import
+- Exports create a .db backup file
+- Imports replace the local database
+
+## SKV export
+
+- Settings page includes SKV export to Excel
+- Export uses a save dialog when running in Electron
+
+## Tech stack
+
+- React, TypeScript, Vite
+- Electron main process with Express sync server
+- SQLite via sql.js in the renderer

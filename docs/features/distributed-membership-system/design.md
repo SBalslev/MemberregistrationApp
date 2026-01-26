@@ -1,5 +1,8 @@
 # Distributed Membership Management System - Design Document
 
+**Last Updated:** 2026-01-26
+**Updated By:** sbalslev
+
 ## Introduction/Overview
 
 This feature transforms the existing single-tablet membership check-in application into a distributed three-device system that operates on a local network with offline-first capabilities. The system will consist of:
@@ -39,7 +42,7 @@ As a club admin, I want to check out training equipment to members and see what 
 
 **US-3: Master Membership Management**
 
-As a club administrator, I want to manage all membership records from a laptop application so that I can update member information, approve new registrations, and have a complete view of all members.
+As a club administrator, I want to manage all membership records from a laptop application so that I can update member information, assign membership IDs to trial members, and have a complete view of all members.
 
 **US-4: Offline Operations**
 
@@ -49,9 +52,9 @@ As a system user, I want the app to work when the network is down or other devic
 
 As a system user, I want devices to automatically discover each other and sync data when they come online so that I don't have to manually configure network settings or trigger synchronization.
 
-**US-6: New Member Registration Approval**
+**US-6: Trial member onboarding**
 
-As a club administrator, I want to review new member registrations submitted from tablets and approve them to create official membership records so that I can control membership quality and accuracy.
+As a club administrator, I want to review trial members created on tablets and assign membership IDs so that I can confirm membership details and activate full membership.
 
 **US-7: Real-time Practice Session Visibility**
 
@@ -113,7 +116,7 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 **FR-4.3.1** Master Laptop SHALL automatically pull (receive) data from tablets without user intervention.
 
-**FR-4.4** NewMemberRegistration records SHALL sync from tablets to Master Laptop for approval.
+**FR-4.4** Trial members created on tablets SHALL sync as Member records with `memberType = TRIAL`.
 
 **FR-4.5** ScanEvent records SHALL sync across devices, aggregated by date and member.
 
@@ -155,9 +158,9 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 **FR-6.1** Master Laptop SHALL provide full CRUD operations for Member records.
 
-**FR-6.2** Master Laptop SHALL display NewMemberRegistration records synced from tablets.
+**FR-6.2** Master Laptop SHALL display trial members (memberType = TRIAL) in the Members view.
 
-**FR-6.3** Master Laptop SHALL allow approving NewMemberRegistration, converting them to Member records.
+**FR-6.3** Master Laptop SHALL allow assigning membership IDs to trial members, transitioning them to full members.
 
 **FR-6.4** Master Laptop SHALL display historical CheckIn, PracticeSession, and ScanEvent data for all members.
 
@@ -181,7 +184,7 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 ### FR-8: Data Entities
 
-**FR-8.1** System SHALL maintain existing entities: Member, CheckIn, PracticeSession, ScanEvent, NewMemberRegistration.
+**FR-8.1** System SHALL maintain existing entities: Member, CheckIn, PracticeSession, ScanEvent.
 
 **FR-8.2** System SHALL add new entity: EquipmentItem with the following schema:
 
@@ -230,13 +233,13 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 ### FR-10: Device Security and Pairing
 
-**FR-10.1** New devices joining the network SHALL require a pairing ceremony using QR code scanning.
+**FR-10.1** New devices joining the network SHALL require a pairing ceremony using a 6-digit pairing code.
 
-**FR-10.2** Master Laptop SHALL generate pairing QR codes for new devices to scan.
+**FR-10.2** Master Laptop SHALL generate a 6-digit pairing code for new devices to enter.
 
-**FR-10.3** Tablets SHALL use existing QR scanning capability to scan pairing codes and establish trust.
+**FR-10.3** Tablets SHALL use the pairing code entry screen to establish trust.
 
-**FR-10.4** Pairing QR code SHALL contain: device trust token, sync network identifier, and initial sync endpoint.
+**FR-10.4** Pairing code session SHALL contain: device trust token, sync network identifier, and initial sync endpoint.
 
 **FR-10.5** Once a device is paired with one trusted device, that trust SHALL propagate to all devices in the sync network.
 
@@ -432,40 +435,15 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 **FR-20.10** Display tablets SHALL show prominent "Display Mode" indicator at top of screen.
 
-### FR-21: NewMemberRegistration Approval Workflow
+### FR-21: Trial member workflow
 
-**FR-21.1** Master Laptop SHALL display NewMemberRegistration queue showing all pending registrations.
+**FR-21.1** Master Laptop SHALL surface trial members (memberType = TRIAL) in the Members view.
 
-**FR-21.2** Registration queue SHALL show: registration date, member name, membership ID (if provided), registration device.
+**FR-21.2** Selecting a trial member SHALL allow editing member details and assigning a membership ID.
 
-**FR-21.3** Selecting a registration SHALL open approval dialog with full registration details.
+**FR-21.3** Assigning a membership ID SHALL transition the member to full membership (memberType = FULL).
 
-**FR-21.4** Approval dialog SHALL allow admin to edit all member fields:
-
-- First name, last name
-- Membership ID (generate if not provided)
-- Email, phone
-- Membership type, status
-- Any other Member entity fields
-
-**FR-21.5** Approval dialog SHALL provide two actions:
-
-- "Approve & Create Member" - Creates Member record, marks registration as approved
-- "Reject Registration" - Soft deletes registration (marks as rejected, retains for records)
-
-**FR-21.6** Upon approval, system SHALL:
-
-- Create new Member record with edited/confirmed data
-- Mark NewMemberRegistration as approved with timestamp
-- Store link between registration and created member (registrationId in Member table)
-
-**FR-21.7** Approved members SHALL NOT automatically sync to tablets.
-
-**FR-21.8** Admin MUST explicitly push master data using "Push Master Data" button to sync new members to tablets.
-
-**FR-21.9** Rejected registrations SHALL remain in database marked as rejected, visible in admin-only archive view.
-
-**FR-21.10** Rejection SHALL include optional rejection reason field (max 500 characters).
+**FR-21.4** Master data changes require explicit push from the laptop to sync to tablets.
 
 ### FR-22: Device Pairing Ceremony Flow
 
@@ -475,20 +453,20 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 - Prompt admin to select device type (Member Tablet, Trainer Tablet, Display Tablet)
 - Prompt admin to enter friendly device name (e.g., "Trainer Tablet 1", "Display - Main Hall")
-- Generate pairing QR code containing: JWT trust token, sync network ID, laptop endpoint URL
-- Display QR code full-screen with instructions: "Scan this code from the new device"
+- Generate a 6-digit pairing code session containing: auth token, sync network ID, laptop endpoint URL
+- Display the pairing code with instructions: "Indtast denne kode på den nye enhed"
 
-**FR-22.3** QR code SHALL remain valid for 5 minutes, then expire requiring regeneration.
+**FR-22.3** Pairing code SHALL remain valid for 5 minutes, then expire requiring regeneration.
 
 **FR-22.4** New tablet SHALL display "Pair with Network" button on first launch or in settings.
 
-**FR-22.5** Clicking "Pair with Network" SHALL open camera for QR code scanning.
+**FR-22.5** Clicking "Pair with Network" SHALL open the pairing code entry dialog.
 
-**FR-22.6** After scanning QR code, tablet SHALL:
+**FR-22.6** After entering pairing code, tablet SHALL:
 
 - Display "Pairing with [Network Name]..." progress indicator
 - Attempt connection to laptop endpoint
-- Perform authentication handshake with JWT token
+- Perform authentication handshake with auth token
 - Receive device ID, trusted device list, and initial sync endpoint
 
 **FR-22.7** Upon successful pairing, tablet SHALL:
@@ -504,13 +482,13 @@ As a club member or admin, I want to see practice sessions recorded across all d
 - Add device to trusted device list
 - Begin syncing trust list to all other paired devices (trust propagation)
 
-**FR-22.9** If pairing fails (timeout, network error, invalid QR), tablet SHALL:
+**FR-22.9** If pairing fails (timeout, network error, invalid code), tablet SHALL:
 
 - Display error message: "Pairing failed: [Error reason]"
-- Provide "Retry" button to scan QR again
+- Provide "Retry" button to enter code again
 - Provide "Cancel" button to return to settings
 
-**FR-22.10** Pairing timeout SHALL be 30 seconds from QR scan to connection established.
+**FR-22.10** Pairing timeout SHALL be 30 seconds from code entry to connection established.
 
 **FR-22.11** Laptop SHALL maintain list of all paired devices with: device name, device type, last seen timestamp, pairing date.
 
@@ -562,7 +540,7 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 9. **Member Profile Sync Across Sessions** - Member authentication/profiles are device-local; no shared login across devices.
 
-10. **Automated Member Migration** - NewMemberRegistration approval is manual; no automated migration to Member records.
+10. **Separate registration approval queue** - Trial members are created directly as Members; no approval queue.
 
 11. **Display Tablet Write Operations** - Display-only tablets cannot create check-ins, practice sessions, or equipment checkouts.
 
@@ -631,18 +609,15 @@ As a club member or admin, I want to see practice sessions recorded across all d
 - Dashboard as landing page:
   - Recent activity feed across all devices
   - Device status panel (online/offline for each paired device)
-  - Quick stats: members checked in today, equipment checked out, pending registrations
+  - Quick stats: members checked in today, equipment checked out, trial members awaiting ID
 - Member management as primary view:
   - Full member list with search and filter
   - Add/Edit/View member with full CRUD operations
   - Import members from CSV for initial data migration
   - Member detail shows: profile, check-in history, practice sessions, equipment checkouts
-- NewMemberRegistration approval queue:
-  - Pending registrations list with submission date
-  - Approval dialog with editable member fields
-  - Approve button creates Member record
-  - Reject button with optional rejection reason
-  - Archive view for approved/rejected registrations
+- Trial member workflow:
+  - Trial members listed in Members view with filters
+  - Assign membership ID action transitions to full membership
 - Equipment status overview:
   - All equipment with current status
   - Checkout history for each item
@@ -653,7 +628,7 @@ As a club member or admin, I want to see practice sessions recorded across all d
   - Success/failure notification with device list
   - Retry option for failed devices
 - Device management panel:
-  - "Add New Device" button opens pairing QR code dialog
+  - "Add New Device" button opens pairing code dialog
   - List of paired devices with friendly names, types, last seen
   - Revoke trust action for each device
 - Comprehensive sync status monitoring:
@@ -740,15 +715,8 @@ enum class ConflictStatus {
 
 **Member entity additions:**
 
-- `registrationId: String?` - Link to NewMemberRegistration if created from approval
-
-**NewMemberRegistration entity additions:**
-
-- `approvalStatus: ApprovalStatus` - Enum (Pending, Approved, Rejected)
-- `approvedAtUtc: Instant?` - Approval timestamp
-- `rejectedAtUtc: Instant?` - Rejection timestamp
-- `rejectionReason: String?` - Optional rejection reason (max 500 chars)
-- `createdMemberId: String?` - Link to Member record if approved
+- `membershipId: String?` - Null for trial members until assigned
+- `memberType: MemberType` - Lifecycle stage (TRIAL or FULL)
 
 ## Technical Considerations
 
@@ -772,8 +740,8 @@ enum class ConflictStatus {
 
 **Device Security:**
 
-- QR code pairing ceremony: Laptop generates QR code, tablets scan using existing QR capability
-- Pairing QR encodes: device trust token, sync network ID, initial endpoint
+- Pairing code ceremony: Laptop generates 6-digit code, tablets enter it in pairing screen
+- Pairing session encodes: device trust token, sync network ID, initial endpoint
 - Trust propagation: device paired with any trusted device becomes trusted by all
 - Shared symmetric key after pairing for encrypted sync communication
 - Device revocation list maintained on laptop, synced to tablets
@@ -903,11 +871,11 @@ enum class ConflictStatus {
 8. ✅ **Backup Strategy**: Scheduled backups on all devices, restore option for disaster recovery
 9. ✅ **Equipment ID Assignment**: Auto-generated UUIDs, manual serial numbers
 11. ✅ **Time Synchronization**: Accept small clock differences, no NTP required
-12. ✅ **Device Authentication**: QR code pairing ceremony with trust propagation
+12. ✅ **Device Authentication**: Pairing code ceremony with trust propagation
 13. ✅ **Equipment Conflicts**: Flag for manual resolution
 14. ✅ **Scalability**: 2 tablets now, support 3-4 for future display screens
 15. ✅ **Audit Trail**: Logging for troubleshooting only, no user-facing audit
-16. ✅ **QR Code Pairing**: Laptop generates, tablets scan using existing capability
+16. ✅ **Pairing Code**: Laptop generates, tablets enter code
 17. ✅ **Conflict Resolution Authority**: Any admin device (laptop or trainer tablet)
 18. ✅ **Display-Only Screens**: Read-only paired devices with interactive filtering (no writes)
 19. ✅ **Network Interruption Grace Period**: 60 seconds before marking device offline

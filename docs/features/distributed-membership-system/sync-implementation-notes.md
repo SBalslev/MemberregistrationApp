@@ -1,8 +1,8 @@
 # Sync Implementation Notes
 
 > **Created**: January 18, 2026
-> **Last Updated**: January 18, 2026 by sbalslev
-> **Status**: Working MVP with security improvements pending
+> **Last Updated**: January 26, 2026 by sbalslev
+> **Status**: Working MVP with pairing and auth in place
 
 ---
 
@@ -52,25 +52,25 @@ The sync system uses a **peer-to-peer HTTP API** approach with **mDNS service di
 
 ---
 
-## Current Security Model (MVP - Needs Improvement)
+## Current Security Model (MVP)
 
 ### What's Implemented
 
 1. **Persistent Device ID**: Laptop saves device ID to file, stays same across restarts
 2. **EncryptedSharedPreferences**: Android stores device tokens using AES-256-GCM
-3. **Trusted Device List**: Both apps maintain list of trusted device IDs
-4. **Self-Signed Device Tokens**: Android generates signed tokens with HMAC-SHA256
+3. **Trusted Device List**: Laptop stores trusted devices with auth tokens
+4. **Pairing Code Ceremony**: Laptop generates a 6-digit code, tablet submits it to pair
+5. **Auth Middleware**: Laptop validates Bearer tokens for sync endpoints
+6. **Token Expiration**: Laptop issues tokens with 30-day expiry
+7. **Pairing Rate Limits**: Repeated failed attempts are rate-limited
 
 ### Security Gaps (Known Issues)
 
 | Issue | Risk Level | Current State |
 |-------|------------|---------------|
-| No proper pairing ceremony | Medium | Devices added to trust list without handshake |
-| Self-signed tokens | Low | Tokens not exchanged, just self-generated |
-| No token validation on laptop | Medium | Laptop accepts any request without auth |
-| No persistent token exchange | Medium | `savePersistentToken()` never called |
 | HTTP (not HTTPS) | Low | Local network only, but plaintext |
-| No token expiration | Low | Tokens never expire |
+| Token format is not JWT | Low | HMAC-based token used for MVP |
+| Tablet token persistence | Medium | Tablet stores token, but rotation not implemented |
 
 ### How Tokens Work Currently
 
@@ -83,10 +83,8 @@ val authToken = trustManager.getPersistentToken()
 
 **Laptop Side:**
 ```javascript
-// main.cjs - does NOT validate Authorization header
-server.get('/api/sync/pull', async (req, res) => {
-    // No auth check - accepts all requests
-});
+// main.cjs - validates Authorization header
+app.use('/api/sync', authMiddleware);
 ```
 
 ---

@@ -3,7 +3,8 @@
 **Feature:** Trainer Experience & Practice Management
 **Version:** 0.3 (Draft)
 **Status:** In Progress
-**Last Updated:** 2026-01-21
+**Last Updated:** 2026-01-26
+**Updated By:** sbalslev
 **Created:** 2026-01-21
 
 ---
@@ -123,9 +124,11 @@ Discipline-specific trainer levels shall be tracked in a separate `TrainerDiscip
 - A trainer can be FULL in one discipline and ASSISTANT in another
 
 ### FR-2: Trainer Authentication
+
 - Membership card scan triggers trainer lookup
 - If member has `isTrainer = true`, grant access to trainer dashboard
 - If member is not a trainer, display unauthorized message
+- Allow admin PIN login as a fallback for initial setup or missing trainer records
 - Log all authentication attempts (success and failure)
 
 ### FR-3: Today's Check-in Dashboard
@@ -158,8 +161,10 @@ Discipline-specific trainer levels shall be tracked in a separate `TrainerDiscip
 ## Non-Functional Requirements
 
 ### NFR-1: Security
+
 - Trainer tablet should not expose trainer functions without authentication
 - Session timeout: 60 seconds of inactivity (trainers must re-scan card to continue)
+- PIN fallback uses the existing admin PIN and respects lockout behavior
 - All trainer actions should be auditable
 
 ### NFR-2: Performance

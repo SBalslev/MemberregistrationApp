@@ -1,7 +1,8 @@
 # ISS Skydning Registrering – Functional & Technical Specification (MVP)
 
 Version: 1.5.0 (Enhanced member registration + Photo sync)
-Last Updated: 2026-01-05
+Last Updated: 2026-01-25
+Updated By: sbalslev
 
 ## 1. Value Proposition
 Self‑service kiosk Android app for a shooting club that lets members instantly check in by scanning a QR code on their membership card and record multiple practice scoring sessions (rifle/pistol variants) during the same day—fully offline with simple CSV import/export.
@@ -140,11 +141,20 @@ Mine resultater (bottom sheet):
   - Local copies deleted after 30 days post-sync (retention policy)
 
 ### 3.5 CSV Import (Members)
+
 1. Attendant chooses CSV file.
 2. Validate headers, scan for duplicates (same membershipId). Duplicates → skipped (report) (import continues). 
 3. For each unique row: overwrite existing member fields (non-empty cells only). Empty cells ignored (keep existing values). 
 4. After processing, any existing member not listed → mark status=INACTIVE (inactiveAt timestamp).
 5. Present summary: total rows, imported, skipped duplicates, newly inactive count, errors.
+
+### 3.5.1 CSV Import (Practice sessions)
+
+1. Attendant chooses CSV file.
+2. Validate headers and required fields.
+3. Resolve membership_id to existing member. Missing members are skipped with errors.
+4. Skip duplicate session_id rows already in the database.
+5. Insert practice sessions and present summary with counts and errors.
 
 ### 3.6 CSV Export
 - Members, PracticeSessions, CheckIns, ScanEvents.
@@ -294,7 +304,20 @@ Rules:
 - Duplicate membership_id rows in the same file are skipped and reported.
 - Date formats: `birth_date` must be ISO local date `yyyy-MM-dd`; `expires_on` ISO local date string.
 
-### 11.2 Export CSVs (examples)
+### 11.2 Practice sessions import CSV
+Headers (order flexible but recommended):  
+`FORMAT_VERSION,session_id,membership_id,created_at_utc,local_date,practice_type,points,krydser,classification,source`
+
+Rules:
+
+- Required fields: `FORMAT_VERSION`,`session_id`,`membership_id`,`created_at_utc`,`local_date`,`practice_type`,`points`.
+- Optional fields: `krydser`,`classification`,`source`.
+- Duplicate session_id rows are skipped and reported.
+- Missing membership_id or unknown membership_id rows are skipped and reported.
+- Date formats: `created_at_utc` is ISO 8601 UTC, `local_date` is ISO local date `yyyy-MM-dd`.
+- `source` accepts `kiosk` or `attendant`. Missing source defaults to `kiosk`.
+
+### 11.3 Export CSVs (examples)
 Members (v2): `FORMAT_VERSION,membership_id,first_name,last_name,email,phone,status,expires_on,birth_date,updated_at_utc`  
 PracticeSessions: `FORMAT_VERSION,session_id,membership_id,created_at_utc,local_date,practice_type,classification,points,krydser,source`  
 CheckIns: `FORMAT_VERSION,checkin_id,membership_id,created_at_utc,local_date`  

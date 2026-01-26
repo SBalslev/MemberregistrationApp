@@ -1,5 +1,8 @@
 # PRD: Enhanced Device Discovery and Pairing
 
+**Last Updated:** 2026-01-26
+**Updated By:** sbalslev
+
 ## Executive Summary
 
 This document explores improvements to the device pairing and discovery system for the Medlemscheckin application. The current system works well but may be over-engineered for the typical usage pattern: practice nights lasting 3-5 hours, occurring only 2 days per week, with devices rarely being added or replaced.
@@ -13,12 +16,13 @@ This document explores improvements to the device pairing and discovery system f
    - Android NSD (Native Service Discovery) as complementary method
    - Subnet scan fallback (probes all /24 IPs)
 
-2. **QR Code Pairing Ceremony**
-   - Laptop generates QR code with JWT trust token (5-minute validity)
-   - Tablet scans and exchanges device info
-   - Laptop issues persistent JWT auth token
-   - Device added to trusted list
-    - Manual pairing requires a 6-digit code entry, and discovered devices open the code dialog instead of pairing directly
+2. **Pairing Code Ceremony**
+
+    - Laptop generates a 6-digit pairing code with auth token (5-minute validity)
+    - Tablet enters the code and exchanges device info
+    - Laptop issues persistent auth token
+    - Device added to trusted list
+    - Manual pairing uses a 6-digit code entry, and discovered devices open the code dialog instead of pairing directly
 
 3. **Polling-Based Sync**
    - 5-minute automatic sync intervals
@@ -33,7 +37,6 @@ This document explores improvements to the device pairing and discovery system f
 | mDNS can be unreliable on some networks | Router/AP may block multicast |
 | 5-minute poll interval | Delays sync when devices reconnect |
 | No push notifications | Tablets don't know when peers come online |
-| QR pairing required even for known devices | Extra friction on fresh app starts |
 
 ## Usage Pattern Analysis
 
@@ -627,7 +630,7 @@ private fun checkMobileDataConflict(): Boolean {
 If mDNS continues to be unreliable on certain Android 6.0 devices:
 
 1. **Direct IP Entry** - Allow users to manually enter device IP
-2. **QR Code with IP** - Include current IP in pairing QR code
+2. **Pairing Code with IP hint** - Show current IP alongside the pairing code
 3. **Subnet Scan Primary** - Make subnet scan the primary discovery method on known-problematic devices
 4. **Bluetooth LE Hints** - Use BLE to advertise IP address (requires BLE support)
 
