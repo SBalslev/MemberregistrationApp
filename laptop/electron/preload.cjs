@@ -67,6 +67,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Scan subnet for devices (mDNS fallback)
   scanSubnet: () => ipcRenderer.invoke('sync:scan-subnet'),
 
+  // ===== Device Name Management =====
+
+  // Get the current device name
+  getDeviceName: () => ipcRenderer.invoke('device:get-name'),
+
+  // Set the device name (persisted and updates mDNS advertisement)
+  setDeviceName: (name) => ipcRenderer.invoke('device:set-name', { name }),
+
   // ===== New promise-based IPC for sync data =====
   
   // Listen for member data requests (returns data via callback)

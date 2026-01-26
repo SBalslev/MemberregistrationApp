@@ -7,9 +7,9 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Tablet, Laptop, Wifi, WifiOff, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, X, Shield } from 'lucide-react';
+import { Tablet, Laptop, Wifi, WifiOff, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, X, Shield, Trash2 } from 'lucide-react';
 import { isElectron, getElectronAPI } from '../types/electron';
-import { query, saveTrustedDevice, getTrustedDevices, getMemberDataForFullSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
+import { query, execute, saveTrustedDevice, getTrustedDevices, getMemberDataForFullSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
 import { collectEntitiesForDevice, markDeliveredToDeviceBatch, recordFailedAttempt } from '../database/syncOutboxRepository';
 import type { DeviceInfo } from '../types/entities';
 
@@ -243,6 +243,37 @@ export function DevicesPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
+
+  // Remove/unpair a device
+  async function removeDevice(device: DeviceInfo) {
+    if (!confirm(`Er du sikker på at du vil fjerne "${device.name}"?\n\nEnheden skal parres igen for at kunne synkronisere.`)) {
+      return;
+    }
+
+    setIsRemoving(true);
+    try {
+      // Remove from database
+      execute('DELETE FROM TrustedDevice WHERE id = ?', [device.id]);
+
+      // Revoke from main process cache
+      if (isElectron()) {
+        const api = getElectronAPI();
+        await api?.revokeDevice?.(device.id);
+      }
+
+      // Remove from local state
+      setDevices(prev => prev.filter(d => d.id !== device.id));
+      setSelectedDevice(null);
+
+      console.log('[Devices] Removed device:', device.name);
+    } catch (err) {
+      console.error('[Devices] Failed to remove device:', err);
+      alert('Kunne ikke fjerne enheden. Prøv igen.');
+    } finally {
+      setIsRemoving(false);
+    }
+  }
 
   function isRecentlySeen(lastSeen?: string | null): boolean {
     if (!lastSeen) return false;
@@ -678,6 +709,21 @@ export function DevicesPage() {
                           {syncMessage.text}
                         </div>
                       )}
+
+                      {/* Remove device button */}
+                      <div className="pt-4 border-t border-gray-200">
+                        <button
+                          onClick={() => removeDevice(selectedDevice)}
+                          disabled={isRemoving}
+                          className="w-full py-2 px-4 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          {isRemoving ? 'Fjerner...' : 'Fjern enhed'}
+                        </button>
+                        <p className="text-xs text-gray-500 mt-2 text-center">
+                          Enheden skal parres igen for at synkronisere
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </>

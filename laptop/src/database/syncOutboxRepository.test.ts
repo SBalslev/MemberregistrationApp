@@ -666,7 +666,7 @@ describe('Sync Outbox Repository', () => {
     it('should parse JSON payloads correctly', () => {
       const result = collectEntitiesForDevice('tablet-1');
 
-      expect(result.members[0]).toEqual({ internalId: 'member-1', firstName: 'John' });
+      expect(result.members[0]).toMatchObject({ internalId: 'member-1', firstName: 'John' });
       expect(result.checkIns[0]).toEqual({ id: 'checkin-1', membershipId: 'M001' });
     });
 

@@ -132,6 +132,9 @@ interface PracticeSessionDao {
     @Insert
     suspend fun insert(session: PracticeSession)
 
+    @Query("SELECT COUNT(*) FROM PracticeSession WHERE id = :id")
+    suspend fun countById(id: String): Int
+
     @Update
     suspend fun update(session: PracticeSession)
 

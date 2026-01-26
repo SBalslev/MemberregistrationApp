@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Upload,
   GraduationCap,
+  Activity,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { PushConfirmationDialog } from './PushConfirmationDialog';
@@ -37,6 +38,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'members', label: 'Medlemmer', icon: Users },
+  { id: 'member-activity', label: 'Aktivitet', icon: Activity },
   { id: 'trainers', label: 'Trænere', icon: GraduationCap },
   { id: 'equipment', label: 'Udstyr', icon: Package },
   { id: 'finance', label: 'Økonomi', icon: Wallet },
@@ -75,16 +77,43 @@ export function Sidebar() {
     const api = getElectronAPI();
     if (!api) return;
 
+    const upsertDiscoveredDevice = (device: { name: string; host: string; port: number; txt?: Record<string, string> }) => {
+      const deviceId = device.txt?.deviceId || device.name;
+      const currentDevices = useAppStore.getState().pairedDevices;
+      const existingIndex = currentDevices.findIndex((d) => d.id === deviceId);
+      const nextDevice: DeviceInfo = {
+        id: deviceId,
+        name: device.name,
+        type: (device.txt?.deviceType as DeviceInfo['type']) || 'MEMBER_TABLET',
+        ipAddress: device.host,
+        port: device.port || 8085,
+        isOnline: true,
+        isTrusted: existingIndex >= 0 ? currentDevices[existingIndex].isTrusted : false,
+        lastSeenUtc: new Date().toISOString(),
+        pairingDateUtc: existingIndex >= 0 ? currentDevices[existingIndex].pairingDateUtc : new Date().toISOString(),
+      };
+
+      if (existingIndex >= 0) {
+        const updated = [...currentDevices];
+        updated[existingIndex] = { ...updated[existingIndex], ...nextDevice };
+        setPairedDevices(updated);
+      } else {
+        setPairedDevices([...currentDevices, nextDevice]);
+      }
+    };
+
     // Subscribe to device discovery events to update online status
     api.onDeviceDiscovered((device) => {
-      const deviceId = device.txt?.deviceId || device.name;
-      console.log('[Sidebar] Device discovered:', deviceId, device.host);
-      updateDeviceStatus(deviceId, true);
+      console.log('[Sidebar] Device discovered:', device.txt?.deviceId || device.name, device.host);
+      upsertDiscoveredDevice(device);
     });
 
     // Trigger a subnet scan to discover currently online devices
     api.scanSubnet?.().then((foundDevices) => {
       console.log('[Sidebar] Subnet scan found', foundDevices?.length || 0, 'devices');
+      if (foundDevices) {
+        foundDevices.forEach((device) => upsertDiscoveredDevice(device));
+      }
     }).catch((err) => {
       console.error('[Sidebar] Subnet scan failed:', err);
     });

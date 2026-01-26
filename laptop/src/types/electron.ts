@@ -52,6 +52,10 @@ export interface ElectronAPI {
   // Subnet scanning for device discovery
   scanSubnet?: () => Promise<DiscoveredDevice[]>;
 
+  // Device name management
+  getDeviceName?: () => Promise<{ name: string }>;
+  setDeviceName?: (name: string) => Promise<{ success: boolean; name?: string; error?: string }>;
+
   // Promise-based IPC for sync data requests
   onGetMembersRequest?: (handler: (data: { since?: string; deviceType?: string }) => Promise<MemberDataPayload> | MemberDataPayload) => void;
   onProcessPushRequest?: (handler: (payload: SyncPushPayload) => Promise<SyncProcessResult> | SyncProcessResult) => void;

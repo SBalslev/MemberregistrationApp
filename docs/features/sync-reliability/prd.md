@@ -222,7 +222,7 @@ Sync triggers automatically without user intervention.
 
 | Trigger | Behavior |
 |---------|----------|
-| **Interval** | Every 60 seconds when devices are online |
+| **Interval** | Every 5 minutes when devices are online |
 | **On change** | 5-second debounce after local data change |
 | **On reconnect** | Immediate sync when device comes online |
 | **On app start** | Sync on application launch |
@@ -231,7 +231,7 @@ Sync triggers automatically without user intervention.
 **Scheduler Configuration:**
 ```typescript
 interface SyncSchedulerConfig {
-  intervalMs: number;           // Default: 60000 (60 seconds)
+  intervalMs: number;           // Default: 300000 (5 minutes)
   debounceMs: number;           // Default: 5000 (5 seconds)
   enabled: boolean;             // Can be disabled for testing
   syncOnReconnect: boolean;     // Default: true
@@ -311,7 +311,7 @@ Users should always know the sync state without needing to understand the system
 
 ### FR-3: Automatic Sync Scheduler
 
-**FR-3.1** Sync SHALL trigger automatically every 60 seconds when devices are online.
+**FR-3.1** Sync SHALL trigger automatically every 5 minutes when devices are online.
 
 **FR-3.2** Sync SHALL trigger within 5 seconds of a local data change (debounced).
 
@@ -583,7 +583,7 @@ Response:
 
 ### Manual Testing Checklist
 
-- [ ] Sync triggers automatically every 60 seconds
+- [ ] Sync triggers automatically every 5 minutes
 - [ ] Sync triggers within 5 seconds of member edit
 - [ ] Sync triggers immediately when tablet comes online
 - [ ] App crash mid-sync → restart → pending items retry

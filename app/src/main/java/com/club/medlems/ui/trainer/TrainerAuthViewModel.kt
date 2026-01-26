@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.club.medlems.data.dao.MemberDao
 import com.club.medlems.data.dao.TrainerInfoDao
+import com.club.medlems.domain.security.AttendantModeManager
 import com.club.medlems.domain.trainer.TrainerSessionManager
 import com.club.medlems.domain.trainer.TrainerSessionState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -62,7 +63,8 @@ sealed class TrainerAuthState {
 class TrainerAuthViewModel @Inject constructor(
     private val memberDao: MemberDao,
     private val trainerInfoDao: TrainerInfoDao,
-    private val trainerSessionManager: TrainerSessionManager
+    private val trainerSessionManager: TrainerSessionManager,
+    private val attendantModeManager: AttendantModeManager
 ) : ViewModel() {
 
     private val _authState = MutableStateFlow<TrainerAuthState>(TrainerAuthState.Idle)
@@ -124,7 +126,7 @@ class TrainerAuthViewModel @Inject constructor(
      * 1. Look up member by membershipId
      * 2. Check if member has trainer designation in TrainerInfo
      * 3. If trainer: start session, navigate to dashboard
-     * 4. If not trainer: show "Adgang naegtet" message
+     * 4. If not trainer: show "Adgang nægtet" message
      *
      * @param membershipId The scanned membership ID
      */
@@ -164,7 +166,7 @@ class TrainerAuthViewModel @Inject constructor(
                     _authState.value = TrainerAuthState.Denied(
                         memberId = membershipId,
                         memberName = memberName,
-                        reason = "Dette medlem er ikke registreret som traener"
+                        reason = "Dette medlem er ikke registreret som træner"
                     )
                 }
             } catch (e: Exception) {
@@ -222,4 +224,42 @@ class TrainerAuthViewModel @Inject constructor(
             _authState.value = TrainerAuthState.Idle
         }
     }
+
+    /**
+     * Authenticates using admin PIN.
+     * This allows initial setup when no trainers are registered yet.
+     *
+     * @param pin The 4-digit PIN code
+     * @return true if PIN was correct, false otherwise
+     */
+    fun onPinEntered(pin: String): Boolean {
+        // Use AttendantModeManager to validate the PIN
+        attendantModeManager.attemptUnlock(pin)
+
+        val attendantState = attendantModeManager.state.value
+        return if (attendantState.unlocked) {
+            // PIN correct - authenticate as admin
+            trainerSessionManager.startSession("ADMIN", "Administrator")
+            _authState.value = TrainerAuthState.Authenticated(
+                trainerId = "ADMIN",
+                trainerName = "Administrator"
+            )
+            true
+        } else {
+            // PIN incorrect - show error
+            val errorMsg = attendantState.error ?: "Forkert PIN"
+            _authState.value = TrainerAuthState.Error(errorMsg)
+            false
+        }
+    }
+
+    /**
+     * Gets the current PIN error state from AttendantModeManager.
+     */
+    fun getPinError(): String? = attendantModeManager.state.value.error
+
+    /**
+     * Gets cooldown remaining in milliseconds.
+     */
+    fun getCooldownRemaining(): Long = attendantModeManager.state.value.cooldownRemainingMs
 }

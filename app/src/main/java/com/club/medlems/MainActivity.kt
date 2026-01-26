@@ -24,6 +24,8 @@ import com.club.medlems.ui.importexport.ImportExportScreen
 import com.club.medlems.ui.attendant.AttendantMenuScreen
 import com.club.medlems.ui.display.EquipmentDisplayScreen
 import com.club.medlems.ui.display.PracticeSessionDisplayScreen
+import com.club.medlems.ui.trainer.TrainerAuthScreen
+import com.club.medlems.ui.trainer.dashboard.TrainerDashboardScreen
 import com.club.medlems.domain.security.AttendantModeManager
 import com.club.medlems.domain.prefs.DeviceConfigPreferences
 import javax.inject.Inject
@@ -97,6 +99,10 @@ sealed class NavRoute(val route: String) {
     
     // Device pairing (sync network)
     data object DevicePairing: NavRoute("sync/pairing")
+
+    // Trainer authentication flow
+    data object TrainerAuth: NavRoute("trainer/auth")
+    data object TrainerDashboard: NavRoute("trainer/dashboard")
 }
 
 @Composable
@@ -125,15 +131,21 @@ fun AppRoot(
         return
     }
     
-    // Determine start destination based on setup state
-    val startDestination = if (setupComplete) NavRoute.Ready.route else NavRoute.DeviceSetup.route
+    // Determine start destination based on setup state and device role
+    val isTrainerBuild = deviceConfig.isTrainerBuild
+    val startDestination = when {
+        !setupComplete -> NavRoute.DeviceSetup.route
+        isTrainerBuild -> NavRoute.TrainerAuth.route
+        else -> NavRoute.Ready.route
+    }
     
     Surface(color = MaterialTheme.colorScheme.background) {
         NavHost(navController = navController, startDestination = startDestination) {
             composable(NavRoute.DeviceSetup.route) {
                 com.club.medlems.ui.setup.DeviceSetupScreen(
                     onSetupComplete = {
-                        navController.navigate(NavRoute.Ready.route) {
+                        val destination = if (isTrainerBuild) NavRoute.TrainerAuth.route else NavRoute.Ready.route
+                        navController.navigate(destination) {
                             popUpTo(NavRoute.DeviceSetup.route) { inclusive = true }
                         }
                     }
@@ -255,6 +267,40 @@ fun AppRoot(
             composable(NavRoute.DevicePairing.route) {
                 com.club.medlems.ui.sync.DevicePairingScreen(
                     onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            // Trainer authentication screen
+            composable(NavRoute.TrainerAuth.route) {
+                TrainerAuthScreen(
+                    onAuthenticated = { trainerId, trainerName ->
+                        navController.navigate(NavRoute.TrainerDashboard.route) {
+                            popUpTo(NavRoute.TrainerAuth.route) { inclusive = true }
+                        }
+                    },
+                    onBack = {
+                        // On trainer app, back from auth does nothing (it's the start screen)
+                    }
+                )
+            }
+
+            // Trainer dashboard screen
+            composable(NavRoute.TrainerDashboard.route) {
+                TrainerDashboardScreen(
+                    onLogout = {
+                        navController.navigate(NavRoute.TrainerAuth.route) {
+                            popUpTo(NavRoute.TrainerDashboard.route) { inclusive = true }
+                        }
+                    },
+                    onNavigateToEquipment = {
+                        navController.navigate(NavRoute.EquipmentList.route)
+                    },
+                    onNavigateToCheckouts = {
+                        navController.navigate(NavRoute.CurrentCheckouts.route)
+                    },
+                    onNavigateToAdmin = {
+                        navController.navigate(NavRoute.AttendantMenu.route)
+                    }
                 )
             }
         }

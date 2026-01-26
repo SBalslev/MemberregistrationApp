@@ -18,9 +18,10 @@ const LAPTOP_DEVICE_ID = 'laptop-master';
 function toSyncableMember(member: Member): SyncableMemberData {
   const now = new Date().toISOString();
   const lifecycle = member.memberLifecycleStage === 'TRIAL' ? 'TRIAL' : 'FULL';
+  const internalId = member.internalId || '';
 
   return {
-    internalId: member.internalId,
+    internalId,
     membershipId: member.membershipId,
     memberType: lifecycle,
     memberLifecycleStage: lifecycle,
@@ -113,7 +114,7 @@ export function queueForSync<T>(
  */
 export function queueMember(member: Member, operation: 'INSERT' | 'UPDATE' = 'INSERT'): string {
   const payload = toSyncableMember(member);
-  return queueForSync('Member', member.internalId, operation, payload);
+  return queueForSync('Member', payload.internalId, operation, payload);
 }
 
 /**

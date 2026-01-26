@@ -4,7 +4,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge, Edit2 } from 'lucide-react';
-import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, getDefaultSkvRegistration, SKV_WEAPON_TYPES, SKV_CALIBERS } from '../database';
+import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, getDefaultSkvRegistration, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, type ActivityType } from '../database';
 import type { Member, Gender } from '../types';
 import type { SkvRegistration, SkvWeapon, SkvStatus } from '../database/skvRepository';
 import type { MergeResult } from '../database/memberRepository';
@@ -380,6 +380,10 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
   const [showSkvModal, setShowSkvModal] = useState(false);
   const [showWeaponModal, setShowWeaponModal] = useState(false);
   const [editingWeapon, setEditingWeapon] = useState<SkvWeapon | null>(null);
+  const season = getSeasonDateRange();
+  const [activityStartDate, setActivityStartDate] = useState(season.startDate);
+  const [activityEndDate, setActivityEndDate] = useState(season.endDate);
+  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const { setSelectedMember } = useAppStore();
 
   // Calculate days since registration for trial members
@@ -411,6 +415,49 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
       setSkvWeapons([]);
     }
   }
+
+  const activityResult = useMemo(() => {
+    try {
+      return {
+        entries: getMemberActivityTimeline(member.internalId, {
+          startDate: activityStartDate,
+          endDate: activityEndDate,
+          activityTypes
+        }),
+        error: null as string | null
+      };
+    } catch (error) {
+      console.error('[MemberDetailPanel] Failed to load activity timeline:', error);
+      return {
+        entries: [],
+        error: 'Noget gik galt ved indlæsning af aktivitet. Prøv igen.'
+      };
+    }
+  }, [activityEndDate, activityStartDate, activityTypes, member.internalId]);
+
+  const groupedActivity = useMemo(() => {
+    const groups = new Map<string, typeof activityResult.entries>();
+    for (const entry of activityResult.entries) {
+      if (!groups.has(entry.localDate)) {
+        groups.set(entry.localDate, []);
+      }
+      groups.get(entry.localDate)?.push(entry);
+    }
+    return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [activityResult.entries]);
+
+  function toggleActivityType(type: ActivityType) {
+    setActivityTypes((current) =>
+      current.includes(type) ? current.filter((item) => item !== type) : [...current, type]
+    );
+  }
+
+  const activityTypeOptions: Array<{ value: ActivityType; label: string }> = [
+    { value: 'CHECK_IN', label: 'Check-in' },
+    { value: 'PRACTICE_SESSION', label: 'Træningspas' },
+    { value: 'EQUIPMENT_CHECKOUT', label: 'Udlån' },
+    { value: 'EQUIPMENT_RETURN', label: 'Returnering' }
+  ];
 
   return (
     <div className="p-6">
@@ -593,12 +640,75 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
         >
           Rediger medlem
         </button>
-        <button 
-          onClick={() => alert('Aktivitetslog kommer snart!')}
-          className="w-full px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-medium"
-        >
-          Se aktivitet
-        </button>
+      </div>
+
+      {/* Activity timeline */}
+      <div className="mt-8 pt-4 border-t border-gray-200">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-900">Aktivitet</h3>
+        </div>
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Periode</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={activityStartDate}
+                onChange={(event) => setActivityStartDate(event.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <input
+                type="date"
+                value={activityEndDate}
+                onChange={(event) => setActivityEndDate(event.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Aktivitetstyper</label>
+            <div className="flex flex-wrap gap-2">
+              {activityTypeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => toggleActivityType(option.value)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    activityTypes.includes(option.value)
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {activityResult.error ? (
+          <div className="text-sm text-red-600">{activityResult.error}</div>
+        ) : activityResult.entries.length === 0 ? (
+          <div className="text-sm text-gray-500">Ingen aktivitet i den valgte periode.</div>
+        ) : (
+          <div className="space-y-4">
+            {groupedActivity.map(([date, entries]) => (
+              <div key={date}>
+                <p className="text-xs font-semibold text-gray-500 mb-2">{date}</p>
+                <div className="space-y-2">
+                  {entries.map((entry) => (
+                    <div key={entry.id} className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm text-gray-900">{formatActivitySummary(entry)}</p>
+                        <p className="text-xs text-gray-500">{formatActivityTime(entry.occurredAtUtc)}</p>
+                      </div>
+                      <span className="text-xs text-gray-400">{formatActivityTypeLabel(entry.activityType)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Assign Member ID Modal */}
@@ -704,6 +814,54 @@ function formatDate(isoDate: string): string {
     });
   } catch {
     return isoDate;
+  }
+}
+
+function formatActivityTypeLabel(type: ActivityType): string {
+  switch (type) {
+    case 'CHECK_IN':
+      return 'Check-in';
+    case 'PRACTICE_SESSION':
+      return 'Træningspas';
+    case 'EQUIPMENT_CHECKOUT':
+      return 'Udlån';
+    case 'EQUIPMENT_RETURN':
+      return 'Returnering';
+    default:
+      return 'Aktivitet';
+  }
+}
+
+function formatActivityTime(isoDateTime: string): string {
+  try {
+    return new Date(isoDateTime).toLocaleTimeString('da-DK', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return '';
+  }
+}
+
+function formatActivitySummary(entry: {
+  activityType: ActivityType;
+  practiceType?: string | null;
+  classification?: string | null;
+  equipmentName?: string | null;
+  points?: number | null;
+}): string {
+  switch (entry.activityType) {
+    case 'PRACTICE_SESSION': {
+      const details = [entry.practiceType, entry.classification].filter(Boolean).join(' · ');
+      return details ? `Træningspas · ${details}` : 'Træningspas';
+    }
+    case 'EQUIPMENT_CHECKOUT':
+      return entry.equipmentName ? `Udlån · ${entry.equipmentName}` : 'Udlån';
+    case 'EQUIPMENT_RETURN':
+      return entry.equipmentName ? `Returnering · ${entry.equipmentName}` : 'Returnering';
+    case 'CHECK_IN':
+    default:
+      return 'Check-in';
   }
 }
 

@@ -8,6 +8,7 @@ import com.github.doyaaaaaken.kotlincsv.dsl.csvReader
 import com.github.doyaaaaaken.kotlincsv.dsl.csvWriter
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +20,12 @@ data class ImportResult(
     val imported: Int,
     val skippedDuplicates: Int,
     val newlyInactive: Int,
+    val errors: List<String>
+)
+
+data class SessionImportResult(
+    val imported: Int,
+    val skippedDuplicates: Int,
     val errors: List<String>
 )
 
@@ -165,6 +172,101 @@ class CsvService @Inject constructor(
         }
     }
 
+    suspend fun importSessions(csvContent: String): SessionImportResult = withContext(Dispatchers.IO) {
+        val firstLine = csvContent.lines().firstOrNull() ?: ""
+        val delimiter = if (';' in firstLine) ';' else ','
+
+        val lines = csvReader { this.delimiter = delimiter }.readAll(csvContent)
+        if (lines.isEmpty()) return@withContext SessionImportResult(0, 0, listOf("Empty file"))
+        val header = lines.first()
+        val required = setOf("FORMAT_VERSION","session_id","membership_id","created_at_utc","local_date","practice_type","points")
+        if (!required.all { it in header }) return@withContext SessionImportResult(0, 0, listOf("Missing required headers"))
+        val idx = header.withIndex().associate { it.value to it.index }
+        val errors = mutableListOf<String>()
+        var imported = 0
+        var skippedDup = 0
+        val membersByMembershipId = memberDao.allMembers()
+            .filter { it.membershipId != null }
+            .associateBy { it.membershipId!! }
+
+        val rows = lines.drop(1)
+        rows.forEachIndexed { lineIdx, row ->
+            val lineNumber = lineIdx + 2
+            val sessionId = row.getOrNull(idx["session_id"] ?: -1).orEmpty().trim()
+            if (sessionId.isBlank()) {
+                errors += "Line ${lineNumber}: blank session_id"
+                return@forEachIndexed
+            }
+            if (sessionDao.countById(sessionId) > 0) {
+                skippedDup++
+                return@forEachIndexed
+            }
+            val membershipId = row.getOrNull(idx["membership_id"] ?: -1).orEmpty().trim()
+            if (membershipId.isBlank()) {
+                errors += "Line ${lineNumber}: blank membership_id"
+                return@forEachIndexed
+            }
+            val member = membersByMembershipId[membershipId]
+            if (member == null) {
+                errors += "Line ${lineNumber}: membership_id not found"
+                return@forEachIndexed
+            }
+            val createdAtRaw = row.getOrNull(idx["created_at_utc"] ?: -1).orEmpty().trim()
+            val localDateRaw = row.getOrNull(idx["local_date"] ?: -1).orEmpty().trim()
+            val practiceTypeRaw = row.getOrNull(idx["practice_type"] ?: -1).orEmpty().trim()
+            val pointsRaw = row.getOrNull(idx["points"] ?: -1).orEmpty().trim()
+            val krydserRaw = row.getOrNull(idx["krydser"] ?: -1).orEmpty().trim()
+            val classificationRaw = row.getOrNull(idx["classification"] ?: -1).orEmpty().trim()
+            val sourceRaw = row.getOrNull(idx["source"] ?: -1).orEmpty().trim()
+
+            val createdAt = runCatching { Instant.parse(createdAtRaw) }.getOrElse {
+                errors += "Line ${lineNumber}: invalid created_at_utc"
+                return@forEachIndexed
+            }
+            val localDate = runCatching { LocalDate.parse(localDateRaw) }.getOrElse {
+                errors += "Line ${lineNumber}: invalid local_date"
+                return@forEachIndexed
+            }
+            val practiceType = parsePracticeType(practiceTypeRaw) ?: run {
+                errors += "Line ${lineNumber}: invalid practice_type"
+                return@forEachIndexed
+            }
+            val points = pointsRaw.toIntOrNull()?.takeIf { it >= 0 } ?: run {
+                errors += "Line ${lineNumber}: invalid points"
+                return@forEachIndexed
+            }
+            val krydser = if (krydserRaw.isBlank()) {
+                null
+            } else {
+                krydserRaw.toIntOrNull()?.takeIf { it >= 0 } ?: run {
+                    errors += "Line ${lineNumber}: invalid krydser"
+                    return@forEachIndexed
+                }
+            }
+            val source = parseSessionSource(sourceRaw) ?: run {
+                errors += "Line ${lineNumber}: invalid source"
+                return@forEachIndexed
+            }
+
+            val session = PracticeSession(
+                id = sessionId,
+                internalMemberId = member.internalId,
+                membershipId = member.membershipId,
+                createdAtUtc = createdAt,
+                localDate = localDate,
+                practiceType = practiceType,
+                points = points,
+                krydser = krydser,
+                classification = classificationRaw.ifBlank { null },
+                source = source
+            )
+            sessionDao.insert(session)
+            imported++
+        }
+
+        SessionImportResult(imported, skippedDup, errors)
+    }
+
     suspend fun importMembers(csvContent: String): ImportResult = withContext(Dispatchers.IO) {
         // Auto-detect delimiter: check if first line contains semicolons or commas
         val firstLine = csvContent.lines().firstOrNull() ?: ""
@@ -242,5 +344,25 @@ class CsvService @Inject constructor(
         val missingInternalIds = missingMembershipIds.mapNotNull { membershipIdToInternalId[it] }
         if (missingInternalIds.isNotEmpty()) memberDao.updateStatus(missingInternalIds, MemberStatus.INACTIVE)
         ImportResult(imported, skippedDup, missingInternalIds.size, errors)
+    }
+
+    private fun parsePracticeType(raw: String): PracticeType? {
+        val normalized = raw.trim().replace(" ", "").lowercase()
+        return when (normalized) {
+            "riffel" -> PracticeType.Riffel
+            "pistol" -> PracticeType.Pistol
+            "luftriffel" -> PracticeType.LuftRiffel
+            "luftpistol" -> PracticeType.LuftPistol
+            "andet" -> PracticeType.Andet
+            else -> null
+        }
+    }
+
+    private fun parseSessionSource(raw: String): SessionSource? {
+        return when (raw.trim().lowercase()) {
+            "", "kiosk" -> SessionSource.kiosk
+            "attendant" -> SessionSource.attendant
+            else -> null
+        }
     }
 }

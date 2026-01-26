@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -78,7 +79,7 @@ private const val TAG = "TrainerAuthScreen"
  * Trainer authentication screen with QR code scanning.
  *
  * States:
- * - Waiting for card scan: Shows camera with "Venter pa traenerkort..." message
+ * - Waiting for card scan: Shows camera with "Venter på trænerkort..." message
  * - Access Granted: Shows success message with trainer name
  * - Access Denied: Shows denial message
  * - Session Expiring: Shows extend session dialog
@@ -114,6 +115,7 @@ fun TrainerAuthScreen(
     }
 
     var showExtendDialog by remember { mutableStateOf(false) }
+    var showPinDialog by remember { mutableStateOf(false) }
     var lastProcessedScan by remember { mutableStateOf(0L) }
 
     // Show extend dialog when session is expiring
@@ -129,7 +131,7 @@ fun TrainerAuthScreen(
             }
             is TrainerAuthState.Denied -> {
                 scope.launch {
-                    snackbarHostState.showSnackbar("Adgang naegtet: ${state.reason}")
+                    snackbarHostState.showSnackbar("Adgang nægtet: ${state.reason}")
                 }
                 // Reset to idle after showing message
                 delay(3000)
@@ -158,6 +160,20 @@ fun TrainerAuthScreen(
                 viewModel.logout()
                 showExtendDialog = false
             }
+        )
+    }
+
+    // PIN entry dialog
+    if (showPinDialog) {
+        PinEntryDialog(
+            onPinEntered = { pin ->
+                if (viewModel.onPinEntered(pin)) {
+                    showPinDialog = false
+                }
+            },
+            onDismiss = { showPinDialog = false },
+            errorMessage = viewModel.getPinError(),
+            cooldownMs = viewModel.getCooldownRemaining()
         )
     }
 
@@ -200,7 +216,7 @@ fun TrainerAuthScreen(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Traener Login",
+                        text = "Træner Login",
                         color = Color.White,
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold
@@ -249,7 +265,8 @@ fun TrainerAuthScreen(
                                         }
                                     }
                                 }
-                            }
+                            },
+                            onPinLoginClicked = { showPinDialog = true }
                         )
                     }
                 }
@@ -310,7 +327,7 @@ private fun CameraPermissionRequest(
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Kameratilladelse kraeves for at scanne traenerkort",
+            text = "Kameratilladelse kræves for at scanne trænerkort",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center
         )
@@ -324,7 +341,8 @@ private fun CameraPermissionRequest(
 @Composable
 private fun ScannerView(
     isScanning: Boolean,
-    onQrScanned: (String) -> Unit
+    onQrScanned: (String) -> Unit,
+    onPinLoginClicked: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize()
@@ -419,12 +437,29 @@ private fun ScannerView(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Venter pa traenerkort...",
+                    text = "Venter på trænerkort...",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
                     fontWeight = FontWeight.Medium
                 )
             }
+        }
+
+        // PIN login button
+        OutlinedButton(
+            onClick = onPinLoginClicked,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Log ind med PIN")
         }
     }
 }
@@ -462,7 +497,7 @@ private fun AccessDeniedView(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Adgang naegtet",
+                    text = "Adgang nægtet",
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     fontWeight = FontWeight.Bold
@@ -486,7 +521,7 @@ private fun AccessDeniedView(
         Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedButton(onClick = onDismiss) {
-            Text("Prov igen")
+            Text("Prøv igen")
         }
     }
 }
@@ -608,7 +643,123 @@ private fun ErrorView(
         Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedButton(onClick = onDismiss) {
-            Text("Prov igen")
+            Text("Prøv igen")
         }
     }
+}
+
+@Composable
+private fun PinEntryDialog(
+    onPinEntered: (String) -> Unit,
+    onDismiss: () -> Unit,
+    errorMessage: String?,
+    cooldownMs: Long
+) {
+    var pin by remember { mutableStateOf("") }
+    val isCoolingDown = cooldownMs > 0
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Administrator login") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Indtast 4-cifret PIN kode",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // PIN display (dots/numbers)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    repeat(4) { index ->
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    MaterialTheme.shapes.medium
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (index < pin.length) {
+                                Text(
+                                    text = "●",
+                                    style = MaterialTheme.typography.headlineMedium
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Number pad
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        listOf("1", "2", "3"),
+                        listOf("4", "5", "6"),
+                        listOf("7", "8", "9"),
+                        listOf("", "0", "⌫")
+                    ).forEach { row ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            row.forEach { digit ->
+                                if (digit.isEmpty()) {
+                                    Spacer(modifier = Modifier.size(64.dp))
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            if (digit == "⌫") {
+                                                if (pin.isNotEmpty()) {
+                                                    pin = pin.dropLast(1)
+                                                }
+                                            } else if (pin.length < 4) {
+                                                pin += digit
+                                                if (pin.length == 4) {
+                                                    onPinEntered(pin)
+                                                    pin = ""
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.size(64.dp),
+                                        enabled = !isCoolingDown
+                                    ) {
+                                        Text(
+                                            text = digit,
+                                            style = MaterialTheme.typography.titleLarge
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Error message
+                if (errorMessage != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Annuller")
+            }
+        }
+    )
 }

@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Settings, Database, Wifi, Download, Upload, Trash2, CheckCircle, AlertCircle, HardDrive, FileSpreadsheet } from 'lucide-react';
+import { Settings, Database, Wifi, Download, Upload, Trash2, CheckCircle, AlertCircle, HardDrive, FileSpreadsheet, Edit2, Save, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { isElectron, getElectronAPI } from '../types/electron';
 import { exportDatabase, importDatabase, clearDatabase } from '../database';
@@ -39,6 +39,9 @@ export function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings>(getInitialSettings);
   const [deviceInfo, setDeviceInfo] = useState<{ deviceId: string; deviceName: string } | null>(null);
   const [serverStatus, setServerStatus] = useState<{ running: boolean; port: number } | null>(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [nameSaveStatus, setNameSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [dbSize] = useState<string>(() => {
     try {
       const data = exportDatabase();
@@ -71,6 +74,41 @@ export function SettingsPage() {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
     localStorage.setItem('appSettings', JSON.stringify(newSettings));
+  }
+
+  function startEditingName() {
+    setEditedName(deviceInfo?.deviceName || '');
+    setIsEditingName(true);
+  }
+
+  function cancelEditingName() {
+    setIsEditingName(false);
+    setEditedName('');
+    setNameSaveStatus('idle');
+  }
+
+  async function saveDeviceName() {
+    if (!editedName.trim()) return;
+
+    setNameSaveStatus('saving');
+    try {
+      const api = getElectronAPI();
+      const result = await api?.setDeviceName?.(editedName.trim());
+
+      if (result?.success) {
+        setDeviceInfo(prev => prev ? { ...prev, deviceName: result.name || editedName.trim() } : null);
+        setIsEditingName(false);
+        setNameSaveStatus('success');
+        setTimeout(() => setNameSaveStatus('idle'), 2000);
+      } else {
+        setNameSaveStatus('error');
+        setTimeout(() => setNameSaveStatus('idle'), 3000);
+      }
+    } catch (error) {
+      console.error('Failed to save device name:', error);
+      setNameSaveStatus('error');
+      setTimeout(() => setNameSaveStatus('idle'), 3000);
+    }
   }
 
   async function handleExport() {
@@ -196,7 +234,57 @@ export function SettingsPage() {
               <>
                 <div className="flex justify-between items-center py-2">
                   <span className="text-gray-600">Enhedsnavn</span>
-                  <span className="font-medium text-gray-900">{deviceInfo.deviceName}</span>
+                  {isEditingName ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={editedName}
+                        onChange={(e) => setEditedName(e.target.value)}
+                        className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                        placeholder="Indtast enhedsnavn"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveDeviceName();
+                          if (e.key === 'Escape') cancelEditingName();
+                        }}
+                      />
+                      <button
+                        onClick={saveDeviceName}
+                        disabled={nameSaveStatus === 'saving' || !editedName.trim()}
+                        className="p-1 text-green-600 hover:bg-green-50 rounded disabled:opacity-50"
+                        title="Gem"
+                      >
+                        {nameSaveStatus === 'saving' ? (
+                          <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                      </button>
+                      <button
+                        onClick={cancelEditingName}
+                        className="p-1 text-gray-500 hover:bg-gray-100 rounded"
+                        title="Annuller"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900">{deviceInfo.deviceName}</span>
+                      {isElectron() && (
+                        <button
+                          onClick={startEditingName}
+                          className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                          title="Rediger enhedsnavn"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      {nameSaveStatus === 'success' && (
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex justify-between items-center py-2 border-t border-gray-100">
                   <span className="text-gray-600">Enheds-ID</span>

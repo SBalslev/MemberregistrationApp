@@ -30,7 +30,7 @@ let publishedService = null;
 function getOrCreateDeviceId() {
   const userDataPath = app.getPath('userData');
   const deviceIdPath = path.join(userDataPath, 'device-id.txt');
-  
+
   try {
     if (fs.existsSync(deviceIdPath)) {
       const savedId = fs.readFileSync(deviceIdPath, 'utf8').trim();
@@ -42,7 +42,7 @@ function getOrCreateDeviceId() {
   } catch (err) {
     console.warn('[Device] Could not read device ID file:', err.message);
   }
-  
+
   // Generate new ID and save it
   const newId = `laptop-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
   try {
@@ -51,15 +51,88 @@ function getOrCreateDeviceId() {
   } catch (err) {
     console.warn('[Device] Could not save device ID:', err.message);
   }
-  
+
   return newId;
+}
+
+/**
+ * Get or set the device name.
+ * Stored in the app's userData directory so it persists across restarts.
+ * Defaults to hostname + "Master Laptop" if not set.
+ */
+function getDeviceName() {
+  const userDataPath = app.getPath('userData');
+  const deviceNamePath = path.join(userDataPath, 'device-name.txt');
+
+  try {
+    if (fs.existsSync(deviceNamePath)) {
+      const savedName = fs.readFileSync(deviceNamePath, 'utf8').trim();
+      if (savedName) {
+        console.log('[Device] Using saved device name:', savedName);
+        return savedName;
+      }
+    }
+  } catch (err) {
+    console.warn('[Device] Could not read device name file:', err.message);
+  }
+
+  // Default to hostname-based name
+  const os = require('os');
+  const hostname = os.hostname() || 'Unknown';
+  const defaultName = `${hostname} Master Laptop`;
+  console.log('[Device] Using default device name:', defaultName);
+  return defaultName;
+}
+
+/**
+ * Save the device name to persistent storage.
+ */
+function setDeviceName(name) {
+  const userDataPath = app.getPath('userData');
+  const deviceNamePath = path.join(userDataPath, 'device-name.txt');
+
+  try {
+    fs.writeFileSync(deviceNamePath, name.trim(), 'utf8');
+    console.log('[Device] Saved device name:', name);
+
+    // Update in-memory deviceInfo
+    deviceInfo.deviceName = name.trim();
+
+    // Re-advertise with new name if mDNS is running
+    if (publishedService && bonjour) {
+      restartMdnsAdvertisement();
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[Device] Could not save device name:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Restart mDNS advertisement with current device info.
+ * Called when device name changes.
+ */
+function restartMdnsAdvertisement() {
+  console.log('[mDNS] Restarting advertisement with new device name...');
+
+  if (publishedService) {
+    publishedService.stop();
+    publishedService = null;
+  }
+
+  // Small delay before re-publishing
+  setTimeout(() => {
+    startMdnsAdvertisement();
+  }, 500);
 }
 
 // Device info for this laptop (initialized after app ready)
 let deviceInfo = {
   deviceId: null, // Will be set in app.whenReady()
   deviceType: 'LAPTOP',  // Must match Android DeviceType enum
-  deviceName: 'Master Admin Laptop',
+  deviceName: null, // Will be set in app.whenReady() from config file
   schemaVersion: SCHEMA_VERSION
 };
 
@@ -393,17 +466,58 @@ function startSyncServer() {
   // SEC-1, SEC-2: POST /api/pair - Tablet confirms pairing with 6-digit code
   server.post('/api/pair', (req, res) => {
     try {
-      // Support both field names for compatibility
-      const { deviceId, deviceType, deviceName, code, pairingCode } = req.body;
-      const submittedCode = code || pairingCode;
+      // Support both Android format (nested device object) and flat format
+      // Android sends: { trustToken, device: { id, name, type }, schemaVersion }
+      // Flat format: { deviceId, deviceType, deviceName, code/pairingCode }
+      const body = req.body;
+
+      let deviceId, deviceType, deviceName, submittedCode;
+
+      if (body.device && typeof body.device === 'object') {
+        // Android format with nested device object
+        deviceId = body.device.id;
+        deviceType = body.device.type;
+        deviceName = body.device.name;
+        submittedCode = body.trustToken || body.code || body.pairingCode;
+        console.log(`[Pair] Android format request from ${deviceName} (${deviceType})`);
+      } else {
+        // Flat format
+        deviceId = body.deviceId;
+        deviceType = body.deviceType;
+        deviceName = body.deviceName;
+        submittedCode = body.code || body.pairingCode || body.trustToken;
+      }
+
       console.log(`[Pair] Request from ${deviceName} (${deviceType}) with code: ${submittedCode ? '******' : 'none'}`);
+
+      // Validate required fields
+      if (!deviceId || !deviceName) {
+        console.error(`[Pair] Missing required fields: deviceId=${deviceId}, deviceName=${deviceName}`);
+        console.error(`[Pair] Full request body:`, JSON.stringify(body, null, 2));
+        return res.status(400).json({
+          success: false,
+          error: 'Manglende enhedsoplysninger',
+          errorMessage: 'Manglende enhedsoplysninger'
+        });
+      }
+
+      if (!submittedCode) {
+        console.error(`[Pair] Missing pairing code`);
+        return res.status(400).json({
+          success: false,
+          error: 'Manglende parringskode',
+          errorMessage: 'Manglende parringskode'
+        });
+      }
 
       // Check rate limit
       if (isRateLimited(deviceId)) {
         const entry = pairingRateLimits.get(deviceId);
         console.warn(`[Pair] Device ${deviceId} is rate-limited`);
         return res.status(429).json({
+          success: false,
           error: 'For mange forsøg - vent venligst',
+          errorMessage: 'For mange forsøg - vent venligst',
           blockedUntil: entry?.blockedUntil ? new Date(entry.blockedUntil).toISOString() : null
         });
       }
@@ -413,7 +527,9 @@ function startSyncServer() {
         recordFailedPairingAttempt(deviceId);
         console.warn(`[Pair] No active pairing session`);
         return res.status(400).json({
-          error: 'Ingen aktiv parringssession. Start parring fra laptop først.'
+          success: false,
+          error: 'Ingen aktiv parringssession. Start parring fra laptop først.',
+          errorMessage: 'Ingen aktiv parringssession. Start parring fra laptop først.'
         });
       }
 
@@ -423,7 +539,9 @@ function startSyncServer() {
         recordFailedPairingAttempt(deviceId);
         console.warn(`[Pair] Pairing session expired`);
         return res.status(400).json({
-          error: 'Parringssession udløbet. Start en ny parring.'
+          success: false,
+          error: 'Parringssession udløbet. Start en ny parring.',
+          errorMessage: 'Parringssession udløbet. Start en ny parring.'
         });
       }
 
@@ -431,15 +549,19 @@ function startSyncServer() {
       if (submittedCode !== activePairingSession.code) {
         const result = recordFailedPairingAttempt(deviceId);
         console.warn(`[Pair] Invalid pairing code from ${deviceId}`);
-        
+
         if (result.attempts >= 3) {
           return res.status(429).json({
-            error: 'For mange forsøg - enhed blokeret i 5 minutter'
+            success: false,
+            error: 'For mange forsøg - enhed blokeret i 5 minutter',
+            errorMessage: 'For mange forsøg - enhed blokeret i 5 minutter'
           });
         }
-        
+
         return res.status(401).json({
+          success: false,
           error: 'Ugyldig parringskode',
+          errorMessage: 'Ugyldig parringskode',
           attemptsRemaining: 3 - result.attempts
         });
       }
@@ -474,13 +596,21 @@ function startSyncServer() {
       console.log(`[Pair] SUCCESS - Device ${deviceName} (${deviceId}) paired`);
 
       // Response matches Android's PairingResponse class
+      // Android expects: { success, authToken, networkId, trustedDevices, timestamp }
+      const laptopDevice = {
+        id: deviceInfo.deviceId,
+        name: deviceInfo.deviceName,
+        type: deviceInfo.deviceType,
+        lastSeenUtc: new Date().toISOString(),
+        pairedAtUtc: new Date().toISOString(),
+        isTrusted: true
+      };
+
       res.json({
         success: true,
         authToken: token,
-        laptopDeviceId: deviceInfo.deviceId,
-        laptopName: deviceInfo.deviceName,
-        tokenExpiresAt: expiresAt.toISOString(),
-        schemaVersion: SCHEMA_VERSION,
+        networkId: `network-${deviceInfo.deviceId}`,
+        trustedDevices: [laptopDevice],
         timestamp: new Date().toISOString()
       });
     } catch (error) {
@@ -817,6 +947,18 @@ ipcMain.handle('sync:scan-subnet', async () => {
   return await scanSubnet();
 });
 
+// Device name management
+ipcMain.handle('device:get-name', () => {
+  return { name: deviceInfo.deviceName };
+});
+ipcMain.handle('device:set-name', (event, { name }) => {
+  if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    return { success: false, error: 'Invalid device name' };
+  }
+  const success = setDeviceName(name.trim());
+  return { success, name: deviceInfo.deviceName };
+});
+
 // ===== SEC-1: Pairing Session Management =====
 
 // Start a new pairing session (called from UI)
@@ -1032,10 +1174,12 @@ ipcMain.on('sync:data-response', (event, { requestId, data, error }) => {
 
 // App lifecycle
 app.whenReady().then(() => {
-  // Initialize persistent device ID
+  // Initialize persistent device ID and name
   deviceInfo.deviceId = getOrCreateDeviceId();
+  deviceInfo.deviceName = getDeviceName();
   console.log('[Startup] Device ID:', deviceInfo.deviceId);
-  
+  console.log('[Startup] Device Name:', deviceInfo.deviceName);
+
   createWindow();
   startSyncServer();
   startMdnsAdvertisement();

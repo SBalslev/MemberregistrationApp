@@ -8,6 +8,7 @@ import { Sidebar } from './components/Sidebar';
 import {
   DashboardPage,
   MembersPage,
+  MemberActivityOverviewPage,
   EquipmentPage,
   FinancePage,
   DevicesPage,
@@ -296,6 +297,8 @@ function PageRouter({ currentPage }: { currentPage: string }) {
       return <DashboardPage />;
     case 'members':
       return <MembersPage />;
+    case 'member-activity':
+      return <MemberActivityOverviewPage />;
     // NOTE: 'registrations' page removed - approval workflow deprecated per FR-7.2
     // Legacy route redirects to members page (trial members managed there now)
     case 'registrations':

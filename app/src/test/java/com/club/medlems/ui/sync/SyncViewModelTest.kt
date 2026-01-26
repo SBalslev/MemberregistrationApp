@@ -10,6 +10,7 @@ import com.club.medlems.data.sync.SyncState
 import com.club.medlems.domain.prefs.DeviceConfigPreferences
 import com.club.medlems.network.DeviceDiscoveryService
 import com.club.medlems.network.DiscoveredDevice
+import com.club.medlems.network.SyncApiServer
 import com.club.medlems.network.SyncClient
 import com.club.medlems.network.TrustManager
 import kotlinx.coroutines.Dispatchers
@@ -70,6 +71,7 @@ class SyncViewModelTest {
             on { observePendingCount() } doReturn MutableStateFlow(0)
             on { observeFailedCount() } doReturn MutableStateFlow(0)
         }
+        val syncApiServer = mock<SyncApiServer>()
 
         val viewModel = SyncViewModel(
             syncManager,
@@ -78,7 +80,8 @@ class SyncViewModelTest {
             syncLogManager,
             deviceConfigPreferences,
             syncClient,
-            syncOutboxManager
+            syncOutboxManager,
+            syncApiServer
         )
 
         val device = DiscoveredDevice(
