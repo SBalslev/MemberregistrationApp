@@ -25,8 +25,9 @@ The sync system uses a **peer-to-peer HTTP API** approach with **mDNS service di
 
 ### Data Flow
 
-1. **Laptop → Tablet (Members)**: Laptop is master for member data
+1. **Laptop → Tablet (Members and Trainers)**: Laptop is master for member and trainer data
    - `POST /api/sync/push` with members array
+   - Trainer data included: `trainerInfos`, `trainerDisciplines`
    - Tablet applies via `SyncRepository.applySyncPayload()`
 
 2. **Tablet → Laptop (Check-ins, Sessions, Registrations)**: Tablet owns activity data

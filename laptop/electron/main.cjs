@@ -408,7 +408,9 @@ function startSyncServer() {
         equipmentItems: [],
         equipmentCheckouts: [],
         newMemberRegistrations: [],
-        memberPreferences: []
+        memberPreferences: [],
+        trainerInfos: [],
+        trainerDisciplines: []
       };
 
       try {
@@ -437,6 +439,14 @@ function startSyncServer() {
         if (memberData && memberData.memberPreferences) {
           entities.memberPreferences = memberData.memberPreferences;
           console.log(`[Sync] Sending ${entities.memberPreferences.length} member preferences to tablet`);
+        }
+        if (memberData && memberData.trainerInfos) {
+          entities.trainerInfos = memberData.trainerInfos;
+          console.log(`[Sync] Sending ${entities.trainerInfos.length} trainer infos to tablet`);
+        }
+        if (memberData && memberData.trainerDisciplines) {
+          entities.trainerDisciplines = memberData.trainerDisciplines;
+          console.log(`[Sync] Sending ${entities.trainerDisciplines.length} trainer disciplines to tablet`);
         }
       } catch (ipcError) {
         console.warn('[Sync] Could not get members from renderer:', ipcError.message);

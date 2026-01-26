@@ -138,6 +138,8 @@ export interface SyncPushPayload {
     checkIns?: SyncableCheckIn[];
     practiceSessions?: SyncablePracticeSession[];
     newMemberRegistrations?: SyncableNewMemberRegistration[];
+    trainerInfos?: SyncableTrainerInfo[];
+    trainerDisciplines?: SyncableTrainerDiscipline[];
   };
 }
 
@@ -210,6 +212,8 @@ export interface MemberDataPayload {
   equipmentItems?: unknown[];
   equipmentCheckouts?: unknown[];
   memberPreferences?: SyncableMemberPreference[];
+  trainerInfos?: SyncableTrainerInfo[];
+  trainerDisciplines?: SyncableTrainerDiscipline[];
   count: number;
   timestamp: string;
 }
@@ -219,6 +223,31 @@ export interface SyncableMemberPreference {
   lastPracticeType?: string | null;
   lastClassification?: string | null;
   updatedAtUtc: string;
+}
+
+export interface SyncableTrainerInfo {
+  memberId: string;
+  isTrainer: boolean;
+  hasSkydelederCertificate: boolean;
+  certifiedDate?: string | null;
+  deviceId: string;
+  syncVersion: number;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
+  syncedAtUtc?: string | null;
+}
+
+export interface SyncableTrainerDiscipline {
+  id: string;
+  memberId: string;
+  discipline: string;
+  level: string;
+  certifiedDate?: string | null;
+  deviceId: string;
+  syncVersion: number;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
+  syncedAtUtc?: string | null;
 }
 
 export interface SyncableMemberData {

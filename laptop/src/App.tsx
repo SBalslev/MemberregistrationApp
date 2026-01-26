@@ -17,7 +17,7 @@ import {
   ImportPage,
   TrainersPage
 } from './pages';
-import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, getMemberPreferencesForSync, runPhotoMigration, isMigrationNeeded, type SyncPayload } from './database';
+import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, getMemberPreferencesForSync, getTrainerDataForSync, runPhotoMigration, isMigrationNeeded, type SyncPayload } from './database';
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
 
@@ -123,12 +123,15 @@ function App() {
             
             try {
               const members = getMemberDataForFullSync();
+              const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
               api?.sendMemberData({
                 members,
+                trainerInfos,
+                trainerDisciplines,
                 count: members.length,
                 timestamp: new Date().toISOString()
               });
-              console.log(`[App] Sent ${members.length} members to tablet`);
+              console.log(`[App] Sent ${members.length} members, ${trainerInfos.length} trainer infos, ${trainerDisciplines.length} trainer disciplines to tablet`);
             } catch (err) {
               console.error('[App] Error sending member data:', err);
             }
@@ -151,13 +154,16 @@ function App() {
             const memberPreferences = deviceType === 'MEMBER_TABLET'
               ? getMemberPreferencesForSync()
               : [];
-            console.log(`[App] Returning ${members.length} members, ${equipmentItems.length} equipment items, ${memberPreferences.length} preferences for sync`);
+            const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
+            console.log(`[App] Returning ${members.length} members, ${equipmentItems.length} equipment items, ${memberPreferences.length} preferences, ${trainerInfos.length} trainer infos, ${trainerDisciplines.length} trainer disciplines for sync`);
             return {
               members,
               registrations,
               equipmentItems,
               equipmentCheckouts,
               memberPreferences,
+              trainerInfos,
+              trainerDisciplines,
               count: members.length,
               timestamp: new Date().toISOString()
             };

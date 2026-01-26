@@ -284,8 +284,9 @@ class SyncRepository @Inject constructor(
                     // New trainer info - insert it
                     trainerInfoDao.upsert(syncTrainerInfo.toEntity())
                     trainerInfosProcessed++
-                } else if (syncTrainerInfo.syncVersion > existing.syncVersion) {
-                    // Incoming has higher version - update local record
+                } else if (syncTrainerInfo.syncVersion > existing.syncVersion ||
+                    syncTrainerInfo.modifiedAtUtc > existing.modifiedAtUtc) {
+                    // Incoming has higher version or newer modified timestamp - update local record
                     trainerInfoDao.upsert(syncTrainerInfo.toEntity())
                     trainerInfosProcessed++
                     Log.d(TAG, "Updated trainer info ${syncTrainerInfo.memberId}: version=${syncTrainerInfo.syncVersion}")
@@ -304,8 +305,9 @@ class SyncRepository @Inject constructor(
                     // New discipline - insert it
                     trainerDisciplineDao.upsert(syncDiscipline.toEntity())
                     trainerDisciplinesProcessed++
-                } else if (syncDiscipline.syncVersion > existing.syncVersion) {
-                    // Incoming has higher version - update local record
+                } else if (syncDiscipline.syncVersion > existing.syncVersion ||
+                    syncDiscipline.modifiedAtUtc > existing.modifiedAtUtc) {
+                    // Incoming has higher version or newer modified timestamp - update local record
                     trainerDisciplineDao.upsert(syncDiscipline.toEntity())
                     trainerDisciplinesProcessed++
                     Log.d(TAG, "Updated trainer discipline ${syncDiscipline.id}: version=${syncDiscipline.syncVersion}")

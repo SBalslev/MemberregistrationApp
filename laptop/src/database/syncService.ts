@@ -1385,6 +1385,11 @@ async function processTrainerDiscipline(discipline: SyncableTrainerDiscipline): 
  * Returns all trainer infos and disciplines.
  */
 export function getTrainerDataForSync(): { trainerInfos: SyncableTrainerInfo[], trainerDisciplines: SyncableTrainerDiscipline[] } {
+  const normalizeDateToInstant = (value?: string | null): string | null => {
+    if (!value) return null;
+    return value.includes('T') ? value : `${value}T00:00:00Z`;
+  };
+
   const trainerInfos = query<SyncableTrainerInfo>(
     `SELECT memberId, isTrainer, hasSkydelederCertificate, certifiedDate,
             deviceId, syncVersion, createdAtUtc, modifiedAtUtc, syncedAtUtc
@@ -1392,14 +1397,18 @@ export function getTrainerDataForSync(): { trainerInfos: SyncableTrainerInfo[], 
   ).map(info => ({
     ...info,
     isTrainer: Boolean(info.isTrainer),
-    hasSkydelederCertificate: Boolean(info.hasSkydelederCertificate)
+    hasSkydelederCertificate: Boolean(info.hasSkydelederCertificate),
+    certifiedDate: normalizeDateToInstant(info.certifiedDate ?? null)
   }));
 
   const trainerDisciplines = query<SyncableTrainerDiscipline>(
     `SELECT id, memberId, discipline, level, certifiedDate,
             deviceId, syncVersion, createdAtUtc, modifiedAtUtc, syncedAtUtc
      FROM TrainerDiscipline`
-  );
+  ).map(discipline => ({
+    ...discipline,
+    certifiedDate: normalizeDateToInstant(discipline.certifiedDate ?? null)
+  }));
 
   return { trainerInfos, trainerDisciplines };
 }

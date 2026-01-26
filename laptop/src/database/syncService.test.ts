@@ -54,7 +54,7 @@ vi.mock('../utils/photoStorage', () => ({
 
 // Import after mocking
 import { execute, query } from './db';
-import { processSyncPayload } from './syncService';
+import { getTrainerDataForSync, processSyncPayload } from './syncService';
 
 // Type definitions for test payloads
 interface SyncableNewMemberRegistration {
@@ -284,6 +284,88 @@ describe('Sync Service - Registration Operations', () => {
       // Assert
       expect(existing).toHaveLength(1);
     });
+  });
+});
+
+describe('Sync Service - Trainer Data Sync', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should return trainer data with boolean flags normalized', () => {
+    const trainerInfoRow = {
+      memberId: 'member-1',
+      isTrainer: 1,
+      hasSkydelederCertificate: 0,
+      certifiedDate: null,
+      deviceId: 'laptop-master',
+      syncVersion: 2,
+      createdAtUtc: '2026-01-26T10:00:00Z',
+      modifiedAtUtc: '2026-01-26T10:00:00Z',
+      syncedAtUtc: null
+    };
+
+    const trainerDisciplineRow = {
+      id: 'disc-1',
+      memberId: 'member-1',
+      discipline: 'Pistol',
+      level: 'FULL',
+      certifiedDate: null,
+      deviceId: 'laptop-master',
+      syncVersion: 1,
+      createdAtUtc: '2026-01-26T10:00:00Z',
+      modifiedAtUtc: '2026-01-26T10:00:00Z',
+      syncedAtUtc: null
+    };
+
+    vi.mocked(query)
+      .mockReturnValueOnce([trainerInfoRow])
+      .mockReturnValueOnce([trainerDisciplineRow]);
+
+    const result = getTrainerDataForSync();
+
+    expect(result.trainerInfos).toHaveLength(1);
+    expect(result.trainerInfos[0].isTrainer).toBe(true);
+    expect(result.trainerInfos[0].hasSkydelederCertificate).toBe(false);
+    expect(result.trainerDisciplines).toHaveLength(1);
+    expect(result.trainerDisciplines[0].discipline).toBe('Pistol');
+    expect(result.trainerDisciplines[0].level).toBe('FULL');
+  });
+
+  it('should normalize certified dates to ISO instants', () => {
+    const trainerInfoRow = {
+      memberId: 'member-2',
+      isTrainer: 1,
+      hasSkydelederCertificate: 1,
+      certifiedDate: '2026-01-22',
+      deviceId: 'laptop-master',
+      syncVersion: 1,
+      createdAtUtc: '2026-01-26T10:00:00Z',
+      modifiedAtUtc: '2026-01-26T10:00:00Z',
+      syncedAtUtc: null
+    };
+
+    const trainerDisciplineRow = {
+      id: 'disc-2',
+      memberId: 'member-2',
+      discipline: 'Riffel',
+      level: 'ASSISTANT',
+      certifiedDate: '2026-01-22',
+      deviceId: 'laptop-master',
+      syncVersion: 1,
+      createdAtUtc: '2026-01-26T10:00:00Z',
+      modifiedAtUtc: '2026-01-26T10:00:00Z',
+      syncedAtUtc: null
+    };
+
+    vi.mocked(query)
+      .mockReturnValueOnce([trainerInfoRow])
+      .mockReturnValueOnce([trainerDisciplineRow]);
+
+    const result = getTrainerDataForSync();
+
+    expect(result.trainerInfos[0].certifiedDate).toBe('2026-01-22T00:00:00Z');
+    expect(result.trainerDisciplines[0].certifiedDate).toBe('2026-01-22T00:00:00Z');
   });
 });
 

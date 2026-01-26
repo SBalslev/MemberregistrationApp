@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Tablet, Laptop, Wifi, WifiOff, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, X, Shield, Trash2 } from 'lucide-react';
 import { isElectron, getElectronAPI } from '../types/electron';
 import { query, execute, saveTrustedDevice, getTrustedDevices, getMemberDataForFullSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
+import { getTrainerDataForSync } from '../database';
 import { collectEntitiesForDevice, markDeliveredToDeviceBatch, recordFailedAttempt } from '../database/syncOutboxRepository';
 import type { DeviceInfo } from '../types/entities';
 
@@ -521,6 +522,8 @@ export function DevicesPage() {
                           console.log('[Sync] Starting bidirectional sync with:', selectedDevice.name, 'at', baseUrl);
 
                           let membersPushed = 0;
+                          let trainerInfosPushed = 0;
+                          let trainerDisciplinesPushed = 0;
                           let checkInsReceived = 0;
                           let sessionsReceived = 0;
 
@@ -604,6 +607,7 @@ export function DevicesPage() {
                             // Generate unique message ID for idempotency
                             const messageId = crypto.randomUUID();
 
+                            const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
                             const pushPayload = {
                               schemaVersion: SYNC_SCHEMA_VERSION,
                               deviceId: laptopDeviceId,
@@ -616,6 +620,8 @@ export function DevicesPage() {
                                 checkIns: outboxData.checkIns || [],
                                 practiceSessions: outboxData.practiceSessions || [],
                                 equipmentCheckouts: outboxData.equipmentCheckouts || [],
+                                trainerInfos,
+                                trainerDisciplines,
                                 newMemberRegistrations: []
                               }
                             };
@@ -634,6 +640,10 @@ export function DevicesPage() {
                               const pushResult = await pushResponse.json();
                               console.log('[Sync] Push result:', pushResult);
                               membersPushed = memberData.length;
+                              if (selectedDevice.type === 'TRAINER_TABLET') {
+                                trainerInfosPushed = trainerInfos.length;
+                                trainerDisciplinesPushed = trainerDisciplines.length;
+                              }
 
                               // Mark outbox entries as delivered
                               if (outboxIds.length > 0) {
@@ -684,7 +694,7 @@ export function DevicesPage() {
                             // Show success message
                             setSyncMessage({
                               type: 'success',
-                              text: `Synkroniseret: ${membersPushed} medlemmer sendt, ${checkInsReceived} check-ins og ${sessionsReceived} sessioner modtaget`
+                              text: `Synkroniseret: ${membersPushed} medlemmer sendt, ${trainerInfosPushed} trænere og ${trainerDisciplinesPushed} trænerdiscipliner sendt, ${checkInsReceived} check-ins og ${sessionsReceived} sessioner modtaget`
                             });
 
                           } catch (err) {

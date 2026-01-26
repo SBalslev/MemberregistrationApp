@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import type { DeviceInfo, Member, NewMemberRegistration } from '../types';
-import { getMemberDataForFullSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
+import { getMemberDataForFullSync, getTrainerDataForSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
 import {
   collectEntitiesForDevice,
   markDeliveredToDeviceBatch,
@@ -20,6 +20,8 @@ export interface SyncResultNotification {
   success: boolean;
   message: string;
   membersPushed: number;
+  trainerInfosPushed: number;
+  trainerDisciplinesPushed: number;
   checkInsReceived: number;
   sessionsReceived: number;
   registrationsReceived: number;
@@ -123,6 +125,8 @@ export const useAppStore = create<AppState>((set) => ({
       success: true,
       message: '',
       membersPushed: 0,
+      trainerInfosPushed: 0,
+      trainerDisciplinesPushed: 0,
       checkInsReceived: 0,
       sessionsReceived: 0,
       registrationsReceived: 0
@@ -228,6 +232,7 @@ export const useAppStore = create<AppState>((set) => ({
           // Generate unique message ID for idempotency
           const messageId = crypto.randomUUID();
 
+          const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
           const pushPayload = {
             schemaVersion: SYNC_SCHEMA_VERSION,
             deviceId: laptopDeviceId,
@@ -240,6 +245,8 @@ export const useAppStore = create<AppState>((set) => ({
               checkIns: outboxData.checkIns || [],
               practiceSessions: outboxData.practiceSessions || [],
               equipmentCheckouts: outboxData.equipmentCheckouts || [],
+              trainerInfos,
+              trainerDisciplines,
               newMemberRegistrations: []
             }
           };
@@ -255,6 +262,10 @@ export const useAppStore = create<AppState>((set) => ({
             const pushResult = await pushResponse.json();
             console.log('[Sync] Push result:', pushResult);
             result.membersPushed += memberData.length;
+            if (device.type === 'TRAINER_TABLET') {
+              result.trainerInfosPushed += trainerInfos.length;
+              result.trainerDisciplinesPushed += trainerDisciplines.length;
+            }
 
             // Mark outbox entries as delivered to this device
             if (outboxIds.length > 0) {
@@ -322,6 +333,7 @@ export const useAppStore = create<AppState>((set) => ({
       }
 
       result.message = `Synkroniseret: ${result.membersPushed} medlemmer sendt, ` +
+        `${result.trainerInfosPushed} trænere og ${result.trainerDisciplinesPushed} trænerdiscipliner sendt, ` +
         `${result.checkInsReceived} check-ins, ${result.sessionsReceived} sessioner, ` +
         `${result.registrationsReceived} registreringer modtaget`;
 
