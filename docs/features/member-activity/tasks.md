@@ -91,6 +91,10 @@ Implement a read-only member activity timeline and a cross-member overview page 
 	- **Started**: 2026-01-25 21:56:55 UTC+01:00
 	- **Completed**: 2026-01-25 22:00:00 UTC+01:00
 	- **Duration**: 4m
+- [x] **2.12** Add bar chart for multi-day attendance
+	- **Started**: 2026-01-26 09:30:00 UTC+01:00
+	- **Completed**: 2026-01-26 09:45:00 UTC+01:00
+	- **Duration**: 15m
 
 ---
 
@@ -144,3 +148,4 @@ Implement a read-only member activity timeline and a cross-member overview page 
 - [ ] Drill-down works for aggregates only
 - [ ] Attendance and drill-down lists paginate at 50 rows per page
 - [ ] No export functionality is added
+- [ ] Multi-day attendance shows a bar chart

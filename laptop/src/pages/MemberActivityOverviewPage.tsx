@@ -4,6 +4,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   getAttendanceBreakdown,
   getAttendanceCountsByDay,
@@ -342,18 +343,33 @@ export function MemberActivityOverviewPage() {
               {attendanceCounts.length === 0 ? (
                 <div className="px-6 py-8 text-gray-500">Ingen aktivitet i den valgte periode.</div>
               ) : (
-                <div className="divide-y divide-gray-100">
-                  {pagedAttendanceCounts.map((row) => (
-                    <button
-                      key={row.localDate}
-                      onClick={() => applyDateRange(row.localDate)}
-                      className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-gray-50"
-                    >
-                      <span className="text-sm text-gray-600">{row.localDate}</span>
-                      <span className="text-sm font-medium text-gray-900">{row.memberCount} medlemmer</span>
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="px-6 py-4">
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={attendanceCounts} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="localDate" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                          <Tooltip />
+                          <Bar dataKey="memberCount" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {pagedAttendanceCounts.map((row) => (
+                      <button
+                        key={row.localDate}
+                        onClick={() => applyDateRange(row.localDate)}
+                        className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-gray-50"
+                      >
+                        <span className="text-sm text-gray-600">{row.localDate}</span>
+                        <span className="text-sm font-medium text-gray-900">{row.memberCount} medlemmer</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
               {countsTotalPages > 1 && (
                 <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
