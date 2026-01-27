@@ -4,7 +4,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Check, X, AlertCircle, Filter, Clock, CreditCard } from 'lucide-react';
+import { Check, X, AlertCircle, Filter, Clock, CreditCard, Search } from 'lucide-react';
 import type { TransactionWithLines, FeeRate, PendingFeePaymentWithMember } from '../../types';
 import type { Member } from '../../types/entities';
 import { MEMBER_TYPE_LABELS } from '../../types';
@@ -13,6 +13,7 @@ import { getEffectiveMemberType } from '../../utils/feeCategory';
 // Extended fee status for internal use (includes computed fields)
 interface FeeStatusRow {
   memberId: string;
+  membershipId: string | null;
   memberName: string;
   memberType: 'ADULT' | 'CHILD' | 'CHILD_PLUS';
   expectedAmount: number;
@@ -46,6 +47,7 @@ export function MemberFeeStatusTable({
   onQuickPayment,
 }: MemberFeeStatusTableProps) {
   const [filter, setFilter] = useState<FilterType>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Calculate fee status for each member
   const feeStatuses: FeeStatusRow[] = useMemo(() => {
@@ -91,6 +93,7 @@ export function MemberFeeStatusTable({
 
         return {
           memberId: member.internalId, // Always use internalId for consistency
+          membershipId: member.membershipId,
           memberName: `${member.firstName} ${member.lastName}`,
           memberType: feeCategory,
           expectedAmount,
@@ -105,19 +108,37 @@ export function MemberFeeStatusTable({
       .sort((a, b) => a.memberName.localeCompare(b.memberName, 'da'));
   }, [members, transactions, feeRates, year, pendingPayments]);
 
-  // Apply filter
+  // Apply filter and search
   const filteredStatuses = useMemo(() => {
+    // First apply status filter
+    let result: FeeStatusRow[];
     switch (filter) {
       case 'paid':
-        return feeStatuses.filter((s) => s.isPaidInFull);
+        result = feeStatuses.filter((s) => s.isPaidInFull);
+        break;
       case 'unpaid':
-        return feeStatuses.filter((s) => s.paidAmount === 0);
+        // No payment activity at all (neither paid nor pending)
+        result = feeStatuses.filter((s) => s.paidAmount === 0 && s.pendingAmount === 0);
+        break;
       case 'partial':
-        return feeStatuses.filter((s) => s.paidAmount > 0 && !s.isPaidInFull);
+        // Some payment activity (paid or pending) but not fully paid
+        result = feeStatuses.filter((s) => (s.paidAmount > 0 || s.pendingAmount > 0) && !s.isPaidInFull);
+        break;
       default:
-        return feeStatuses;
+        result = feeStatuses;
     }
-  }, [feeStatuses, filter]);
+
+    // Then apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter((s) =>
+        s.memberName.toLowerCase().includes(query) ||
+        (s.membershipId && s.membershipId.toLowerCase().includes(query))
+      );
+    }
+
+    return result;
+  }, [feeStatuses, filter, searchQuery]);
 
   // Summary stats
   const stats = useMemo(() => {
@@ -186,26 +207,38 @@ export function MemberFeeStatusTable({
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-2">
-        <Filter className="w-4 h-4 text-gray-400" />
-        <div className="flex bg-gray-100 rounded-lg p-1">
-          {(['all', 'paid', 'partial', 'unpaid'] as FilterType[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                filter === f
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              {f === 'all' && 'Alle'}
-              {f === 'paid' && 'Betalt'}
-              {f === 'partial' && 'Delvist'}
-              {f === 'unpaid' && 'Ikke betalt'}
-            </button>
-          ))}
+      {/* Filter Tabs and Search */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-gray-400" />
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            {(['all', 'paid', 'partial', 'unpaid'] as FilterType[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  filter === f
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {f === 'all' && 'Alle'}
+                {f === 'paid' && 'Betalt'}
+                {f === 'partial' && 'Delvist'}
+                {f === 'unpaid' && 'Ikke betalt'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Søg navn eller medlemsnr..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64"
+          />
         </div>
       </div>
 

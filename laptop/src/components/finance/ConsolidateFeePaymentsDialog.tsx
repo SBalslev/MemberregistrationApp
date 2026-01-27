@@ -4,7 +4,7 @@
  */
 
 import { useState, useMemo } from 'react';
-import { X, Check, FileStack } from 'lucide-react';
+import { X, Check, FileStack, Trash2 } from 'lucide-react';
 import type { PendingFeePaymentWithMember, PostingCategory } from '../../types';
 import { PAYMENT_METHOD_LABELS } from '../../types';
 
@@ -12,6 +12,7 @@ interface ConsolidateFeePaymentsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onConsolidate: (paymentIds: string[], description: string, date: string, categoryId: string) => void;
+  onDelete?: (paymentId: string) => void;
   pendingPayments: PendingFeePaymentWithMember[];
   categories: PostingCategory[];
   year: number;
@@ -39,6 +40,7 @@ export function ConsolidateFeePaymentsDialog({
   isOpen,
   onClose,
   onConsolidate,
+  onDelete,
   pendingPayments,
   categories,
   year,
@@ -196,42 +198,54 @@ export function ConsolidateFeePaymentsDialog({
               ) : (
                 <div className="space-y-2">
                   {pendingPayments.map((payment) => (
-                    <label
+                    <div
                       key={payment.id}
-                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
                         selectedIds.has(payment.id)
                           ? 'border-blue-500 bg-blue-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      <div className={`w-5 h-5 rounded border flex items-center justify-center ${
-                        selectedIds.has(payment.id)
-                          ? 'bg-blue-600 border-blue-600 text-white'
-                          : 'border-gray-300'
-                      }`}>
-                        {selectedIds.has(payment.id) && <Check className="w-3 h-3" />}
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(payment.id)}
-                        onChange={() => handleToggle(payment.id)}
-                        className="sr-only"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 truncate">
-                          {payment.memberName}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {formatDate(payment.paymentDate)} · {PAYMENT_METHOD_LABELS[payment.paymentMethod]}
-                          {payment.notes && ` · ${payment.notes}`}
-                        </p>
-                      </div>
-                      <div className={`font-medium ${
-                        payment.paymentMethod === 'CASH' ? 'text-green-600' : 'text-blue-600'
-                      }`}>
-                        {formatAmount(payment.amount)}
-                      </div>
-                    </label>
+                      <label className="flex items-center gap-3 flex-1 cursor-pointer">
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center ${
+                          selectedIds.has(payment.id)
+                            ? 'bg-blue-600 border-blue-600 text-white'
+                            : 'border-gray-300'
+                        }`}>
+                          {selectedIds.has(payment.id) && <Check className="w-3 h-3" />}
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(payment.id)}
+                          onChange={() => handleToggle(payment.id)}
+                          className="sr-only"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 truncate">
+                            {payment.memberName}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {formatDate(payment.paymentDate)} · {PAYMENT_METHOD_LABELS[payment.paymentMethod]}
+                            {payment.notes && ` · ${payment.notes}`}
+                          </p>
+                        </div>
+                        <div className={`font-medium ${
+                          payment.paymentMethod === 'CASH' ? 'text-green-600' : 'text-blue-600'
+                        }`}>
+                          {formatAmount(payment.amount)}
+                        </div>
+                      </label>
+                      {onDelete && (
+                        <button
+                          type="button"
+                          onClick={() => onDelete(payment.id)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Slet betaling"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

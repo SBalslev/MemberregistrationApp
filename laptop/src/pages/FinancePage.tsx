@@ -27,6 +27,7 @@ import {
   getPendingFeePayments,
   createPendingFeePayment,
   consolidatePendingFeePayments,
+  deletePendingFeePayment,
 } from '../database';
 import { getAllMembers } from '../database/memberRepository';
 import { exportKassebog } from '../utils';
@@ -366,6 +367,12 @@ export function FinancePage() {
   ) => {
     consolidatePendingFeePayments(selectedYear, paymentIds, description, date, categoryId);
     setIsConsolidateOpen(false);
+    loadData();
+  };
+
+  // Handle delete pending payment
+  const handleDeletePendingPayment = (paymentId: string) => {
+    deletePendingFeePayment(paymentId);
     loadData();
   };
 
@@ -785,6 +792,7 @@ export function FinancePage() {
         isOpen={isConsolidateOpen}
         onClose={() => setIsConsolidateOpen(false)}
         onConsolidate={handleConsolidate}
+        onDelete={handleDeletePendingPayment}
         pendingPayments={pendingPayments}
         categories={categories}
         year={selectedYear}
