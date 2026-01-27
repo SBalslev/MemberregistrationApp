@@ -275,7 +275,7 @@ class CsvService @Inject constructor(
         val lines = csvReader { this.delimiter = delimiter }.readAll(csvContent)
         if (lines.isEmpty()) return@withContext ImportResult(0,0,0,listOf("Empty file"))
         val header = lines.first()
-    val required = setOf("FORMAT_VERSION","membership_id","first_name","last_name","status")
+        val required = setOf("FORMAT_VERSION","membership_id","first_name","last_name","status")
         if (!required.all { it in header }) return@withContext ImportResult(0,0,0,listOf("Missing required headers"))
         val idx = header.withIndex().associate { it.value to it.index }
         val seen = mutableSetOf<String>()

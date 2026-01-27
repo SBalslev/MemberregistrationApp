@@ -119,7 +119,7 @@ class PracticeSessionViewModel @javax.inject.Inject constructor(
         classification: String
     ): List<PracticeSession> {
         val end = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-    val start = kotlinx.datetime.LocalDate(end.year - 1, end.month, end.dayOfMonth)
+        val start = kotlinx.datetime.LocalDate(end.year - 1, end.month, end.dayOfMonth)
         return practiceSessionDao.historyForMember(memberId, start, end, type, classification)
     }
 

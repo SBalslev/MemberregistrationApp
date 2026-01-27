@@ -115,7 +115,7 @@ fun AttendantMenuScreen(
     var postScan by remember { mutableStateOf<PostScan?>(null) }
     Scaffold(snackbarHost = { SnackbarHost(snack) }) { innerPad ->
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(innerPad).padding(24.dp),
         verticalArrangement = if (state.unlocked) Arrangement.Top else Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
