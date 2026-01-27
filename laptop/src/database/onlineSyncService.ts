@@ -2920,6 +2920,38 @@ class OnlineSyncService {
       pending_fee_payments: await getCount('SELECT COUNT(*) as cnt FROM PendingFeePayment'),
     };
   }
+
+  /**
+   * Push a pending fee payment delete to the online database.
+   * Call this after deleting a pending fee payment locally.
+   */
+  async pushPendingFeePaymentDelete(paymentId: string): Promise<boolean> {
+    try {
+      const deviceId = await this.getDeviceId();
+      if (!deviceId) {
+        return false; // Online sync not enabled
+      }
+
+      const payload: SyncPushPayload = {
+        deviceId,
+        batchId: `delete-${paymentId}-${Date.now()}`,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        entities: {
+          pendingFeePayments: [{
+            id: paymentId,
+            _action: 'delete',
+          } as OnlinePendingFeePayment],
+        },
+      };
+
+      await onlineApiService.push(payload);
+      console.log(`[OnlineSync] Deleted pending fee payment ${paymentId} from online database`);
+      return true;
+    } catch (error) {
+      console.error(`[OnlineSync] Failed to delete pending fee payment ${paymentId}:`, error);
+      return false;
+    }
+  }
 }
 
 // ===== Singleton Export =====

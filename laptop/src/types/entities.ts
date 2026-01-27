@@ -15,7 +15,7 @@ export type MemberStatus = 'ACTIVE' | 'INACTIVE';
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
 /** Fee category for membership dues calculation */
-export type FeeCategoryType = 'ADULT' | 'CHILD' | 'CHILD_PLUS';
+export type FeeCategoryType = 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY';
 
 export interface Member {
   /** Immutable UUID, primary key across all devices */

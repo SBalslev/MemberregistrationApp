@@ -4,6 +4,39 @@ This document tracks all schema changes to the online database and the correspon
 
 ## Version History
 
+### Version 1.4.2 (2026-01-27)
+
+**Summary:** Added HONORARY member type for honorary members who don't pay fees.
+
+**Changes:**
+
+1. **Type Definitions (laptop/src/types/finance.ts, laptop/src/types/entities.ts):**
+   - Added `'HONORARY'` to `MemberType` and `FeeCategoryType` union types
+   - Added Danish label `'Æresmedlem'` to `MEMBER_TYPE_LABELS`
+
+2. **Fee Calculation (laptop/src/utils/feeCategory.ts):**
+   - `getFeeCategoryFromBirthDate()` now preserves HONORARY status regardless of age
+
+3. **Database Schema:**
+   - Migration adds HONORARY fee rate (0 kr) to all fiscal years
+   - Online migration: `api/schema/V1_4_1__add_honorary_fee_rates.sql`
+   - Local migration in `laptop/src/database/db.ts`
+
+4. **Sync Converters (laptop/src/database/onlineApiService.ts):**
+   - Updated type casts to use `MemberType` instead of hardcoded union
+
+5. **UI Changes:**
+   - Member edit dialogs include "Æresmedlem" option
+   - Finance page shows read-only HONORARY fee rate (always 0 kr)
+   - Honorary members display as "Betalt" (paid) in fee status table
+
+**Impact:**
+- Honorary members can be designated in the system
+- They appear with 0 kr expected fee and always show as "paid"
+- Fully backward compatible - existing members unchanged
+
+---
+
 ### Version 1.4.1 (2026-01-27)
 
 **Summary:** Fixed foreign key constraints and JOIN queries to use `internalId` consistently instead of `membershipId`.

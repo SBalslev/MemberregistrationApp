@@ -1491,10 +1491,13 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
   const isUnder18 = birthday ? calculateAge(birthday) < 18 : false;
 
   useEffect(() => {
+    // Don't auto-change honorary members
+    if (feeCategory === 'HONORARY') return;
+
     if (isUnder18 && feeCategory === 'ADULT') {
       setFeeCategory('CHILD');
     }
-    if (!isUnder18 && feeCategory !== 'ADULT') {
+    if (!isUnder18 && (feeCategory === 'CHILD' || feeCategory === 'CHILD_PLUS')) {
       setFeeCategory('ADULT');
     }
   }, [isUnder18, feeCategory]);
@@ -1523,7 +1526,8 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
     }
 
     const now = new Date().toISOString();
-    const effectiveFeeCategory: Member['memberType'] = isUnder18 ? feeCategory : 'ADULT';
+    // Honorary members keep their status; otherwise apply age-based logic
+    const effectiveFeeCategory: Member['memberType'] = feeCategory === 'HONORARY' ? 'HONORARY' : (isUnder18 ? feeCategory : 'ADULT');
     const newMember: Member = {
       internalId: crypto.randomUUID(),
       membershipId: membershipId.trim(),
@@ -1690,34 +1694,18 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
             <select
               value={feeCategory}
               onChange={(e) => setFeeCategory(e.target.value as Member['memberType'])}
-              disabled={!isUnder18}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             >
               <option value="ADULT">Voksen</option>
               <option value="CHILD" disabled={!isUnder18}>Barn</option>
               <option value="CHILD_PLUS" disabled={!isUnder18}>Barn+</option>
+              <option value="HONORARY">Æresmedlem</option>
             </select>
-            {!isUnder18 && (
+            {!isUnder18 && feeCategory !== 'HONORARY' && (
               <p className="mt-1 text-xs text-gray-500">Kun børn under 18 kan være Barn eller Barn+</p>
             )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Kontingenttype
-            </label>
-            <select
-              value={feeCategory}
-              onChange={(e) => setFeeCategory(e.target.value as Member['memberType'])}
-              disabled={!isUnder18}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500"
-            >
-              <option value="ADULT">Voksen</option>
-              <option value="CHILD" disabled={!isUnder18}>Barn</option>
-              <option value="CHILD_PLUS" disabled={!isUnder18}>Barn+</option>
-            </select>
-            {!isUnder18 && (
-              <p className="mt-1 text-xs text-gray-500">Kun børn under 18 kan være Barn eller Barn+</p>
+            {feeCategory === 'HONORARY' && (
+              <p className="mt-1 text-xs text-amber-600">Æresmedlemmer betaler ikke kontingent</p>
             )}
           </div>
 
@@ -1860,6 +1848,9 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>(member.status);
   const [photoPath, setPhotoPath] = useState<string | null>(member.photoPath || null);
   const [feeCategory, setFeeCategory] = useState<Member['memberType']>(() => {
+    // Honorary members keep their status
+    if (member.memberType === 'HONORARY') return 'HONORARY';
+
     const isUnder18Initial = member.birthDate ? calculateAge(member.birthDate) < 18 : false;
     if (!isUnder18Initial) return 'ADULT';
     if (member.memberType === 'CHILD_PLUS' || member.memberType === 'CHILD') {
@@ -1888,22 +1879,26 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
   const isUnder18 = birthday ? calculateAge(birthday) < 18 : false;
 
   useEffect(() => {
+    // Don't auto-change honorary members
+    if (feeCategory === 'HONORARY') return;
+
     if (isUnder18 && feeCategory === 'ADULT') {
       setFeeCategory('CHILD');
     }
-    if (!isUnder18 && feeCategory !== 'ADULT') {
+    if (!isUnder18 && (feeCategory === 'CHILD' || feeCategory === 'CHILD_PLUS')) {
       setFeeCategory('ADULT');
     }
   }, [isUnder18, feeCategory]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    
+
     if (!firstName.trim() || !lastName.trim()) {
       return;
     }
 
-    const effectiveFeeCategory: Member['memberType'] = isUnder18 ? feeCategory : 'ADULT';
+    // Honorary members keep their status; otherwise apply age-based logic
+    const effectiveFeeCategory: Member['memberType'] = feeCategory === 'HONORARY' ? 'HONORARY' : (isUnder18 ? feeCategory : 'ADULT');
     const updatedMember: Member = {
       ...member,
       firstName: firstName.trim(),
@@ -2164,6 +2159,28 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
               </div>
             </div>
           )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Kontingenttype
+            </label>
+            <select
+              value={feeCategory}
+              onChange={(e) => setFeeCategory(e.target.value as Member['memberType'])}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            >
+              <option value="ADULT">Voksen</option>
+              <option value="CHILD" disabled={!isUnder18}>Barn</option>
+              <option value="CHILD_PLUS" disabled={!isUnder18}>Barn+</option>
+              <option value="HONORARY">Æresmedlem</option>
+            </select>
+            {!isUnder18 && feeCategory !== 'HONORARY' && (
+              <p className="mt-1 text-xs text-gray-500">Kun børn under 18 kan være Barn eller Barn+</p>
+            )}
+            {feeCategory === 'HONORARY' && (
+              <p className="mt-1 text-xs text-amber-600">Æresmedlemmer betaler ikke kontingent</p>
+            )}
+          </div>
 
           {/* Actions */}
           <div className="flex gap-3 pt-4">

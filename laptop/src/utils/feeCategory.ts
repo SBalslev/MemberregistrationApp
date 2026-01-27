@@ -16,6 +16,9 @@ export function getFeeCategoryFromBirthDate(
   existingType?: MemberType,
   asOfDate?: Date
 ): MemberType {
+  // Honorary members keep their status regardless of age
+  if (existingType === 'HONORARY') return 'HONORARY';
+
   if (!birthDate) return existingType ?? 'ADULT';
   const age = calculateAge(birthDate, asOfDate ?? new Date());
   if (age < 18) {

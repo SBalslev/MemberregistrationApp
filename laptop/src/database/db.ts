@@ -575,6 +575,17 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('TransactionLine.source');
   }
 
+  // ===== Migration: Add HONORARY fee rate =====
+  const honoraryFeeRateCheck = db.exec("SELECT 1 FROM FeeRate WHERE memberType = 'HONORARY' LIMIT 1");
+  if (honoraryFeeRateCheck.length === 0 || honoraryFeeRateCheck[0].values.length === 0) {
+    // Insert HONORARY fee rate of 0 for all existing fiscal years
+    db.run(`
+      INSERT OR IGNORE INTO FeeRate (fiscalYear, memberType, feeAmount)
+      SELECT year, 'HONORARY', 0 FROM FiscalYear
+    `);
+    migrationsRun.push('FeeRate.HONORARY added');
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -1031,6 +1042,7 @@ async function seedDefaultCategories(): Promise<void> {
     { memberType: 'ADULT', feeAmount: 600 },
     { memberType: 'CHILD', feeAmount: 300 },
     { memberType: 'CHILD_PLUS', feeAmount: 600 },
+    { memberType: 'HONORARY', feeAmount: 0 },
   ];
   
   for (const rate of feeRates) {

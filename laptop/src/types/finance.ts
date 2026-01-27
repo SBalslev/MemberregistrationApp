@@ -6,12 +6,13 @@
 
 // ===== Member Type =====
 
-export type MemberType = 'ADULT' | 'CHILD' | 'CHILD_PLUS';
+export type MemberType = 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY';
 
 export const MEMBER_TYPE_LABELS: Record<MemberType, string> = {
   ADULT: 'Voksen',
   CHILD: 'Barn',
   CHILD_PLUS: 'Barn+',
+  HONORARY: 'Æresmedlem',
 };
 
 // ===== Posting Category =====
@@ -63,6 +64,7 @@ export const DEFAULT_FEE_RATES_2026: FeeRate[] = [
   { fiscalYear: 2026, memberType: 'ADULT', feeAmount: 600 },
   { fiscalYear: 2026, memberType: 'CHILD', feeAmount: 300 },
   { fiscalYear: 2026, memberType: 'CHILD_PLUS', feeAmount: 600 },
+  { fiscalYear: 2026, memberType: 'HONORARY', feeAmount: 0 },
 ];
 
 // ===== Financial Transaction =====

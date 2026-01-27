@@ -29,6 +29,7 @@ import {
   consolidatePendingFeePayments,
   deletePendingFeePayment,
 } from '../database';
+import { onlineSyncService } from '../database/onlineSyncService';
 import { getAllMembers } from '../database/memberRepository';
 import { exportKassebog } from '../utils';
 import { MEMBER_TYPE_LABELS } from '../types';
@@ -70,6 +71,7 @@ export function FinancePage() {
       ADULT: String(initialRates.find((r) => r.memberType === 'ADULT')?.feeAmount ?? ''),
       CHILD: String(initialRates.find((r) => r.memberType === 'CHILD')?.feeAmount ?? ''),
       CHILD_PLUS: String(initialRates.find((r) => r.memberType === 'CHILD_PLUS')?.feeAmount ?? ''),
+      HONORARY: String(initialRates.find((r) => r.memberType === 'HONORARY')?.feeAmount ?? '0'),
     };
   });
   const [feeRateError, setFeeRateError] = useState<string | null>(null);
@@ -97,6 +99,7 @@ export function FinancePage() {
       ADULT: String(feeRates.find((r) => r.memberType === 'ADULT')?.feeAmount ?? ''),
       CHILD: String(feeRates.find((r) => r.memberType === 'CHILD')?.feeAmount ?? ''),
       CHILD_PLUS: String(feeRates.find((r) => r.memberType === 'CHILD_PLUS')?.feeAmount ?? ''),
+      HONORARY: String(feeRates.find((r) => r.memberType === 'HONORARY')?.feeAmount ?? '0'),
     });
   }, [feeRates]);
 
@@ -163,6 +166,7 @@ export function FinancePage() {
       { memberType: 'ADULT', amount: parseFloat(feeRateDrafts.ADULT) },
       { memberType: 'CHILD', amount: parseFloat(feeRateDrafts.CHILD) },
       { memberType: 'CHILD_PLUS', amount: parseFloat(feeRateDrafts.CHILD_PLUS) },
+      { memberType: 'HONORARY', amount: 0 }, // Honorary members always have 0 fee
     ];
 
     if (parsedRates.some((rate) => Number.isNaN(rate.amount) || rate.amount < 0)) {
@@ -371,8 +375,10 @@ export function FinancePage() {
   };
 
   // Handle delete pending payment
-  const handleDeletePendingPayment = (paymentId: string) => {
+  const handleDeletePendingPayment = async (paymentId: string) => {
     deletePendingFeePayment(paymentId);
+    // Also push delete to online database
+    await onlineSyncService.pushPendingFeePaymentDelete(paymentId);
     loadData();
   };
 
@@ -645,6 +651,22 @@ export function FinancePage() {
                       onChange={(e) => handleFeeRateChange('CHILD_PLUS', e.target.value)}
                       disabled={selectedFiscalYear?.isClosed}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      DKK
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {MEMBER_TYPE_LABELS.HONORARY}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value="0"
+                      disabled
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
                       DKK

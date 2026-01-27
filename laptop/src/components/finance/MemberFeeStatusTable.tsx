@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from 'react';
 import { Check, X, AlertCircle, Filter, Clock, CreditCard, Search } from 'lucide-react';
-import type { TransactionWithLines, FeeRate, PendingFeePaymentWithMember } from '../../types';
+import type { TransactionWithLines, FeeRate, PendingFeePaymentWithMember, MemberType } from '../../types';
 import type { Member } from '../../types/entities';
 import { MEMBER_TYPE_LABELS } from '../../types';
 import { getEffectiveMemberType } from '../../utils/feeCategory';
@@ -15,7 +15,7 @@ interface FeeStatusRow {
   memberId: string;
   membershipId: string | null;
   memberName: string;
-  memberType: 'ADULT' | 'CHILD' | 'CHILD_PLUS';
+  memberType: MemberType;
   expectedAmount: number;
   paidAmount: number;
   pendingAmount: number;

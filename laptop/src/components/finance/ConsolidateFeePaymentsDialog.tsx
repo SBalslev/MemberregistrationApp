@@ -12,7 +12,7 @@ interface ConsolidateFeePaymentsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onConsolidate: (paymentIds: string[], description: string, date: string, categoryId: string) => void;
-  onDelete?: (paymentId: string) => void;
+  onDelete?: (paymentId: string) => void | Promise<void>;
   pendingPayments: PendingFeePaymentWithMember[];
   categories: PostingCategory[];
   year: number;

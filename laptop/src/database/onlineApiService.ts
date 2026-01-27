@@ -15,6 +15,7 @@ import type {
   PostingCategory,
   TransactionLine,
   PendingFeePayment,
+  MemberType,
 } from '../types/finance';
 import type { TrainerInfo, TrainerDiscipline } from './trainerRepository';
 import type { SkvRegistration, SkvWeapon } from './skvRepository';
@@ -27,7 +28,7 @@ const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
 
 // Expected API version - update this when deploying new API versions
-const EXPECTED_API_VERSION = '1.4.0';
+const EXPECTED_API_VERSION = '1.4.2';
 
 // ===== Types =====
 
@@ -1280,7 +1281,7 @@ export function memberFromOnline(online: OnlineMember): Partial<Member> {
     guardianPhone: online.guardian_phone,
     guardianEmail: online.guardian_email,
     expiresOn: online.expires_on,
-    memberType: online.member_type as 'ADULT' | 'CHILD' | 'CHILD_PLUS',
+    memberType: online.member_type as MemberType,
     mergedIntoId: online.merged_into_id,
     createdAtUtc: online.created_at_utc,
     updatedAtUtc: online.modified_at_utc,
@@ -1457,7 +1458,7 @@ export function feeRateToOnline(feeRate: FeeRate, action: 'upsert' | 'delete' = 
 export function feeRateFromOnline(online: OnlineFeeRate): FeeRate {
   return {
     fiscalYear: online.fiscal_year,
-    memberType: online.member_type as 'ADULT' | 'CHILD' | 'CHILD_PLUS',
+    memberType: online.member_type as MemberType,
     feeAmount: online.fee_amount,
   };
 }

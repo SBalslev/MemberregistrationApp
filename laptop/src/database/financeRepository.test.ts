@@ -93,4 +93,63 @@ describe('Fee rate management', () => {
       { fiscalYear: 2026, memberType: 'CHILD', feeAmount: 300 },
     ]);
   });
+
+  it('sets fee rate for HONORARY members (0 kr)', () => {
+    setFeeRate(2026, 'HONORARY', 0);
+
+    expect(vi.mocked(execute)).toHaveBeenCalledTimes(1);
+    const [sql, params] = vi.mocked(execute).mock.calls[0];
+    expect(sql).toContain('INSERT OR REPLACE INTO FeeRate');
+    expect(params).toEqual([2026, 'HONORARY', 0]);
+  });
+
+  it('returns 0 fee rate for HONORARY members', () => {
+    vi.mocked(query).mockImplementation((sql: string) => {
+      if (sql.includes('SELECT feeAmount FROM FeeRate')) {
+        return [{ feeAmount: 0 }];
+      }
+      return [];
+    });
+
+    expect(getFeeRate(2026, 'HONORARY')).toBe(0);
+  });
+
+  it('calculates HONORARY member as fully paid with 0 expected', () => {
+    vi.mocked(query).mockImplementation((sql: string) => {
+      if (sql.includes('FROM Member m')) {
+        return [
+          {
+            memberId: 'H1',
+            firstName: 'Erik',
+            lastName: 'Hansen',
+            memberType: 'HONORARY',
+            paidAmount: 0,
+            paymentDates: null,
+          },
+        ];
+      }
+      if (sql.includes('FROM FeeRate')) {
+        return [
+          { fiscalYear: 2026, memberType: 'ADULT', feeAmount: 600 },
+          { fiscalYear: 2026, memberType: 'CHILD', feeAmount: 300 },
+          { fiscalYear: 2026, memberType: 'CHILD_PLUS', feeAmount: 600 },
+          { fiscalYear: 2026, memberType: 'HONORARY', feeAmount: 0 },
+        ];
+      }
+      return [];
+    });
+
+    const status = getMemberFeeStatus(2026);
+
+    expect(status).toHaveLength(1);
+    expect(status[0]).toEqual({
+      memberId: 'H1',
+      memberName: 'Erik Hansen',
+      memberType: 'HONORARY',
+      expectedFee: 0,
+      paidAmount: 0,
+      outstanding: 0,
+      paymentDates: [],
+    });
+  });
 });

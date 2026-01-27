@@ -33,6 +33,15 @@ describe('fee category helpers', () => {
     expect(getFeeCategoryFromBirthDate('2012-01-01', 'CHILD_PLUS')).toBe('CHILD_PLUS');
   });
 
+  it('preserves honorary status regardless of age', () => {
+    // Honorary adult
+    expect(getFeeCategoryFromBirthDate('2000-01-01', 'HONORARY')).toBe('HONORARY');
+    // Honorary child
+    expect(getFeeCategoryFromBirthDate('2012-01-01', 'HONORARY')).toBe('HONORARY');
+    // Honorary with no birthdate
+    expect(getFeeCategoryFromBirthDate(null, 'HONORARY')).toBe('HONORARY');
+  });
+
   it('returns effective member type based on age', () => {
     const member: Member = {
       internalId: 'uuid-1',
@@ -64,5 +73,38 @@ describe('fee category helpers', () => {
     };
 
     expect(getEffectiveMemberType(member)).toBe('CHILD_PLUS');
+  });
+
+  it('returns HONORARY for honorary members regardless of age', () => {
+    const honoraryMember: Member = {
+      internalId: 'uuid-2',
+      membershipId: 'M2',
+      memberLifecycleStage: 'FULL',
+      status: 'ACTIVE',
+      firstName: 'Erik',
+      lastName: 'Hansen',
+      birthDate: '1950-01-01', // Adult, but honorary
+      gender: null,
+      email: null,
+      phone: null,
+      address: null,
+      zipCode: null,
+      city: null,
+      guardianName: null,
+      guardianPhone: null,
+      guardianEmail: null,
+      memberType: 'HONORARY',
+      expiresOn: null,
+      registrationPhotoPath: null,
+      photoPath: null,
+      photoThumbnail: null,
+      mergedIntoId: null,
+      createdAtUtc: '2026-01-01T00:00:00Z',
+      updatedAtUtc: '2026-01-01T00:00:00Z',
+      syncedAtUtc: null,
+      syncVersion: 0,
+    };
+
+    expect(getEffectiveMemberType(honoraryMember)).toBe('HONORARY');
   });
 });

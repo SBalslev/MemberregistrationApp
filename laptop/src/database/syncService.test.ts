@@ -535,6 +535,7 @@ describe('Schema consistency guards', () => {
     expect(insertParams).toBeTruthy();
     expect(insertParams).toContain('ADULT');
   });
+
 });
 
 describe('Equipment Sync Operations', () => {
