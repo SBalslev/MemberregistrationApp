@@ -99,7 +99,7 @@ class TieredDiscoveryCoordinator @Inject constructor(
         val startTime = System.currentTimeMillis()
         val phasesExecuted = mutableListOf<DiscoveryPhase>()
 
-        val trustedDevices = trustManager.getTrustedDevices()
+        val trustedDevices = trustManager.getTrustedDeviceList()
         val trustedIds = trustedDevices.map { it.id }.toSet()
         val foundDevices = mutableMapOf<String, DiscoveredDevice>()
 

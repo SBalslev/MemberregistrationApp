@@ -220,7 +220,7 @@ class SyncApiServer @Inject constructor(
                 }
 
                 // Check if this device is in our trusted list
-                val trustedDevice = trustManager.getTrustedDevices().find { it.id == request.deviceId }
+                val trustedDevice = trustManager.getTrustedDeviceList().find { it.id == request.deviceId }
                 if (trustedDevice == null) {
                     Log.w(TAG, "Token request from untrusted device: ${request.deviceId}")
                     call.respond(
@@ -325,7 +325,7 @@ class SyncApiServer @Inject constructor(
                 pendingPairingTokens.remove(request.trustToken)
 
                 // Get list of trusted devices including this server for trust propagation
-                val trustedDevices = trustManager.getTrustedDevices().toMutableList()
+                val trustedDevices = trustManager.getTrustedDeviceList().toMutableList()
                 // Include this device (the server) in the list so the client knows who they paired with
                 currentDeviceInfo?.let { thisDevice ->
                     if (trustedDevices.none { it.id == thisDevice.id }) {

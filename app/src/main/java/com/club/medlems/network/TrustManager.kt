@@ -285,7 +285,7 @@ class TrustManager @Inject constructor(
     /**
      * Gets all trusted devices.
      */
-    fun getTrustedDevices(): List<DeviceInfo> {
+    fun getTrustedDeviceList(): List<DeviceInfo> {
         return _trustedDevices.value.filter { it.isTrusted }
     }
     
