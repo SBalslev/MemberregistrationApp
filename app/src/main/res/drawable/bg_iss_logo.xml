@@ -3,10 +3,67 @@
     android:width="512dp"
     android:height="512dp"
     android:viewportWidth="512"
-    android:viewportHeight="512">
-    <!-- Placeholder watermark vector. Replace this file with bg_iss_logo.png to use the real logo. -->
+    android:viewportHeight="512"
+    android:alpha="0.06">
+    <!-- ISS Shield Logo - watermark version (low opacity set on root) -->
+    <!-- Shield outline -->
     <path
-        android:fillColor="#0D3A6B"
-        android:fillAlpha="0.08"
-        android:pathData="M32,64 L480,64 L480,480 L32,480 Z"/>
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#1e3a6e"
+        android:strokeWidth="8"
+        android:pathData="M256,48 
+            C294,48 332,56 370,72 
+            C386,80 398,88 406,96
+            C406,192 400,272 380,336
+            C356,408 308,456 256,480
+            C204,456 156,408 132,336
+            C112,272 106,192 106,96
+            C114,88 126,80 142,72
+            C180,56 218,48 256,48 Z"/>
+    <!-- Letter I -->
+    <path
+        android:fillColor="#1e3a6e"
+        android:pathData="M166,168 L166,336 L190,336 L190,168 Z
+            M156,148 L200,148 L200,168 L156,168 Z
+            M156,336 L200,336 L200,356 L156,356 Z"/>
+    <!-- Letter S (large, center) -->
+    <path
+        android:fillColor="#1e3a6e"
+        android:pathData="M256,120 
+            C294,120 324,140 324,172 
+            C324,196 306,216 274,224
+            L234,232
+            C214,236 202,248 202,272
+            C202,300 226,320 256,320
+            C280,320 300,308 318,288
+            L338,312
+            C314,340 286,356 256,356
+            C212,356 180,328 180,272
+            C180,240 200,216 234,208
+            L274,200
+            C298,194 310,182 310,164
+            C310,144 290,132 262,132
+            C238,132 218,144 202,160
+            L184,136
+            C206,116 230,120 256,120 Z"/>
+    <!-- Letter s (small, right) -->
+    <path
+        android:fillColor="#1e3a6e"
+        android:pathData="M342,208
+            C366,208 386,228 386,256
+            C386,272 374,288 350,296
+            L330,300
+            C318,304 310,316 310,332
+            C310,348 326,360 350,360
+            C366,360 382,352 394,340
+            L406,360
+            C390,380 366,392 342,392
+            C310,392 286,368 286,332
+            C286,300 306,280 338,272
+            L358,264
+            C378,256 386,244 386,228
+            C386,212 370,200 350,200
+            C334,200 318,210 306,226
+            L290,208
+            C310,188 326,208 342,208 Z"/>
 </vector>

@@ -32,8 +32,13 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.club.medlems.data.dao.NewMemberRegistrationDao
-import com.club.medlems.data.entity.NewMemberRegistration
+import com.club.medlems.data.dao.MemberDao
+import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.MemberStatus
+import com.club.medlems.data.entity.MemberType
+import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.data.sync.SyncOutboxManager
+import com.club.medlems.network.TrustManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +48,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
+import kotlinx.datetime.LocalDate
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -55,6 +61,10 @@ data class RegistrationState(
     val email: String = "",
     val phone: String = "",
     val birthDate: String = "",
+    val gender: String = "",
+    val address: String = "",
+    val zipCode: String = "",
+    val city: String = "",
     val photoPath: String? = null,
     val guardianName: String = "",
     val guardianPhone: String = "",
@@ -63,13 +73,19 @@ data class RegistrationState(
     val isTakingPhoto: Boolean = false,
     val showGuardianFields: Boolean = false,
     val saveSuccess: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // Created member info for confirmation display
+    val createdMemberName: String? = null,
+    val createdMemberInternalId: String? = null
 )
 
 @HiltViewModel
 class RegistrationViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val registrationDao: NewMemberRegistrationDao
+    private val memberDao: MemberDao,
+    private val syncOutboxManager: SyncOutboxManager,
+    private val syncManager: SyncManager,
+    private val trustManager: TrustManager
 ) : ViewModel() {
     
     private val _state = MutableStateFlow(RegistrationState())
@@ -93,6 +109,22 @@ class RegistrationViewModel @Inject constructor(
     
     fun updateBirthDate(date: String) {
         _state.value = _state.value.copy(birthDate = date)
+    }
+    
+    fun updateGender(gender: String) {
+        _state.value = _state.value.copy(gender = gender)
+    }
+    
+    fun updateAddress(address: String) {
+        _state.value = _state.value.copy(address = address)
+    }
+    
+    fun updateZipCode(zipCode: String) {
+        _state.value = _state.value.copy(zipCode = zipCode)
+    }
+    
+    fun updateCity(city: String) {
+        _state.value = _state.value.copy(city = city)
     }
     
     fun nextStep() {
@@ -160,32 +192,73 @@ class RegistrationViewModel @Inject constructor(
                     return@launch
                 }
                 
-                val timestamp = System.currentTimeMillis()
-                val tempId = "NYT-$timestamp"
+                val now = Clock.System.now()
+                val internalId = UUID.randomUUID().toString()
                 
-                val registration = NewMemberRegistration(
-                    id = UUID.randomUUID().toString(),
-                    temporaryId = tempId,
-                    createdAtUtc = Clock.System.now(),
-                    photoPath = photoPath,
-                    firstName = _state.value.firstName,
-                    lastName = _state.value.lastName,
+                // Parse birthDate string to LocalDate if provided
+                val birthDateLocal = _state.value.birthDate.takeIf { it.isNotBlank() }?.let {
+                    try {
+                        LocalDate.parse(it)
+                    } catch (e: Exception) {
+                        // Try parsing DD-MM-YYYY format
+                        val parts = it.split("-", "/", ".")
+                        if (parts.size == 3) {
+                            try {
+                                LocalDate(parts[2].toInt(), parts[1].toInt(), parts[0].toInt())
+                            } catch (e2: Exception) { null }
+                        } else null
+                    }
+                }
+                
+                // Create trial member directly (no NewMemberRegistration)
+                val member = Member(
+                    internalId = internalId,
+                    membershipId = null, // Trial member has no club ID yet
+                    memberType = MemberType.TRIAL,
+                    status = MemberStatus.ACTIVE,
+                    firstName = _state.value.firstName.trim(),
+                    lastName = _state.value.lastName.trim(),
+                    birthDate = birthDateLocal,
+                    gender = _state.value.gender.takeIf { it.isNotBlank() },
                     email = _state.value.email.takeIf { it.isNotBlank() },
                     phone = _state.value.phone.takeIf { it.isNotBlank() },
-                    birthDate = _state.value.birthDate.takeIf { it.isNotBlank() },
+                    address = _state.value.address.takeIf { it.isNotBlank() },
+                    zipCode = _state.value.zipCode.takeIf { it.isNotBlank() },
+                    city = _state.value.city.takeIf { it.isNotBlank() },
                     guardianName = _state.value.guardianName.takeIf { it.isNotBlank() },
                     guardianPhone = _state.value.guardianPhone.takeIf { it.isNotBlank() },
-                    guardianEmail = _state.value.guardianEmail.takeIf { it.isNotBlank() }
+                    guardianEmail = _state.value.guardianEmail.takeIf { it.isNotBlank() },
+                    registrationPhotoPath = photoPath,
+                    expiresOn = null,
+                    mergedIntoId = null,
+                    createdAtUtc = now,
+                    updatedAtUtc = now,
+                    deviceId = null,
+                    syncVersion = 0L,
+                    syncedAtUtc = null
                 )
                 
                 withContext(Dispatchers.IO) {
-                    registrationDao.insert(registration)
-                    saveGuardianInfo(tempId, photoPath)
+                    memberDao.upsert(member)
+                    // Encode photo for sync if available
+                    val photoBase64 = try {
+                        val photoFile = File(photoPath)
+                        if (photoFile.exists()) {
+                            android.util.Base64.encodeToString(photoFile.readBytes(), android.util.Base64.NO_WRAP)
+                        } else null
+                    } catch (e: Exception) { null }
+                    // Queue trial member for sync and trigger reactive sync
+                    syncOutboxManager.queueMember(member, trustManager.getThisDeviceId(), photoBase64 = photoBase64)
+                    syncManager.notifyEntityChanged("Member", member.internalId)
+                    saveRegistrationInfo(internalId, photoPath)
                 }
                 
+                val fullName = "${_state.value.firstName.trim()} ${_state.value.lastName.trim()}"
                 _state.value = _state.value.copy(
                     isSaving = false,
-                    saveSuccess = true
+                    saveSuccess = true,
+                    createdMemberName = fullName,
+                    createdMemberInternalId = internalId
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
@@ -196,7 +269,7 @@ class RegistrationViewModel @Inject constructor(
         }
     }
     
-    private suspend fun saveGuardianInfo(tempId: String, photoPath: String) {
+    private suspend fun saveRegistrationInfo(internalId: String, photoPath: String) {
         val state = _state.value
         
         try {
@@ -208,9 +281,9 @@ class RegistrationViewModel @Inject constructor(
                                  state.guardianEmail.isNotBlank()
             
             val info = buildString {
-                appendLine("Nyt medlem tilmelding")
+                appendLine("Prøvemedlem oprettet")
                 appendLine("Dato: ${SimpleDateFormat("dd-MM-yyyy HH:mm", Locale("da", "DK")).format(Date())}")
-                appendLine("Midlertidigt ID: $tempId")
+                appendLine("Intern ID: $internalId")
                 appendLine()
                 appendLine("Fornavn: ${state.firstName}")
                 appendLine("Efternavn: ${state.lastName}")
@@ -311,6 +384,10 @@ fun RegistrationScreen(
                         onEmailChange = viewModel::updateEmail,
                         onPhoneChange = viewModel::updatePhone,
                         onBirthDateChange = viewModel::updateBirthDate,
+                        onGenderChange = viewModel::updateGender,
+                        onAddressChange = viewModel::updateAddress,
+                        onZipCodeChange = viewModel::updateZipCode,
+                        onCityChange = viewModel::updateCity,
                         onNext = viewModel::nextStep,
                         modifier = Modifier
                             .weight(1f)
@@ -347,6 +424,7 @@ fun RegistrationScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemberDetailsForm(
     state: RegistrationState,
@@ -355,6 +433,10 @@ fun MemberDetailsForm(
     onEmailChange: (String) -> Unit,
     onPhoneChange: (String) -> Unit,
     onBirthDateChange: (String) -> Unit,
+    onGenderChange: (String) -> Unit,
+    onAddressChange: (String) -> Unit,
+    onZipCodeChange: (String) -> Unit,
+    onCityChange: (String) -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -431,6 +513,71 @@ fun MemberDetailsForm(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
+        
+        // Gender dropdown
+        var genderExpanded by remember { mutableStateOf(false) }
+        val genderOptions = listOf("" to "Vælg køn", "MALE" to "Mand", "FEMALE" to "Kvinde", "OTHER" to "Andet")
+        
+        ExposedDropdownMenuBox(
+            expanded = genderExpanded,
+            onExpandedChange = { genderExpanded = !genderExpanded }
+        ) {
+            OutlinedTextField(
+                value = genderOptions.find { it.first == state.gender }?.second ?: "Vælg køn",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Køn") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = genderExpanded) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor()
+            )
+            ExposedDropdownMenu(
+                expanded = genderExpanded,
+                onDismissRequest = { genderExpanded = false }
+            ) {
+                genderOptions.forEach { (value, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = {
+                            onGenderChange(value)
+                            genderExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+        
+        OutlinedTextField(
+            value = state.address,
+            onValueChange = onAddressChange,
+            label = { Text("Adresse") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = state.zipCode,
+                onValueChange = onZipCodeChange,
+                label = { Text("Postnr.") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                )
+            )
+            OutlinedTextField(
+                value = state.city,
+                onValueChange = onCityChange,
+                label = { Text("By") },
+                modifier = Modifier.weight(2f),
+                singleLine = true
+            )
+        }
         
         Text(
             text = "* Påkrævet",
@@ -641,13 +788,31 @@ fun RegistrationForm(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             ) {
-                Row(
+                Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.CheckCircle, "Succes")
-                    Text("Tilmelding gemt!")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, "Succes")
+                        Text(
+                            "Prøvemedlem oprettet!",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    if (state.createdMemberName != null) {
+                        Text(
+                            state.createdMemberName,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                    Text(
+                        "Kan tjekke ind nu",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
         }

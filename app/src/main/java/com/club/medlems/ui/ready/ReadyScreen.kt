@@ -69,6 +69,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontWeight
+import com.club.medlems.ui.sync.SyncStatusIndicator
+import com.club.medlems.ui.sync.SyncStatusDetailSheet
 
 private const val TAG = "ReadyScreen"
 private val cameraExecutor by lazy { Executors.newSingleThreadExecutor() }
@@ -96,16 +98,18 @@ data class ScanDiagnostics(
 
 @Composable
 fun ReadyScreen(
-    onFirstScan: (String, String) -> Unit,
-    onRepeatScan: (String, String) -> Unit,
+    onFirstScan: (String, String, Boolean) -> Unit,
+    onRepeatScan: (String, String, Boolean) -> Unit,
     openAttendant: () -> Unit,
     openLeaderboard: () -> Unit,
-    vm: ReadyViewModel = hiltViewModel()
+    vm: ReadyViewModel = hiltViewModel(),
+    deviceConfig: com.club.medlems.domain.prefs.DeviceConfigPreferences = hiltViewModel<ReadyViewModel>().deviceConfig
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val diagnosticsEnabled by vm.diagnosticPrefs.diagnosticsEnabled.collectAsState()
     var showDiagnosticPanel by remember { mutableStateOf(false) }
+    var showSyncDetailSheet by remember { mutableStateOf(false) }
     var hasCameraPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCameraPermission = granted
@@ -142,14 +146,14 @@ fun ReadyScreen(
                         runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
             scope.launch { snackHost.showSnackbar("Tillykke med fødselsdagen!") }
                     }
-                    onFirstScan(outcome.membershipId, outcome.scanEventId)
+                    onFirstScan(outcome.membershipId, outcome.scanEventId, outcome.isTrial)
                 }
                 is ScanOutcome.Repeat -> {
                     if (outcome.birthday) {
                         runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
             scope.launch { snackHost.showSnackbar("Tillykke med fødselsdagen!") }
                     }
-                    onRepeatScan(outcome.membershipId, outcome.scanEventId)
+                    onRepeatScan(outcome.membershipId, outcome.scanEventId, outcome.isTrial)
                 }
                 is ScanOutcome.Error -> snackHost.showSnackbar(outcome.message)
                 is ScanOutcome.AttendantUnlocked -> {
@@ -316,6 +320,33 @@ fun ReadyScreen(
                             )
                         }
                     }
+                    
+                    // Trainer mode indicator (top-left) - visible on trainer build flavor
+                    if (deviceConfig.isTrainerBuild) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(8.dp),
+                            color = MaterialTheme.colorScheme.tertiary,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                "TRÆNER",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                color = MaterialTheme.colorScheme.onTertiary,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Sync status indicator (top-center)
+                    SyncStatusIndicator(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 8.dp),
+                        onClick = { showSyncDetailSheet = true }
+                    )
                 }
                 // Instruction banner between camera and leaderboard
                 ElevatedCard(
@@ -362,7 +393,14 @@ fun ReadyScreen(
                 }
             }
         }
-        
+
+        // Sync status detail sheet
+        if (showSyncDetailSheet) {
+            SyncStatusDetailSheet(
+                onDismiss = { showSyncDetailSheet = false }
+            )
+        }
+
         // Diagnostic panel dialog
         if (showDiagnosticPanel) {
             AlertDialog(
@@ -501,7 +539,7 @@ private fun CompactLeaderboardGrid(groupedRecent: Map<PracticeType, Map<String, 
                             list.take(3).forEach { entry ->
                                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                     val name = entry.memberName
-                                    val left = if (name.isNullOrBlank()) entry.membershipId else "${entry.membershipId} – ${name}"
+                                    val left = if (name.isNullOrBlank()) entry.displayMemberId else "${entry.displayMemberId} - ${name}"
                                     Text(left, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text("${entry.points}${entry.krydser?.let { "/$it" } ?: ""}", style = MaterialTheme.typography.bodySmall)
                                 }

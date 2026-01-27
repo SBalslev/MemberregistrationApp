@@ -43,7 +43,8 @@ APK output: `app/build/outputs/apk/debug/app-debug.apk`
 	- Shortcut: scanning membership ID 99000009 on the Ready screen auto-unlocks Admin and opens the Admin menu.
 
 ### Member Registration (New)
-The app now supports registering new members directly on the device via Admin menu:
+The app now supports registering new members directly on the device via Admin menu.
+
 - **Access**: Admin → Tilmeld nyt medlem
 - **Photo Capture**: Uses front-facing camera to take member photo
 - **Storage**: Photos saved to SD card (DCIM/Nyt medlem) with timestamp: NYT_YYYYMMDD_HHmmss.jpg
@@ -55,7 +56,7 @@ The app now supports registering new members directly on the device via Admin me
   - Saved as text file alongside photo: {filename}_vaerge.txt
 - **Language**: All UI elements in Danish
 - **Privacy**: No audit trail; public-facing feature
-- **Database**: Registrations tracked in NewMemberRegistration table
+- **Database**: Registrations create a Member record with memberType = TRIAL and internalId as primary key
 
 ## Troubleshooting QR Scanning
 
@@ -113,7 +114,10 @@ If QR scanning is not working correctly, the app includes comprehensive diagnost
   - View the "Sidste Scan" text in diagnostics to verify what was read
 
 ### Technical Details
-- **QR Parser**: Extracts membership ID from URL pattern `id=<digits>`
+- **QR Parser**: Supports both formats
+
+  - Legacy format: URL pattern `id=<digits>`
+  - Trial member format: `MC:<internalId>`
 - **Camera Library**: CameraX with ZXing barcode scanner
 - **Supported Format**: QR codes only
 - **Debouncing**: 1.5-second delay prevents duplicate scans

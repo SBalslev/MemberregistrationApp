@@ -38,7 +38,7 @@ jobs:
         run: ./gradlew :app:assembleDebug --stacktrace
 
       - name: Lint (debug)
-        run: ./gradlew :app:lintDebug --stacktrace
+        run: ./gradlew :app:lintMemberDebug --stacktrace
 
       - name: Unit tests
         run: ./gradlew test --stacktrace

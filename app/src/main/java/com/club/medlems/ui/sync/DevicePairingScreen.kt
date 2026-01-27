@@ -1,0 +1,1068 @@
+package com.club.medlems.ui.sync
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.club.medlems.data.sync.DeviceInfo
+import com.club.medlems.data.sync.DeviceType
+import com.club.medlems.data.sync.SyncLogEntry
+import com.club.medlems.data.sync.SyncLogLevel
+import com.club.medlems.network.DiscoveredDevice
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+
+/**
+ * Screen for device discovery and pairing.
+ * Allows users to find and pair with other devices on the local network.
+ * 
+ * @see [design.md FR-9] - Device Pairing and Trust
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DevicePairingScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: SyncViewModel = hiltViewModel()
+) {
+    val discoveredDevices by viewModel.discoveredDevices.collectAsState()
+    val trustedDevices by viewModel.trustedDevices.collectAsState()
+    val pairingState by viewModel.pairingState.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
+    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsState()
+    val logEntries by viewModel.logEntries.collectAsState()
+    val syncResultEvent by viewModel.syncResultEvent.collectAsState()
+    
+    var isLogExpanded by remember { mutableStateOf(false) }
+    var showPairingDialog by remember { mutableStateOf(false) }
+    var showGeneratedCodeDialog by remember { mutableStateOf(false) }
+    var pairingCode by remember { mutableStateOf("") }
+    var targetIpAddress by remember { mutableStateOf("") }
+
+    val generatedCode by viewModel.generatedPairingCode.collectAsState()
+    
+    val snackbarHostState = remember { SnackbarHostState() }
+    
+    // Handle sync result events
+    LaunchedEffect(syncResultEvent) {
+        when (val event = syncResultEvent) {
+            is SyncResultEvent.Success -> {
+                snackbarHostState.showSnackbar("Synkronisering OK - ${event.recordsSynced} ændringer")
+                viewModel.clearSyncResultEvent()
+            }
+            is SyncResultEvent.Error -> {
+                snackbarHostState.showSnackbar("Fejl: ${event.message}")
+                viewModel.clearSyncResultEvent()
+            }
+            else -> {} // Syncing or null - no action
+        }
+    }
+    
+    // Handle pairing state changes
+    LaunchedEffect(pairingState) {
+        when (val state = pairingState) {
+            is PairingState.Success -> {
+                showPairingDialog = false
+                pairingCode = ""
+                snackbarHostState.showSnackbar("Parret med ${state.deviceName}")
+                viewModel.resetPairingState()
+            }
+            is PairingState.Error -> {
+                snackbarHostState.showSnackbar("Fejl: ${state.message}")
+                viewModel.resetPairingState()
+            }
+            else -> {}
+        }
+    }
+    
+    // Start discovery when screen opens
+    LaunchedEffect(Unit) {
+        viewModel.startDiscovery()
+    }
+    
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Device Pairing") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    // Sync Now button - enabled when we have paired devices and not already syncing
+                    val isSyncing = syncResultEvent is SyncResultEvent.Syncing
+                    IconButton(
+                        onClick = { viewModel.syncNow() },
+                        enabled = trustedDevices.isNotEmpty() && !isSyncing
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = "Sync Now"
+                            )
+                        }
+                    }
+                    // Refresh/Scan button
+                    IconButton(
+                        onClick = {
+                            if (isScanning) viewModel.stopDiscovery()
+                            else viewModel.startDiscovery()
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = if (isScanning) "Stop scanning" else "Refresh"
+                        )
+                    }
+                }
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp)
+        ) {
+            // Network status card
+            NetworkStatusCard(
+                isNetworkAvailable = isNetworkAvailable,
+                isScanning = isScanning
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Pairing buttons row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Generate code button - allow other devices to connect to this tablet
+                OutlinedButton(
+                    onClick = {
+                        viewModel.generatePairingCode()
+                        showGeneratedCodeDialog = true
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Key,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Generer kode")
+                }
+
+                // Enter code button - connect to another device
+                Button(
+                    onClick = { showPairingDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Key,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Indtast kode")
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Trusted devices section
+            if (trustedDevices.isNotEmpty()) {
+                Text(
+                    text = "Parrede enheder",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                LazyColumn(
+                    contentPadding = PaddingValues(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(0.4f)
+                ) {
+                    items(trustedDevices, key = { it.id }) { device ->
+                        TrustedDeviceCard(
+                            device = device,
+                            isOnline = discoveredDevices.any { it.deviceId == device.id },
+                            onUnpair = { viewModel.unpairDevice(device.id) }
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            // Available devices section
+            Text(
+                text = "Available Devices",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Filter out already-paired devices AND our own device (prevent self-pairing)
+            // Use thisDeviceId which is always available (generated if not set)
+            val thisDeviceId = viewModel.thisDeviceId
+            val unpairedDevices = discoveredDevices.filter { discovered ->
+                discovered.deviceId != thisDeviceId && 
+                trustedDevices.none { it.id == discovered.deviceId }
+            }
+            
+            if (unpairedDevices.isEmpty()) {
+                EmptyDevicesPlaceholder(
+                    isScanning = isScanning,
+                    isNetworkAvailable = isNetworkAvailable
+                )
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    items(unpairedDevices, key = { it.deviceId }) { device ->
+                        DiscoveredDeviceCard(
+                            device = device,
+                            isPairing = pairingState is PairingState.Pairing &&
+                                (pairingState as PairingState.Pairing).deviceName == device.deviceName,
+                            onPair = {
+                                targetIpAddress = device.address.hostAddress.orEmpty()
+                                pairingCode = ""
+                                showPairingDialog = true
+                            }
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Sync Log Panel
+            SyncLogPanel(
+                logEntries = logEntries,
+                isExpanded = isLogExpanded,
+                onToggleExpanded = { isLogExpanded = !isLogExpanded },
+                onClearLogs = { viewModel.clearLogs() }
+            )
+        }
+    }
+    
+    // Pairing code dialog - enter code from another device
+    if (showPairingDialog) {
+        PairingCodeDialog(
+            pairingCode = pairingCode,
+            onCodeChange = { newCode ->
+                // Only allow digits and limit to 6 characters
+                if (newCode.length <= 6 && newCode.all { it.isDigit() }) {
+                    pairingCode = newCode
+                }
+            },
+            targetIpAddress = targetIpAddress,
+            onIpAddressChange = { targetIpAddress = it },
+            isPairing = pairingState is PairingState.Pairing,
+            onPair = {
+                val baseUrl = if (targetIpAddress.contains(":")) {
+                    "http://$targetIpAddress"
+                } else {
+                    "http://$targetIpAddress:8085"
+                }
+                viewModel.pairWithCode(baseUrl, pairingCode)
+            },
+            onDismiss = {
+                showPairingDialog = false
+                pairingCode = ""
+            }
+        )
+    }
+
+    // Generated code dialog - show code for other devices to connect
+    if (showGeneratedCodeDialog && generatedCode != null) {
+        GeneratedCodeDialog(
+            generatedCode = generatedCode!!,
+            onDismiss = {
+                showGeneratedCodeDialog = false
+                viewModel.clearGeneratedPairingCode()
+            }
+        )
+    }
+}
+
+/**
+ * Dialog for entering a 6-digit pairing code.
+ */
+@Composable
+private fun PairingCodeDialog(
+    pairingCode: String,
+    onCodeChange: (String) -> Unit,
+    targetIpAddress: String,
+    onIpAddressChange: (String) -> Unit,
+    isPairing: Boolean,
+    onPair: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isPairing) onDismiss() },
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Key,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = {
+            Text(
+                text = "Par med enhed",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Indtast IP-adressen og den 6-cifrede kode fra den anden enhed.",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // IP Address field
+                OutlinedTextField(
+                    value = targetIpAddress,
+                    onValueChange = onIpAddressChange,
+                    label = { Text("IP-adresse") },
+                    placeholder = { Text("192.168.1.100") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // 6-digit code display
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    for (i in 0 until 6) {
+                        val digit = pairingCode.getOrNull(i)?.toString() ?: ""
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .border(
+                                    2.dp,
+                                    if (i == pairingCode.length)
+                                        MaterialTheme.colorScheme.primary
+                                    else
+                                        MaterialTheme.colorScheme.outline,
+                                    RoundedCornerShape(8.dp)
+                                )
+                        ) {
+                            Text(
+                                text = digit,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Hidden text field for keyboard input
+                BasicTextField(
+                    value = pairingCode,
+                    onValueChange = onCodeChange,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                )
+                
+                if (isPairing) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onPair,
+                enabled = pairingCode.length == 6 && targetIpAddress.isNotBlank() && !isPairing
+            ) {
+                Text("Par")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isPairing
+            ) {
+                Text("Annuller")
+            }
+        }
+    )
+}
+
+/**
+ * Dialog showing the generated pairing code for other devices to connect.
+ */
+@Composable
+private fun GeneratedCodeDialog(
+    generatedCode: GeneratedPairingCode,
+    onDismiss: () -> Unit
+) {
+    var remainingSeconds by remember { mutableStateOf(generatedCode.remainingSeconds()) }
+
+    // Update remaining time every second
+    LaunchedEffect(generatedCode) {
+        while (remainingSeconds > 0) {
+            kotlinx.coroutines.delay(1000)
+            remainingSeconds = generatedCode.remainingSeconds()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Devices,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = {
+            Text(
+                text = "Parringskode",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Indtast denne kode på den anden enhed:",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Display the 6-digit code
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    generatedCode.code.forEach { digit ->
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    RoundedCornerShape(8.dp)
+                                )
+                        ) {
+                            Text(
+                                text = digit.toString(),
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // IP address
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "IP-adresse:",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = generatedCode.ipAddress,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Countdown timer
+                val minutes = remainingSeconds / 60
+                val seconds = remainingSeconds % 60
+                Text(
+                    text = if (remainingSeconds > 0) {
+                        "Udløber om: ${minutes}:${seconds.toString().padStart(2, '0')}"
+                    } else {
+                        "Koden er udløbet"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (remainingSeconds > 60)
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    else
+                        MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Luk")
+            }
+        }
+    )
+}
+
+/**
+ * Card showing network connection status.
+ */
+@Composable
+private fun NetworkStatusCard(
+    isNetworkAvailable: Boolean,
+    isScanning: Boolean
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isNetworkAvailable)
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Wifi,
+                contentDescription = null,
+                tint = if (isNetworkAvailable)
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                else
+                    MaterialTheme.colorScheme.onErrorContainer
+            )
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (isNetworkAvailable) "Connected to Network" else "No Network",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isNetworkAvailable)
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    else
+                        MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    text = if (isScanning) "Scanning for devices..." else "Tap refresh to scan",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isNetworkAvailable)
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    else
+                        MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                )
+            }
+            
+            AnimatedVisibility(
+                visible = isScanning,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Card for a trusted/paired device.
+ */
+@Composable
+private fun TrustedDeviceCard(
+    device: DeviceInfo,
+    isOnline: Boolean,
+    onUnpair: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            DeviceTypeIcon(deviceType = device.type)
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = device.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    OnlineIndicator(isOnline = isOnline)
+                }
+                Text(
+                    text = "${device.type.displayName} • ID: ${device.id.take(8)}...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!isOnline) {
+                    Text(
+                        text = "Offline - sidst set: ${device.lastSeenUtc?.let { 
+                            val local = it.toLocalDateTime(TimeZone.currentSystemDefault())
+                            "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+                        } ?: "ukendt"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            
+            IconButton(onClick = onUnpair) {
+                Icon(
+                    imageVector = Icons.Default.LinkOff,
+                    contentDescription = "Unpair",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Card for a discovered (unpaired) device.
+ */
+@Composable
+private fun DiscoveredDeviceCard(
+    device: DiscoveredDevice,
+    isPairing: Boolean,
+    onPair: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            DeviceTypeIcon(deviceType = device.deviceType)
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = device.deviceName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "${device.deviceType.displayName} • ${device.address.hostAddress}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!device.isCompatible()) {
+                    Text(
+                        text = "Incompatible version",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            
+            if (isPairing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                FilledTonalButton(
+                    onClick = onPair,
+                    enabled = device.isCompatible()
+                ) {
+                    Icon(Icons.Default.Link, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Pair")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Placeholder shown when no devices are discovered.
+ */
+@Composable
+private fun EmptyDevicesPlaceholder(
+    isScanning: Boolean,
+    isNetworkAvailable: Boolean
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Default.Devices,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = when {
+                    !isNetworkAvailable -> "Connect to Wi-Fi to find devices"
+                    isScanning -> "Searching for devices..."
+                    else -> "No devices found"
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (!isScanning && isNetworkAvailable) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Make sure other devices are on the same network",
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Icon representing the device type.
+ */
+@Composable
+private fun DeviceTypeIcon(deviceType: DeviceType) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+        modifier = Modifier.size(40.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Default.Devices,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Small indicator showing online/offline status.
+ */
+@Composable
+private fun OnlineIndicator(isOnline: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(8.dp)
+            .background(
+                color = if (isOnline) 
+                    MaterialTheme.colorScheme.primary 
+                else 
+                    MaterialTheme.colorScheme.outline,
+                shape = CircleShape
+            )
+    )
+}
+
+/**
+ * Display name for device types.
+ */
+private val DeviceType.displayName: String
+    get() = when (this) {
+        DeviceType.LAPTOP -> "Master Laptop"
+        DeviceType.TRAINER_TABLET -> "Trainer Tablet"
+        DeviceType.MEMBER_TABLET -> "Member Tablet"
+        DeviceType.DISPLAY_EQUIPMENT -> "Equipment Display"
+        DeviceType.DISPLAY_PRACTICE -> "Practice Display"
+    }
+
+/**
+ * Expandable panel showing sync operation logs.
+ */
+@Composable
+private fun SyncLogPanel(
+    logEntries: List<SyncLogEntry>,
+    isExpanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onClearLogs: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Header row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Sync Log",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                Text(
+                    text = "${logEntries.size} entries",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                if (logEntries.isNotEmpty()) {
+                    IconButton(
+                        onClick = onClearLogs,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Clear,
+                            contentDescription = "Clear logs",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                
+                IconButton(
+                    onClick = onToggleExpanded,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            
+            // Log entries (visible when expanded)
+            if (isExpanded) {
+                if (logEntries.isEmpty()) {
+                    Text(
+                        text = "No log entries yet. Start discovery or sync to see events.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Show newest entries first
+                        logEntries.reversed().forEach { entry ->
+                            SyncLogEntryRow(entry)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Single log entry row.
+ */
+@Composable
+private fun SyncLogEntryRow(entry: SyncLogEntry) {
+    val localDateTime = entry.timestamp.toLocalDateTime(TimeZone.currentSystemDefault())
+    val timeStr = "%02d:%02d:%02d".format(
+        localDateTime.hour,
+        localDateTime.minute,
+        localDateTime.second
+    )
+    
+    val levelColor = when (entry.level) {
+        SyncLogLevel.DEBUG -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        SyncLogLevel.INFO -> MaterialTheme.colorScheme.onSurface
+        SyncLogLevel.WARN -> MaterialTheme.colorScheme.tertiary
+        SyncLogLevel.ERROR -> MaterialTheme.colorScheme.error
+    }
+    
+    val levelLabel = when (entry.level) {
+        SyncLogLevel.DEBUG -> "DBG"
+        SyncLogLevel.INFO -> "INF"
+        SyncLogLevel.WARN -> "WRN"
+        SyncLogLevel.ERROR -> "ERR"
+    }
+    
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = timeStr,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(56.dp)
+        )
+        
+        Text(
+            text = levelLabel,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = levelColor,
+            modifier = Modifier.width(32.dp)
+        )
+        
+        Text(
+            text = "[${entry.source}]",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.width(64.dp)
+        )
+        
+        Text(
+            text = entry.message,
+            style = MaterialTheme.typography.labelSmall,
+            color = levelColor,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}

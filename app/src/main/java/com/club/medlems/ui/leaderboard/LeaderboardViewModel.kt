@@ -44,7 +44,7 @@ class LeaderboardViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            val previousKeys = _state.value.entries.map { it.practiceType.name + ":" + it.membershipId }.toSet()
+            val previousKeys = _state.value.entries.map { it.practiceType.name + ":" + it.internalMemberId }.toSet()
             _state.value = _state.value.copy(loading = true, justAddedKeys = emptySet())
             val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
             val start = when (_state.value.range) {
@@ -76,7 +76,8 @@ class LeaderboardViewModel @Inject constructor(
                 bestPerMember.forEach { s ->
                     val cls = s.classification ?: "Uklassificeret"
                     val entry = LeaderboardEntry(
-                        membershipId = s.membershipId,
+                        internalMemberId = s.internalMemberId,
+                        displayMemberId = s.membershipId ?: s.internalMemberId,
                         practiceType = s.practiceType,
                         classification = cls,
                         points = s.points,
@@ -95,7 +96,8 @@ class LeaderboardViewModel @Inject constructor(
                     .forEach { (cls, list) ->
                         val top3 = list.sortedByDescending { it.createdAtUtc }.take(3).map { s ->
                             LeaderboardEntry(
-                                membershipId = s.membershipId,
+                                internalMemberId = s.internalMemberId,
+                                displayMemberId = s.membershipId ?: s.internalMemberId,
                                 practiceType = s.practiceType,
                                 classification = s.classification ?: "Uklassificeret",
                                 points = s.points,
@@ -110,10 +112,10 @@ class LeaderboardViewModel @Inject constructor(
                     }
             }
 
-            // Enrich names for all involved membershipIds - optimized with single query
+            // Enrich names for all involved internalMemberIds - optimized with single query
             val ids = buildSet {
-                flatBest.forEach { add(it.membershipId) }
-                recentMap.values.forEach { byCls -> byCls.values.forEach { list -> list.forEach { add(it.membershipId) } } }
+                flatBest.forEach { add(it.internalMemberId) }
+                recentMap.values.forEach { byCls -> byCls.values.forEach { list -> list.forEach { add(it.internalMemberId) } } }
             }
             val memberNames = if (ids.isNotEmpty()) {
                 memberDao.getMemberNames(ids.toList())
@@ -123,18 +125,18 @@ class LeaderboardViewModel @Inject constructor(
             val nameById = memberNames.associate { m ->
                 val li = m.lastName.trim().firstOrNull()?.let { "$it." } ?: ""
                 val short = (m.firstName.trim() + if (li.isNotEmpty()) " $li" else "").trim()
-                m.membershipId to short.ifBlank { null }
+                m.internalId to short.ifBlank { null }
             }
 
-            val enrichedFlat = flatBest.map { e -> e.copy(memberName = nameById[e.membershipId]) }
+            val enrichedFlat = flatBest.map { e -> e.copy(memberName = nameById[e.internalMemberId]) }
             val enrichedBestRaw = bestMap.mapValues { (_, byCls) ->
-                byCls.mapValues { (_, list) -> list.map { it.copy(memberName = nameById[it.membershipId]) }
+                byCls.mapValues { (_, list) -> list.map { it.copy(memberName = nameById[it.internalMemberId]) }
                     .sortedWith(compareByDescending<LeaderboardEntry> { it.points }.thenByDescending { it.krydser ?: -1 }.thenByDescending { it.createdAtUtc })
                     .take(10)
                 }
             }
             val enrichedRecentRaw = recentMap.mapValues { (_, byCls) ->
-                byCls.mapValues { (_, list) -> list.map { it.copy(memberName = nameById[it.membershipId]) }
+                byCls.mapValues { (_, list) -> list.map { it.copy(memberName = nameById[it.internalMemberId]) }
                     .sortedByDescending { it.createdAtUtc }
                     .take(3)
                 }
@@ -148,7 +150,7 @@ class LeaderboardViewModel @Inject constructor(
                 byCls.filterValues { list -> list.any { it.points > 0 } }
             }.filterValues { it.isNotEmpty() }
 
-            val newKeys = enrichedFlat.map { it.practiceType.name + ":" + it.membershipId }.toSet()
+            val newKeys = enrichedFlat.map { it.practiceType.name + ":" + it.internalMemberId }.toSet()
             val justAdded = newKeys - previousKeys
             _state.value = _state.value.copy(
                 loading = false,

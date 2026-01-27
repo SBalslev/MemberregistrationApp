@@ -4,31 +4,65 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Clean bullseye (two rings + center dot) -->
+    <!-- ISS Shield Logo - centered in adaptive icon safe zone -->
+    <!-- Shield outline -->
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="@android:color/white"
-        android:strokeWidth="8"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M54,54 m -30,0 a 30,30 0 1,0 60,0 a 30,30 0 1,0 -60,0"/>
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#1e3a6e"
+        android:strokeWidth="2"
+        android:pathData="M54,18 
+            C62,18 70,20 78,24 
+            C82,26 85,28 87,30
+            C87,50 86,65 82,76
+            C78,86 70,93 54,98
+            C38,93 30,86 26,76
+            C22,65 21,50 21,30
+            C23,28 26,26 30,24
+            C38,20 46,18 54,18 Z"/>
+    <!-- Letter I -->
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="@android:color/white"
-        android:strokeWidth="8"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M54,54 m -20,0 a 20,20 0 1,0 40,0 a 20,20 0 1,0 -40,0"/>
+        android:fillColor="#1e3a6e"
+        android:pathData="M35,42 L35,70 L40,70 L40,42 Z
+            M33,38 L42,38 L42,42 L33,42 Z
+            M33,70 L42,70 L42,74 L33,74 Z"/>
+    <!-- Letter S (large, center) -->
     <path
-        android:fillColor="@android:color/white"
-        android:pathData="M54,54 m -6,0 a 6,6 0 1,0 12,0 a 6,6 0 1,0 -12,0"/>
-
-    <!-- Checkmark overlay (conveys successful check-in) -->
+        android:fillColor="#1e3a6e"
+        android:pathData="M54,36 
+            C62,36 68,40 68,47 
+            C68,52 65,55 58,57
+            L50,59
+            C46,60 44,62 44,66
+            C44,70 48,73 54,73
+            C59,73 63,71 66,68
+            L69,73
+            C65,77 60,79 54,79
+            C45,79 39,74 39,66
+            C39,60 43,56 50,54
+            L58,52
+            C63,51 65,49 65,46
+            C65,42 61,40 55,40
+            C50,40 46,42 43,45
+            L40,40
+            C44,37 49,36 54,36 Z"/>
+    <!-- Letter s (small, right) -->
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="@android:color/white"
-        android:strokeWidth="10"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M38,62 L50,74 L76,46"/>
+        android:fillColor="#1e3a6e"
+        android:pathData="M72,52
+            C77,52 81,55 81,60
+            C81,63 79,65 75,66
+            L71,67
+            C69,67 68,68 68,70
+            C68,72 70,73 73,73
+            C75,73 77,72 79,71
+            L80,74
+            C78,76 75,77 72,77
+            C67,77 64,74 64,70
+            C64,66 67,64 71,63
+            L75,62
+            C78,61 79,60 79,58
+            C79,56 77,55 74,55
+            C71,55 69,56 67,58
+            L65,55
+            C68,53 70,52 72,52 Z"/>
 </vector>

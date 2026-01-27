@@ -22,12 +22,18 @@ import com.club.medlems.ui.session.PracticeSessionScreen
 import com.club.medlems.ui.leaderboard.LeaderboardScreen
 import com.club.medlems.ui.importexport.ImportExportScreen
 import com.club.medlems.ui.attendant.AttendantMenuScreen
+import com.club.medlems.ui.display.EquipmentDisplayScreen
+import com.club.medlems.ui.display.PracticeSessionDisplayScreen
+import com.club.medlems.ui.trainer.TrainerAuthScreen
+import com.club.medlems.ui.trainer.dashboard.TrainerDashboardScreen
 import com.club.medlems.domain.security.AttendantModeManager
+import com.club.medlems.domain.prefs.DeviceConfigPreferences
 import javax.inject.Inject
 
 @dagger.hilt.android.lifecycle.HiltViewModel
 class RootViewModel @javax.inject.Inject constructor(
-    val attendant: AttendantModeManager
+    val attendant: AttendantModeManager,
+    val deviceConfig: DeviceConfigPreferences
 ): androidx.lifecycle.ViewModel()
 
 @AndroidEntryPoint
@@ -58,9 +64,10 @@ class MainActivity : ComponentActivity() {
 }
 
 sealed class NavRoute(val route: String) {
+    data object DeviceSetup: NavRoute("deviceSetup")
     data object Ready: NavRoute("ready")
-    data object Confirmation: NavRoute("confirmation/{membershipId}/{scanEventId}") {
-        fun build(membershipId: String, scanEventId: String) = "confirmation/$membershipId/$scanEventId"
+    data object Confirmation: NavRoute("confirmation/{membershipId}/{scanEventId}/{isTrial}") {
+        fun build(membershipId: String, scanEventId: String, isTrial: Boolean = false) = "confirmation/$membershipId/$scanEventId/$isTrial"
     }
     data object PracticeSession: NavRoute("session/{membershipId}/{scanEventId}") {
         fun build(membershipId: String, scanEventId: String) = "session/$membershipId/$scanEventId"
@@ -72,19 +79,81 @@ sealed class NavRoute(val route: String) {
         fun build(membershipId: String) = "editSessions/$membershipId"
     }
     data object Registration: NavRoute("registration")
+    
+    // Equipment management routes (Trainer Tablet)
+    data object EquipmentList: NavRoute("equipment")
+    data object EquipmentCheckout: NavRoute("equipment/checkout/{equipmentId}") {
+        fun build(equipmentId: String) = "equipment/checkout/$equipmentId"
+        fun buildNoSelection() = "equipment/checkout/_"
+    }
+    data object CurrentCheckouts: NavRoute("equipment/checkouts")
+    data object MemberEquipmentCheckout: NavRoute("trainer/members/{membershipId}/equipment") {
+        fun build(membershipId: String) = "trainer/members/$membershipId/equipment"
+    }
+    
+    // Trainer tablet member lookup
+    data object MemberLookup: NavRoute("trainer/members")
+    
+    // Conflict resolution (Trainer Tablet)
+    data object ConflictResolution: NavRoute("trainer/conflicts")
+    
+    // Device pairing (sync network)
+    data object DevicePairing: NavRoute("sync/pairing")
+
+    // Trainer authentication flow
+    data object TrainerAuth: NavRoute("trainer/auth")
+    data object TrainerDashboard: NavRoute("trainer/dashboard")
 }
 
 @Composable
 fun AppRoot(
     navController: NavHostController = rememberNavController(),
-    attendantManager: AttendantModeManager = androidx.hilt.navigation.compose.hiltViewModel<RootViewModel>().attendant
+    rootViewModel: RootViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
+    val attendantManager = rootViewModel.attendant
+    val deviceConfig = rootViewModel.deviceConfig
     val attState by attendantManager.state.collectAsState()
+    val setupComplete by deviceConfig.setupCompleteFlow.collectAsState()
+    
+    // Check if this is a display-only tablet (equipment or practice display)
+    val isDisplayMode = BuildConfig.DISPLAY_MODE
+    val deviceRole = BuildConfig.DEVICE_ROLE
+    
+    // Display mode tablets show full-screen status displays without navigation
+    if (isDisplayMode) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            when (deviceRole) {
+                "EQUIPMENT_DISPLAY" -> EquipmentDisplayScreen()
+                "PRACTICE_DISPLAY" -> PracticeSessionDisplayScreen()
+                else -> EquipmentDisplayScreen() // Default fallback
+            }
+        }
+        return
+    }
+    
+    // Determine start destination based on setup state and device role
+    val isTrainerBuild = deviceConfig.isTrainerBuild
+    val startDestination = when {
+        !setupComplete -> NavRoute.DeviceSetup.route
+        isTrainerBuild -> NavRoute.TrainerAuth.route
+        else -> NavRoute.Ready.route
+    }
+    
     Surface(color = MaterialTheme.colorScheme.background) {
-        NavHost(navController = navController, startDestination = NavRoute.Ready.route) {
+        NavHost(navController = navController, startDestination = startDestination) {
+            composable(NavRoute.DeviceSetup.route) {
+                com.club.medlems.ui.setup.DeviceSetupScreen(
+                    onSetupComplete = {
+                        val destination = if (isTrainerBuild) NavRoute.TrainerAuth.route else NavRoute.Ready.route
+                        navController.navigate(destination) {
+                            popUpTo(NavRoute.DeviceSetup.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
             composable(NavRoute.Ready.route) {
-                ReadyScreen(onFirstScan = { id, scanEventId -> navController.navigate(NavRoute.Confirmation.build(id, scanEventId)) },
-                    onRepeatScan = { id, scanEventId -> navController.navigate(NavRoute.PracticeSession.build(id, scanEventId)) },
+                ReadyScreen(onFirstScan = { id, scanEventId, isTrial -> navController.navigate(NavRoute.Confirmation.build(id, scanEventId, isTrial)) },
+                    onRepeatScan = { id, scanEventId, isTrial -> navController.navigate(NavRoute.PracticeSession.build(id, scanEventId)) },
                     openAttendant = {
                         if (attState.unlocked) navController.navigate(NavRoute.AttendantMenu.route)
                         else navController.navigate(NavRoute.AttendantMenu.route) // will show lock UI
@@ -95,7 +164,8 @@ fun AppRoot(
             composable(NavRoute.Confirmation.route) { backStackEntry ->
                 val memberId = backStackEntry.arguments?.getString("membershipId") ?: "?"
                 val scanEventId = backStackEntry.arguments?.getString("scanEventId") ?: "?"
-                ConfirmationScreen(memberId = memberId,
+                val isTrial = backStackEntry.arguments?.getString("isTrial")?.toBoolean() ?: false
+                ConfirmationScreen(memberId = memberId, isTrial = isTrial,
                     onAddSession = { navController.navigate(NavRoute.PracticeSession.build(memberId, scanEventId)) },
                     onDone = { navController.popBackStack(NavRoute.Ready.route, inclusive = false) }
                 )
@@ -123,6 +193,11 @@ fun AppRoot(
                     },
                     openEditSessions = { memberId -> navController.navigate(NavRoute.EditSessions.build(memberId)) },
                     openRegistration = { navController.navigate(NavRoute.Registration.route) },
+                    openEquipmentList = { navController.navigate(NavRoute.EquipmentList.route) },
+                    openCurrentCheckouts = { navController.navigate(NavRoute.CurrentCheckouts.route) },
+                    openMemberLookup = { navController.navigate(NavRoute.MemberLookup.route) },
+                    openConflictResolution = { navController.navigate(NavRoute.ConflictResolution.route) },
+                    openDevicePairing = { navController.navigate(NavRoute.DevicePairing.route) },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -132,6 +207,101 @@ fun AppRoot(
             }
             composable(NavRoute.Registration.route) {
                 com.club.medlems.ui.attendant.RegistrationScreen(onBack = { navController.popBackStack() })
+            }
+            
+            // Equipment management screens (Trainer Tablet)
+            composable(NavRoute.EquipmentList.route) {
+                com.club.medlems.ui.equipment.EquipmentListScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToCheckout = { equipmentId ->
+                        navController.navigate(NavRoute.EquipmentCheckout.build(equipmentId))
+                    }
+                )
+            }
+            composable(NavRoute.EquipmentCheckout.route) { backStackEntry ->
+                val equipmentId = backStackEntry.arguments?.getString("equipmentId")?.takeIf { it != "_" }
+                com.club.medlems.ui.equipment.EquipmentCheckoutScreen(
+                    equipmentId = equipmentId,
+                    onNavigateBack = { navController.popBackStack() },
+                    onCheckoutComplete = { navController.popBackStack() }
+                )
+            }
+            composable(NavRoute.CurrentCheckouts.route) {
+                com.club.medlems.ui.equipment.CurrentCheckoutsScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            
+            // Trainer tablet member lookup
+            composable(NavRoute.MemberLookup.route) {
+                com.club.medlems.ui.admin.MemberLookupScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToPracticeSession = { memberId, scanEventId ->
+                        navController.navigate(NavRoute.PracticeSession.build(memberId, scanEventId))
+                    },
+                    onNavigateToEquipmentCheckout = { memberId ->
+                        navController.navigate(NavRoute.MemberEquipmentCheckout.build(memberId))
+                    }
+                )
+            }
+            
+            // Trainer tablet equipment checkout with pre-selected member
+            composable(NavRoute.MemberEquipmentCheckout.route) { backStackEntry ->
+                val membershipId = backStackEntry.arguments?.getString("membershipId")
+                com.club.medlems.ui.equipment.EquipmentCheckoutScreen(
+                    equipmentId = null,
+                    preselectedMembershipId = membershipId,
+                    onNavigateBack = { navController.popBackStack() },
+                    onCheckoutComplete = { navController.popBackStack() }
+                )
+            }
+            
+            // Conflict resolution screen (Trainer Tablet)
+            composable(NavRoute.ConflictResolution.route) {
+                com.club.medlems.ui.admin.ConflictResolutionScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            
+            // Device pairing screen (sync network)
+            composable(NavRoute.DevicePairing.route) {
+                com.club.medlems.ui.sync.DevicePairingScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            // Trainer authentication screen
+            composable(NavRoute.TrainerAuth.route) {
+                TrainerAuthScreen(
+                    onAuthenticated = { trainerId, trainerName ->
+                        navController.navigate(NavRoute.TrainerDashboard.route) {
+                            popUpTo(NavRoute.TrainerAuth.route) { inclusive = true }
+                        }
+                    },
+                    onBack = {
+                        // On trainer app, back from auth does nothing (it's the start screen)
+                    }
+                )
+            }
+
+            // Trainer dashboard screen
+            composable(NavRoute.TrainerDashboard.route) {
+                TrainerDashboardScreen(
+                    onLogout = {
+                        navController.navigate(NavRoute.TrainerAuth.route) {
+                            popUpTo(NavRoute.TrainerDashboard.route) { inclusive = true }
+                        }
+                    },
+                    onNavigateToEquipment = {
+                        navController.navigate(NavRoute.EquipmentList.route)
+                    },
+                    onNavigateToCheckouts = {
+                        navController.navigate(NavRoute.CurrentCheckouts.route)
+                    },
+                    onNavigateToAdmin = {
+                        navController.navigate(NavRoute.AttendantMenu.route)
+                    }
+                )
             }
         }
     }

@@ -44,10 +44,12 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
     var scanEventsCsv by remember { mutableStateOf<String?>(null) }
     var importResult by remember { mutableStateOf<String?>(null) }
     var importing by remember { mutableStateOf(false) }
+    var sessionImportResult by remember { mutableStateOf<String?>(null) }
+    var sessionImporting by remember { mutableStateOf(false) }
     var sdSyncEnabled by remember { mutableStateOf(sdCardSyncPreferences.isAutoSyncEnabled()) }
     var sdSyncResult by remember { mutableStateOf<String?>(null) }
     var sdSyncing by remember { mutableStateOf(false) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+    val memberPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
                 runCatching {
@@ -57,6 +59,19 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                     importResult = "Importeret=${res.imported}, dubletter=${res.skippedDuplicates}, inaktive=${res.newlyInactive}, fejl=${res.errors.size}"
                 }.onFailure { e -> importResult = "Fejl: ${e.message}" }
                 importing = false
+            }
+        }
+    }
+    val sessionPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                runCatching {
+                    sessionImporting = true
+                    val csv = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                    val res = csvService.importSessions(csv)
+                    sessionImportResult = "Importeret=${res.imported}, dubletter=${res.skippedDuplicates}, fejl=${res.errors.size}"
+                }.onFailure { e -> sessionImportResult = "Fejl: ${e.message}" }
+                sessionImporting = false
             }
         }
     }
@@ -308,7 +323,7 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Importer medlems-CSV", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { picker.launch(arrayOf("text/*","text/csv","application/octet-stream")) }, enabled = !importing) {
+                    Button(onClick = { memberPicker.launch(arrayOf("text/*","text/csv","application/octet-stream")) }, enabled = !importing) {
                         Icon(Icons.Default.FileUpload, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text(if (importing) "Importer..." else "Vælg fil")
@@ -316,6 +331,23 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                     OutlinedButton(onClick = { importResult = null }) { Text("Ryd resultat") }
                 }
                 importResult?.let { Text(it) }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        ElevatedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Importer skydninger CSV", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { sessionPicker.launch(arrayOf("text/*","text/csv","application/octet-stream")) }, enabled = !sessionImporting) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (sessionImporting) "Importer..." else "Vælg fil")
+                    }
+                    OutlinedButton(onClick = { sessionImportResult = null }) { Text("Ryd resultat") }
+                }
+                sessionImportResult?.let { Text(it) }
             }
         }
 

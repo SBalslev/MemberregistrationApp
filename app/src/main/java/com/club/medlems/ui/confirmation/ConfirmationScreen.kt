@@ -2,6 +2,8 @@ package com.club.medlems.ui.confirmation
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 @Composable
 fun ConfirmationScreen(
     memberId: String,
+    isTrial: Boolean = false,
     onAddSession: () -> Unit,
     onDone: () -> Unit,
     vm: ConfirmationViewModel = hiltViewModel()
@@ -41,8 +44,26 @@ fun ConfirmationScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-    val label = name?.takeIf { it.isNotBlank() }?.let { "$memberId – $it" } ?: memberId
-    Text("Medlem $label er tjekket ind")
+        val label = name?.takeIf { it.isNotBlank() }?.let { "$memberId – $it" } ?: memberId
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Medlem $label er tjekket ind")
+            if (isTrial) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        "Prøvemedlem",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(8.dp))
         Text("Går automatisk tilbage om $seconds s")
         Spacer(Modifier.height(16.dp))

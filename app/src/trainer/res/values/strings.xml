@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Trainer Tablet specific overrides -->
+    <string name="app_name">ISS Skydning Træner</string>
+    <string name="device_role_display">Trainer Tablet</string>
+    <bool name="equipment_enabled">true</bool>
+</resources>

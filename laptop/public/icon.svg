@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- ISS Shield Logo -->
+  <!-- Shield background -->
+  <path d="M128,20 C148,20 168,25 188,35 C198,40 206,46 212,52 C212,100 208,140 194,172 C178,210 154,235 128,248 C102,235 78,210 62,172 C48,140 44,100 44,52 C50,46 58,40 68,35 C88,25 108,20 128,20 Z" fill="#FFFFFF" stroke="#1e3a6e" stroke-width="6"/>
+  <!-- Letter I -->
+  <text x="75" y="160" font-family="Georgia, serif" font-size="65" font-weight="bold" fill="#1e3a6e">I</text>
+  <!-- Letter S (large) -->
+  <text x="96" y="175" font-family="Georgia, serif" font-size="95" font-weight="bold" fill="#1e3a6e">S</text>
+  <!-- Letter s (small) -->
+  <text x="165" y="160" font-family="Georgia, serif" font-size="55" font-weight="bold" fill="#1e3a6e">s</text>
+</svg>
