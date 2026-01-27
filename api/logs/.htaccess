@@ -1,0 +1,8 @@
+# Deny all access to log files
+Require all denied
+
+# For Apache 2.2 compatibility
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>

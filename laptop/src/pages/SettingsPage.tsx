@@ -9,6 +9,7 @@ import * as XLSX from 'xlsx';
 import { isElectron, getElectronAPI } from '../types/electron';
 import { exportDatabase, importDatabase, clearDatabase } from '../database';
 import { buildSkvExportWorkbook } from '../utils/skvExport';
+import { OnlineSyncSettings } from '../components/settings';
 
 interface AppSettings {
   autoSync: boolean;
@@ -345,6 +346,9 @@ export function SettingsPage() {
             )}
           </div>
         </section>
+
+        {/* Online Sync Settings */}
+        <OnlineSyncSettings />
 
         {/* Sync Settings */}
         <section className="mb-8">

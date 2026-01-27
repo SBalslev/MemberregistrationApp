@@ -1,0 +1,52 @@
+<?php
+/**
+ * API Configuration Template
+ *
+ * INSTRUCTIONS:
+ * 1. Copy this file to config.php
+ * 2. Set DB_PASSWORD and JWT_SECRET as environment variables on your hosting
+ * 3. Generate password hash: php -r "echo password_hash('your-password', PASSWORD_BCRYPT, ['cost' => 12]);"
+ * 4. Set file permissions: chmod 600 config.php
+ *
+ * DO NOT COMMIT config.php TO VERSION CONTROL
+ */
+
+return [
+    'db' => [
+        'host' => 'localhost',
+        'name' => 'iss_skydning_dkisssportsskytter',
+        'user' => 'iss_skydning_dkisssportsskytter',
+        'pass' => getenv('DB_PASSWORD') ?: 'CHANGE_ME',
+        'charset' => 'utf8mb4',
+    ],
+    'api' => [
+        // Generate with: php -r "echo password_hash('your-api-password', PASSWORD_BCRYPT, ['cost' => 12]);"
+        'password_hash' => '$2y$12$CHANGE_THIS_TO_YOUR_BCRYPT_HASH',
+
+        // Generate with: openssl rand -base64 32
+        'jwt_secret' => getenv('JWT_SECRET') ?: 'CHANGE_ME_MIN_32_CHARS_RANDOM_STRING',
+
+        // Token lifetime in seconds (24 hours)
+        'token_lifetime' => 86400,
+    ],
+    'security' => [
+        // Login lockout after X failed attempts
+        'max_login_attempts' => 5,
+        'lockout_duration_minutes' => 15,
+
+        // IP allowlist (empty array = allow all)
+        // Examples: '192.168.1.0/24', '203.0.113.50'
+        'ip_allowlist' => [],
+
+        // Rate limiting
+        'rate_limit_requests' => 60,
+        'rate_limit_window_seconds' => 60,
+    ],
+    'sync' => [
+        // Maximum records per batch
+        'batch_size' => 50,
+
+        // Maximum photo size in bytes (16MB)
+        'max_photo_size' => 16777216,
+    ],
+];

@@ -7,3 +7,5 @@ export * from './activityRepository';
 export * from './syncService';
 export * from './trustManager';
 export * from './photoMigration';
+export * from './onlineApiService';
+export * from './onlineSyncService';

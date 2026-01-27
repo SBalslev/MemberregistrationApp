@@ -1,0 +1,19 @@
+# API .gitignore
+
+# Config file with secrets - NEVER COMMIT
+config.php
+
+# Log files
+logs/*.log
+logs/security.log
+
+# Composer dependencies (install on deployment)
+vendor/
+
+# IDE files
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db

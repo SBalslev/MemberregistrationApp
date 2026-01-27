@@ -1,0 +1,102 @@
+# ISS Skydning Sync API - Apache Configuration
+
+# ===========================================
+# Security: Deny access to sensitive files
+# ===========================================
+
+<Files "config.php">
+    Require all denied
+</Files>
+
+<Files "security.php">
+    Require all denied
+</Files>
+
+<Files "db.php">
+    Require all denied
+</Files>
+
+<Files "auth.php">
+    Require all denied
+</Files>
+
+<Files "*.log">
+    Require all denied
+</Files>
+
+<Files ".env">
+    Require all denied
+</Files>
+
+<Files "composer.json">
+    Require all denied
+</Files>
+
+<Files "composer.lock">
+    Require all denied
+</Files>
+
+# ===========================================
+# Force HTTPS
+# ===========================================
+
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# ===========================================
+# URL Rewriting - Route all requests to index.php
+# ===========================================
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# ===========================================
+# Security Headers
+# ===========================================
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+</IfModule>
+
+# ===========================================
+# Prevent directory listing
+# ===========================================
+
+Options -Indexes
+
+# ===========================================
+# Limit request body size (16MB for photo uploads)
+# ===========================================
+
+LimitRequestBody 16777216
+
+# ===========================================
+# PHP Settings (if allowed by hosting)
+# ===========================================
+
+<IfModule mod_php.c>
+    php_flag display_errors Off
+    php_flag log_errors On
+    php_value max_execution_time 60
+    php_value memory_limit 128M
+    php_value post_max_size 20M
+    php_value upload_max_filesize 16M
+</IfModule>
+
+# ===========================================
+# Enable Authorization header (some hosts strip it)
+# ===========================================
+
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
+# For CGI/FastCGI
+<IfModule mod_rewrite.c>
+    RewriteCond %{HTTP:Authorization} ^(.*)
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+</IfModule>
