@@ -48,8 +48,8 @@ export function ConsolidateFeePaymentsDialog({
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [categoryId, setCategoryId] = useState('');
 
-  // Find the FEES category as default
-  const feesCategory = categories.find(c => c.id === 'FEES');
+  // Find the member fee category as default
+  const feesCategory = categories.find(c => c.id === 'cat-kontingent');
 
   // Reset form when dialog opens
   useState(() => {

@@ -7,7 +7,7 @@
  * @see /docs/features/online-database-sync/php-api-design.md
  */
 
-import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout } from '../types/entities';
+import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout, ScanEvent, MemberPreference, NewMemberRegistration } from '../types/entities';
 import type {
   FinancialTransaction,
   FiscalYear,
@@ -17,6 +17,7 @@ import type {
   PendingFeePayment,
 } from '../types/finance';
 import type { TrainerInfo, TrainerDiscipline } from './trainerRepository';
+import type { SkvRegistration, SkvWeapon } from './skvRepository';
 
 // ===== Configuration =====
 
@@ -26,7 +27,7 @@ const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
 
 // Expected API version - update this when deploying new API versions
-const EXPECTED_API_VERSION = '1.2.0';
+const EXPECTED_API_VERSION = '1.4.0';
 
 // ===== Types =====
 
@@ -92,6 +93,11 @@ export interface SyncPushPayload {
     financialTransactions?: OnlineFinancialTransaction[];
     transactionLines?: OnlineTransactionLine[];
     pendingFeePayments?: OnlinePendingFeePayment[];
+    scanEvents?: OnlineScanEvent[];
+    memberPreferences?: OnlineMemberPreference[];
+    newMemberRegistrations?: OnlineNewMemberRegistration[];
+    skvRegistrations?: OnlineSkvRegistration[];
+    skvWeapons?: OnlineSkvWeapon[];
   };
 }
 
@@ -127,6 +133,11 @@ export interface SyncPullResult {
     financialTransactions?: OnlineFinancialTransaction[];
     transactionLines?: OnlineTransactionLine[];
     pendingFeePayments?: OnlinePendingFeePayment[];
+    scanEvents?: OnlineScanEvent[];
+    memberPreferences?: OnlineMemberPreference[];
+    newMemberRegistrations?: OnlineNewMemberRegistration[];
+    skvRegistrations?: OnlineSkvRegistration[];
+    skvWeapons?: OnlineSkvWeapon[];
   };
   deleted: {
     [entityType: string]: string[];
@@ -281,10 +292,11 @@ export interface OnlineEquipmentCheckout {
 }
 
 export interface OnlineTrainerInfo {
-  member_id: string;
+  internal_member_id: string;
   is_trainer: boolean;
   has_skydeleder_certificate: boolean;
   certified_date: string | null;
+  notes?: string | null;
   device_id: string;
   created_at_utc: string;
   modified_at_utc: string;
@@ -295,13 +307,13 @@ export interface OnlineTrainerInfo {
 
 export interface OnlineTrainerDiscipline {
   id: string;
-  member_id: string;
+  internal_member_id: string;
   discipline: string;
-  level: string;
-  certified_date: string | null;
+  level?: string | null;
+  certified_date?: string | null;
   device_id: string;
   created_at_utc: string;
-  modified_at_utc: string;
+  modified_at_utc?: string;
   sync_version: number;
   _action?: 'upsert' | 'delete';
   _deleted?: boolean;
@@ -366,6 +378,7 @@ export interface OnlineTransactionLine {
   category_id: string;
   amount: number;
   is_income: boolean;
+  source: string;
   member_id: string | null;
   line_description: string | null;
   sync_version: number;
@@ -388,6 +401,100 @@ export interface OnlinePendingFeePayment {
   sync_version: number;
   _action?: 'upsert' | 'delete';
   _deleted?: boolean;
+}
+
+export interface OnlineScanEvent {
+  id: string;
+  internal_member_id: string;
+  created_at_utc: string;
+  scan_type: 'FIRST_SCAN' | 'REPEAT_SCAN';
+  linked_check_in_id: string | null;
+  linked_session_id: string | null;
+  canceled_flag: boolean;
+  sync_version: number;
+  _action?: 'upsert' | 'delete';
+}
+
+export interface OnlineMemberPreference {
+  member_id: string;
+  last_practice_type: string | null;
+  last_classification: string | null;
+  modified_at_utc: string;
+  sync_version: number;
+  _action?: 'upsert' | 'delete';
+}
+
+export interface OnlinePhotoMetadata {
+  id: string;
+  internal_member_id: string;
+  photo_type: 'PROFILE' | 'REGISTRATION';
+  content_hash: string;
+  mime_type: string;
+  file_size: number;
+  width: number | null;
+  height: number | null;
+  device_id: string;
+  sync_version: number;
+  created_at_utc: string;
+}
+
+export interface OnlineNewMemberRegistration {
+  id: string;
+  first_name: string;
+  last_name: string;
+  birthday: string | null;
+  gender: 'MALE' | 'FEMALE' | 'OTHER' | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  zip_code: string | null;
+  city: string | null;
+  notes: string | null;
+  photo_path: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
+  guardian_email: string | null;
+  source_device_id: string;
+  source_device_name: string | null;
+  approval_status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approved_at_utc: string | null;
+  rejected_at_utc: string | null;
+  rejection_reason: string | null;
+  created_member_id: string | null;
+  created_at_utc: string;
+  device_id: string;
+  sync_version: number;
+  modified_at_utc: string;
+  _action?: 'upsert' | 'delete';
+}
+
+export interface OnlineSkvRegistration {
+  id: string;
+  member_id: string;
+  skv_level: number;
+  status: 'approved' | 'requested' | 'not_started';
+  last_approved_date: string | null;
+  created_at_utc: string;
+  updated_at_utc: string;
+  device_id: string;
+  sync_version: number;
+  _action?: 'upsert' | 'delete';
+}
+
+export interface OnlineSkvWeapon {
+  id: string;
+  skv_registration_id: string;
+  model: string;
+  description: string | null;
+  serial: string;
+  type: string;
+  caliber: string | null;
+  last_reviewed_date: string | null;
+  created_at_utc: string;
+  updated_at_utc: string;
+  device_id: string;
+  sync_version: number;
+  _action?: 'upsert' | 'delete';
 }
 
 // ===== Error Classes =====
@@ -673,7 +780,7 @@ class OnlineApiService {
    */
   async pull(
     since: string,
-    entities: string[] = ['members', 'check_ins', 'practice_sessions', 'equipment_items', 'equipment_checkouts', 'trainer_infos', 'trainer_disciplines', 'posting_categories', 'fiscal_years', 'fee_rates', 'financial_transactions', 'transaction_lines', 'pending_fee_payments'],
+    entities: string[] = ['members', 'check_ins', 'practice_sessions', 'equipment_items', 'equipment_checkouts', 'trainer_infos', 'trainer_disciplines', 'posting_categories', 'fiscal_years', 'fee_rates', 'financial_transactions', 'transaction_lines', 'pending_fee_payments', 'scan_events', 'member_preferences', 'photos', 'new_member_registrations', 'skv_registrations', 'skv_weapons'],
     limit: number = 100
   ): Promise<SyncPullResult> {
     const params = new URLSearchParams({
@@ -806,13 +913,14 @@ class OnlineApiService {
       ? new Blob([photoData], { type: 'image/jpeg' })
       : photoData;
     formData.append('photo', blob, 'photo.jpg');
+    formData.append('internal_member_id', memberId);
     formData.append('content_hash', contentHash);
+    formData.append('photo_type', 'profile');
 
     const response = await fetch(`${API_BASE_URL}/photos`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.token}`,
-        'X-Member-Id': memberId,
       },
       body: formData,
     });
@@ -1397,6 +1505,7 @@ export function transactionLineToOnline(
     category_id: line.categoryId,
     amount: line.amount,
     is_income: line.isIncome,
+    source: line.source,
     member_id: line.memberId,
     line_description: line.lineDescription,
     sync_version: 1,
@@ -1411,6 +1520,7 @@ export function transactionLineFromOnline(online: OnlineTransactionLine): Transa
     categoryId: online.category_id,
     amount: online.amount,
     isIncome: online.is_income,
+    source: (online.source || 'CASH') as 'CASH' | 'BANK',
     memberId: online.member_id,
     lineDescription: online.line_description,
   };
@@ -1452,6 +1562,197 @@ export function pendingFeePaymentFromOnline(online: OnlinePendingFeePayment): Pa
     consolidatedTransactionId: online.consolidated_transaction_id,
     createdAtUtc: online.created_at_utc,
     updatedAtUtc: online.modified_at_utc,
+  };
+}
+
+// ===== Scan Event Conversion Functions =====
+
+export function scanEventToOnline(
+  event: ScanEvent,
+  action: 'upsert' | 'delete' = 'upsert'
+): OnlineScanEvent {
+  return {
+    id: event.id,
+    internal_member_id: event.internalMemberId,
+    created_at_utc: event.createdAtUtc,
+    scan_type: event.scanType,
+    linked_check_in_id: event.linkedCheckInId,
+    linked_session_id: event.linkedSessionId,
+    canceled_flag: event.canceledFlag,
+    sync_version: event.syncVersion,
+    _action: action,
+  };
+}
+
+export function scanEventFromOnline(online: OnlineScanEvent): Partial<ScanEvent> {
+  return {
+    id: online.id,
+    internalMemberId: online.internal_member_id,
+    createdAtUtc: online.created_at_utc,
+    scanType: online.scan_type,
+    linkedCheckInId: online.linked_check_in_id,
+    linkedSessionId: online.linked_session_id,
+    canceledFlag: online.canceled_flag,
+    syncVersion: online.sync_version,
+  };
+}
+
+// ===== Member Preference Conversion Functions =====
+
+export function memberPreferenceToOnline(
+  pref: MemberPreference,
+  action: 'upsert' | 'delete' = 'upsert'
+): OnlineMemberPreference {
+  return {
+    member_id: pref.memberId,
+    last_practice_type: pref.lastPracticeType,
+    last_classification: pref.lastClassification,
+    modified_at_utc: pref.modifiedAtUtc,
+    sync_version: 1,
+    _action: action,
+  };
+}
+
+export function memberPreferenceFromOnline(online: OnlineMemberPreference): Partial<MemberPreference> {
+  return {
+    memberId: online.member_id,
+    lastPracticeType: online.last_practice_type,
+    lastClassification: online.last_classification,
+    modifiedAtUtc: online.modified_at_utc,
+  };
+}
+
+// ===== New Member Registration Conversion Functions =====
+
+export function newMemberRegistrationToOnline(
+  reg: NewMemberRegistration,
+  action: 'upsert' | 'delete' = 'upsert'
+): OnlineNewMemberRegistration {
+  return {
+    id: reg.id,
+    first_name: reg.firstName,
+    last_name: reg.lastName,
+    birthday: reg.birthday,
+    gender: reg.gender,
+    email: reg.email,
+    phone: reg.phone,
+    address: reg.address,
+    zip_code: reg.zipCode,
+    city: reg.city,
+    notes: reg.notes,
+    photo_path: reg.photoPath,
+    guardian_name: reg.guardianName,
+    guardian_phone: reg.guardianPhone,
+    guardian_email: reg.guardianEmail,
+    source_device_id: reg.sourceDeviceId,
+    source_device_name: reg.sourceDeviceName,
+    approval_status: reg.approvalStatus,
+    approved_at_utc: reg.approvedAtUtc,
+    rejected_at_utc: reg.rejectedAtUtc,
+    rejection_reason: reg.rejectionReason,
+    created_member_id: reg.createdMemberId,
+    created_at_utc: reg.createdAtUtc,
+    device_id: 'laptop-master',
+    sync_version: reg.syncVersion,
+    modified_at_utc: reg.createdAtUtc, // Use createdAt as modified for now
+    _action: action,
+  };
+}
+
+export function newMemberRegistrationFromOnline(online: OnlineNewMemberRegistration): Partial<NewMemberRegistration> {
+  return {
+    id: online.id,
+    firstName: online.first_name,
+    lastName: online.last_name,
+    birthday: online.birthday,
+    gender: online.gender,
+    email: online.email,
+    phone: online.phone,
+    address: online.address,
+    zipCode: online.zip_code,
+    city: online.city,
+    notes: online.notes,
+    photoPath: online.photo_path,
+    guardianName: online.guardian_name,
+    guardianPhone: online.guardian_phone,
+    guardianEmail: online.guardian_email,
+    sourceDeviceId: online.source_device_id,
+    sourceDeviceName: online.source_device_name,
+    approvalStatus: online.approval_status,
+    approvedAtUtc: online.approved_at_utc,
+    rejectedAtUtc: online.rejected_at_utc,
+    rejectionReason: online.rejection_reason,
+    createdMemberId: online.created_member_id,
+    createdAtUtc: online.created_at_utc,
+    syncVersion: online.sync_version,
+  };
+}
+
+// ===== SKV Conversion Functions =====
+
+export function skvRegistrationToOnline(
+  reg: SkvRegistration,
+  action: 'upsert' | 'delete' = 'upsert'
+): OnlineSkvRegistration {
+  return {
+    id: reg.id,
+    member_id: reg.memberId,
+    skv_level: reg.skvLevel,
+    status: reg.status,
+    last_approved_date: reg.lastApprovedDate,
+    created_at_utc: reg.createdAtUtc,
+    updated_at_utc: reg.updatedAtUtc,
+    device_id: 'laptop-master',
+    sync_version: 1,
+    _action: action,
+  };
+}
+
+export function skvRegistrationFromOnline(online: OnlineSkvRegistration): Partial<SkvRegistration> {
+  return {
+    id: online.id,
+    memberId: online.member_id,
+    skvLevel: online.skv_level,
+    status: online.status,
+    lastApprovedDate: online.last_approved_date,
+    createdAtUtc: online.created_at_utc,
+    updatedAtUtc: online.updated_at_utc,
+  };
+}
+
+export function skvWeaponToOnline(
+  weapon: SkvWeapon,
+  action: 'upsert' | 'delete' = 'upsert'
+): OnlineSkvWeapon {
+  return {
+    id: weapon.id,
+    skv_registration_id: weapon.skvRegistrationId,
+    model: weapon.model,
+    description: weapon.description,
+    serial: weapon.serial,
+    type: weapon.type,
+    caliber: weapon.caliber,
+    last_reviewed_date: weapon.lastReviewedDate,
+    created_at_utc: weapon.createdAtUtc,
+    updated_at_utc: weapon.updatedAtUtc,
+    device_id: 'laptop-master',
+    sync_version: 1,
+    _action: action,
+  };
+}
+
+export function skvWeaponFromOnline(online: OnlineSkvWeapon): Partial<SkvWeapon> {
+  return {
+    id: online.id,
+    skvRegistrationId: online.skv_registration_id,
+    model: online.model,
+    description: online.description,
+    serial: online.serial,
+    type: online.type,
+    caliber: online.caliber,
+    lastReviewedDate: online.last_reviewed_date,
+    createdAtUtc: online.created_at_utc,
+    updatedAtUtc: online.updated_at_utc,
   };
 }
 
@@ -1548,7 +1849,7 @@ export function trainerInfoToOnline(
   action: 'upsert' | 'delete' = 'upsert'
 ): OnlineTrainerInfo {
   return {
-    member_id: info.memberId,
+    internal_member_id: info.memberId,
     is_trainer: info.isTrainer,
     has_skydeleder_certificate: info.hasSkydelederCertificate,
     certified_date: info.certifiedDate,
@@ -1563,7 +1864,7 @@ export function trainerInfoToOnline(
 
 export function trainerInfoFromOnline(online: OnlineTrainerInfo): Partial<TrainerInfo> {
   return {
-    memberId: online.member_id,
+    memberId: online.internal_member_id,
     isTrainer: online.is_trainer,
     hasSkydelederCertificate: online.has_skydeleder_certificate,
     certifiedDate: online.certified_date,
@@ -1580,7 +1881,7 @@ export function trainerDisciplineToOnline(
 ): OnlineTrainerDiscipline {
   return {
     id: discipline.id,
-    member_id: discipline.memberId,
+    internal_member_id: discipline.memberId,
     discipline: discipline.discipline,
     level: discipline.level,
     certified_date: discipline.certifiedDate,
@@ -1596,7 +1897,7 @@ export function trainerDisciplineToOnline(
 export function trainerDisciplineFromOnline(online: OnlineTrainerDiscipline): Partial<TrainerDiscipline> {
   return {
     id: online.id,
-    memberId: online.member_id,
+    memberId: online.internal_member_id,
     discipline: online.discipline as TrainerDiscipline['discipline'],
     level: online.level as TrainerDiscipline['level'],
     certifiedDate: online.certified_date,

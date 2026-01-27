@@ -9,13 +9,13 @@
 declare(strict_types=1);
 
 // API version - increment when making changes
-const API_VERSION = '1.2.0';
+const API_VERSION = '1.3.0';
 const API_BUILD_DATE = '2026-01-27';
 
 // Expected file versions - update these when releasing new versions
 const EXPECTED_FILE_VERSIONS = [
-    'handlers/sync_push.php' => '1.2.0',
-    'handlers/sync_pull.php' => '1.2.0',
+    'handlers/sync_push.php' => '1.3.0',
+    'handlers/sync_pull.php' => '1.3.0',
     'handlers/auth.php' => '1.1.0',
     'security.php' => '1.1.0',
 ];

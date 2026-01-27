@@ -19,7 +19,7 @@ import { isMessageProcessed, recordProcessedMessage } from './syncOutboxReposito
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
-export const SYNC_SCHEMA_VERSION = '1.2.0'; // 1.2.0: Added memberPreferences for preference sync
+export const SYNC_SCHEMA_VERSION = '1.4.0'; // 1.4.0: Added new_member_registrations, skv_registrations, skv_weapons tables
 export const SYNC_SCHEMA_MAJOR = 1;
 
 /**

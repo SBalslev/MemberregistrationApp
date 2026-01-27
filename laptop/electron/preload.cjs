@@ -141,6 +141,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPhotoPath: (internalId) =>
     ipcRenderer.invoke('photo:get-path', { internalId }),
 
+  // Read a member's photo file content (for syncing)
+  readPhoto: (internalId) =>
+    ipcRenderer.invoke('photo:read', { internalId }),
+
   // ===== File Save API =====
 
   // Show save dialog

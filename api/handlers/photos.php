@@ -36,7 +36,6 @@ function handlePhotoUpload(): void
         }
 
         $memberId = $validation['data']['internal_member_id'];
-        $contentHash = $validation['data']['content_hash'];
         $photoType = $validation['data']['photo_type'] ?? 'registration';
 
         // Decode base64
@@ -44,6 +43,9 @@ function handlePhotoUpload(): void
         if ($photoData === false) {
             errorResponse('Invalid base64 photo data', 400);
         }
+
+        // Always calculate hash from actual photo data for consistency
+        $contentHash = hash('sha256', $photoData);
 
         processPhotoUpload($memberId, $photoData, $contentHash, $photoType, $deviceId, $config);
         return;
@@ -81,10 +83,9 @@ function handlePhotoUpload(): void
 
     $photoData = file_get_contents($file['tmp_name']);
 
-    // Calculate hash if not provided
-    if (!$contentHash) {
-        $contentHash = hash('sha256', $photoData);
-    }
+    // Always calculate hash from actual photo data for consistency
+    // This ensures duplicate detection works regardless of client hash calculation
+    $contentHash = hash('sha256', $photoData);
 
     processPhotoUpload($memberId, $photoData, $contentHash, $photoType, $deviceId, $config);
 }
@@ -100,18 +101,35 @@ function processPhotoUpload(
     string $deviceId,
     array $config
 ): void {
-    // Check for duplicate by hash
+    // Check for existing photo for this member (one photo per member)
     $existing = dbQueryOne(
-        "SELECT id FROM member_photos WHERE internal_member_id = ? AND content_hash = ?",
-        [$memberId, $contentHash]
+        "SELECT id, content_hash FROM member_photos WHERE internal_member_id = ?",
+        [$memberId]
     );
 
     if ($existing) {
+        // If same hash, it's a duplicate - skip
+        if ($existing['content_hash'] === $contentHash) {
+            jsonResponse([
+                'success' => true,
+                'photo_id' => $existing['id'],
+                'message' => 'Photo already exists',
+                'duplicate' => true,
+            ]);
+            return;
+        }
+
+        // Different photo - update existing record instead of creating duplicate
+        dbExecute(
+            "UPDATE member_photos SET photo_data = ?, content_hash = ?, mime_type = ?, file_size = ?, device_id = ?, synced_at_utc = NOW() WHERE id = ?",
+            [$photoData, $contentHash, 'image/jpeg', strlen($photoData), $deviceId, $existing['id']]
+        );
+
         jsonResponse([
             'success' => true,
             'photo_id' => $existing['id'],
-            'message' => 'Photo with same hash already exists',
-            'duplicate' => true,
+            'message' => 'Photo updated',
+            'size_bytes' => strlen($photoData),
         ]);
         return;
     }

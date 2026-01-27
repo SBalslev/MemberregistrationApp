@@ -139,7 +139,7 @@ export function QuickFeePaymentDialog({
                   .filter(m => m.status === 'ACTIVE')
                   .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
                   .map((member) => (
-                    <option key={member.internalId} value={member.membershipId || member.internalId}>
+                    <option key={member.internalId} value={member.internalId}>
                       {member.firstName} {member.lastName}
                       {member.memberLifecycleStage === 'TRIAL' ? ' (Prøvemedlem)' : ''}
                     </option>

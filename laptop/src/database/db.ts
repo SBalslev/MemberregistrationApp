@@ -270,11 +270,12 @@ async function runMigrations(): Promise<void> {
         categoryId TEXT NOT NULL,
         amount REAL NOT NULL,
         isIncome INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'CASH',
         memberId TEXT,
         lineDescription TEXT,
         FOREIGN KEY (transactionId) REFERENCES FinancialTransaction(id),
         FOREIGN KEY (categoryId) REFERENCES PostingCategory(id),
-        FOREIGN KEY (memberId) REFERENCES Member(membershipId)
+        FOREIGN KEY (memberId) REFERENCES Member(internalId)
       )
     `);
     
@@ -308,7 +309,7 @@ async function runMigrations(): Promise<void> {
         createdAtUtc TEXT NOT NULL,
         updatedAtUtc TEXT NOT NULL,
         FOREIGN KEY (fiscalYear) REFERENCES FiscalYear(year),
-        FOREIGN KEY (memberId) REFERENCES Member(membershipId),
+        FOREIGN KEY (memberId) REFERENCES Member(internalId),
         FOREIGN KEY (consolidatedTransactionId) REFERENCES FinancialTransaction(id)
       )
     `);
@@ -565,6 +566,15 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('SKVWeapon table created');
   }
 
+  // ===== Migration: TransactionLine.source column =====
+  const transactionLineColumns = db.exec("PRAGMA table_info(TransactionLine)");
+  const existingTransactionLineColumns = transactionLineColumns[0]?.values.map(row => row[1] as string) || [];
+
+  if (existingTransactionLineColumns.length > 0 && !existingTransactionLineColumns.includes('source')) {
+    db.run("ALTER TABLE TransactionLine ADD COLUMN source TEXT NOT NULL DEFAULT 'CASH'");
+    migrationsRun.push('TransactionLine.source');
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -640,7 +650,7 @@ async function createSchema(): Promise<void> {
       createdAtUtc TEXT NOT NULL,
       syncedAtUtc TEXT,
       syncVersion INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY (membershipId) REFERENCES Member(membershipId)
+      FOREIGN KEY (internalMemberId) REFERENCES Member(internalId)
     );
     CREATE INDEX IF NOT EXISTS idx_PracticeSession_internalMemberId ON PracticeSession(internalMemberId);
 
@@ -656,7 +666,7 @@ async function createSchema(): Promise<void> {
       createdAtUtc TEXT NOT NULL,
       syncedAtUtc TEXT,
       syncVersion INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY (membershipId) REFERENCES Member(membershipId)
+      FOREIGN KEY (internalMemberId) REFERENCES Member(internalId)
     );
     CREATE INDEX IF NOT EXISTS idx_ScanEvent_internalMemberId ON ScanEvent(internalMemberId);
 
@@ -727,7 +737,7 @@ async function createSchema(): Promise<void> {
       syncedAtUtc TEXT,
       syncVersion INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (equipmentId) REFERENCES EquipmentItem(id),
-      FOREIGN KEY (membershipId) REFERENCES Member(membershipId)
+      FOREIGN KEY (internalMemberId) REFERENCES Member(internalId)
     );
     CREATE INDEX IF NOT EXISTS idx_EquipmentCheckout_internalMemberId ON EquipmentCheckout(internalMemberId);
 
@@ -826,11 +836,12 @@ async function createSchema(): Promise<void> {
       categoryId TEXT NOT NULL,
       amount REAL NOT NULL,
       isIncome INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'CASH',
       memberId TEXT,
       lineDescription TEXT,
       FOREIGN KEY (transactionId) REFERENCES FinancialTransaction(id),
       FOREIGN KEY (categoryId) REFERENCES PostingCategory(id),
-      FOREIGN KEY (memberId) REFERENCES Member(membershipId)
+      FOREIGN KEY (memberId) REFERENCES Member(internalId)
     );
 
     -- Member preferences for practice type/classification sync

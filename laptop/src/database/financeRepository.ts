@@ -197,15 +197,16 @@ export function getTransactionById(id: string): FinancialTransaction | null {
  */
 export function getTransactionLines(transactionId: string): TransactionLine[] {
   return query<TransactionLine>(
-    `SELECT id, transactionId, categoryId, amount, 
+    `SELECT id, transactionId, categoryId, amount,
             CASE WHEN isIncome = 1 THEN 1 ELSE 0 END as isIncome,
-            memberId, lineDescription
-     FROM TransactionLine 
+            source, memberId, lineDescription
+     FROM TransactionLine
      WHERE transactionId = ?`,
     [transactionId]
   ).map(row => ({
     ...row,
     isIncome: Boolean(row.isIncome),
+    source: (row.source || 'CASH') as PaymentMethod,
   }));
 }
 
@@ -275,15 +276,16 @@ export function createTransaction(
     
     for (const line of lines) {
       execute(
-        `INSERT INTO TransactionLine 
-         (id, transactionId, categoryId, amount, isIncome, memberId, lineDescription)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO TransactionLine
+         (id, transactionId, categoryId, amount, isIncome, source, memberId, lineDescription)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           line.id,
           txn.id,
           line.categoryId,
           line.amount,
           line.isIncome ? 1 : 0,
+          line.source,
           line.memberId,
           line.lineDescription,
         ]
@@ -319,18 +321,19 @@ export function updateTransaction(
     
     // Delete existing lines and re-insert
     execute('DELETE FROM TransactionLine WHERE transactionId = ?', [txn.id]);
-    
+
     for (const line of lines) {
       execute(
-        `INSERT INTO TransactionLine 
-         (id, transactionId, categoryId, amount, isIncome, memberId, lineDescription)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO TransactionLine
+         (id, transactionId, categoryId, amount, isIncome, source, memberId, lineDescription)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           line.id,
           txn.id,
           line.categoryId,
           line.amount,
           line.isIncome ? 1 : 0,
+          line.source,
           line.memberId,
           line.lineDescription,
         ]
@@ -420,22 +423,22 @@ export function getMemberFeeStatus(year: number): MemberFeeStatus[] {
     paidAmount: number;
     paymentDates: string;
   }>(
-    `SELECT 
-       m.membershipId as memberId,
+    `SELECT
+       m.internalId as memberId,
        m.firstName,
        m.lastName,
        COALESCE(m.memberType, 'ADULT') as memberType,
        COALESCE(SUM(tl.amount), 0) as paidAmount,
        GROUP_CONCAT(ft.date, ',') as paymentDates
      FROM Member m
-     LEFT JOIN TransactionLine tl ON tl.memberId = m.membershipId 
-       AND tl.categoryId = 'FEES' 
+     LEFT JOIN TransactionLine tl ON tl.memberId = m.internalId
+       AND tl.categoryId = 'cat-kontingent'
        AND tl.isIncome = 1
-     LEFT JOIN FinancialTransaction ft ON tl.transactionId = ft.id 
-       AND ft.fiscalYear = ? 
+     LEFT JOIN FinancialTransaction ft ON tl.transactionId = ft.id
+       AND ft.fiscalYear = ?
        AND ft.isDeleted = 0
      WHERE m.status = 'ACTIVE'
-     GROUP BY m.membershipId, m.firstName, m.lastName, m.memberType
+     GROUP BY m.internalId, m.firstName, m.lastName, m.memberType
      ORDER BY m.lastName, m.firstName`,
     [year]
   );
@@ -488,12 +491,12 @@ export function getClosingBalances(year: number): RunningBalances {
 export function getMemberTransactionLines(memberId: string, year?: number): Array<TransactionLine & { date: string; description: string }> {
   const yearFilter = year ? 'AND ft.fiscalYear = ?' : '';
   const params = year ? [memberId, year] : [memberId];
-  
+
   return query<TransactionLine & { date: string; description: string }>(
-    `SELECT 
-       tl.id, tl.transactionId, tl.categoryId, tl.amount, 
+    `SELECT
+       tl.id, tl.transactionId, tl.categoryId, tl.amount,
        CASE WHEN tl.isIncome = 1 THEN 1 ELSE 0 END as isIncome,
-       tl.memberId, tl.lineDescription,
+       tl.source, tl.memberId, tl.lineDescription,
        ft.date, ft.description
      FROM TransactionLine tl
      JOIN FinancialTransaction ft ON tl.transactionId = ft.id
@@ -503,6 +506,7 @@ export function getMemberTransactionLines(memberId: string, year?: number): Arra
   ).map(row => ({
     ...row,
     isIncome: Boolean(row.isIncome),
+    source: (row.source || 'CASH') as PaymentMethod,
   }));
 }
 
@@ -530,14 +534,14 @@ export function getPendingFeePayments(year: number): PendingFeePaymentWithMember
   }
   const now = new Date().toISOString();
   return query<RawRow>(
-    `SELECT 
-       p.id, p.fiscalYear, p.memberId, p.amount, p.paymentDate, 
-       p.paymentMethod, p.notes, p.isConsolidated, 
+    `SELECT
+       p.id, p.fiscalYear, p.memberId, p.amount, p.paymentDate,
+       p.paymentMethod, p.notes, p.isConsolidated,
        p.consolidatedTransactionId, p.createdAtUtc, p.updatedAtUtc,
        m.firstName || ' ' || m.lastName as memberName,
        COALESCE(m.memberType, 'ADULT') as memberType
      FROM PendingFeePayment p
-     JOIN Member m ON p.memberId = m.membershipId
+     JOIN Member m ON p.memberId = m.internalId
      WHERE p.fiscalYear = ? AND p.isConsolidated = 0
      ORDER BY p.paymentDate DESC`,
     [year]
@@ -713,13 +717,14 @@ export function consolidatePendingFeePayments(
   // Create transaction lines for each payment
   payments.forEach(payment => {
     execute(
-      `INSERT INTO TransactionLine (id, transactionId, categoryId, amount, isIncome, memberId, lineDescription)
-       VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      `INSERT INTO TransactionLine (id, transactionId, categoryId, amount, isIncome, source, memberId, lineDescription)
+       VALUES (?, ?, ?, ?, 1, ?, ?, ?)`,
       [
         crypto.randomUUID(),
         transactionId,
         categoryId,
         payment.amount,
+        payment.paymentMethod,
         payment.memberId,
         `Kontingent ${payment.paymentMethod === 'CASH' ? 'kontant' : 'bank'}`,
       ]

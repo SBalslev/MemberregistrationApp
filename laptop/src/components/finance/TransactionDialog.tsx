@@ -34,6 +34,7 @@ interface ValidationErrors {
   amounts?: string;
   lines?: string;
   lineErrors?: Record<number, { categoryId?: string; amount?: string }>;
+  lineBalance?: string;
 }
 
 // ===== Helper Functions =====
@@ -47,6 +48,7 @@ function createEmptyLine(): TransactionLineFormData {
     categoryId: '',
     amount: 0,
     isIncome: true,
+    source: 'CASH',
     memberId: null,
     lineDescription: null,
   };
@@ -123,6 +125,46 @@ function validateForm(data: TransactionFormData): ValidationErrors {
     errors.lineErrors = lineErrors;
   }
 
+  // Validate that line totals match header totals for all four combinations
+  const cashIn = data.cashIn ?? 0;
+  const cashOut = data.cashOut ?? 0;
+  const bankIn = data.bankIn ?? 0;
+  const bankOut = data.bankOut ?? 0;
+
+  const lineCashIncome = data.lines
+    ?.filter((line) => line.isIncome && line.source === 'CASH')
+    .reduce((sum, line) => sum + line.amount, 0) ?? 0;
+  const lineCashExpense = data.lines
+    ?.filter((line) => !line.isIncome && line.source === 'CASH')
+    .reduce((sum, line) => sum + line.amount, 0) ?? 0;
+  const lineBankIncome = data.lines
+    ?.filter((line) => line.isIncome && line.source === 'BANK')
+    .reduce((sum, line) => sum + line.amount, 0) ?? 0;
+  const lineBankExpense = data.lines
+    ?.filter((line) => !line.isIncome && line.source === 'BANK')
+    .reduce((sum, line) => sum + line.amount, 0) ?? 0;
+
+  // Use small epsilon for floating point comparison
+  const epsilon = 0.001;
+  const parts: string[] = [];
+
+  if (Math.abs(lineCashIncome - cashIn) > epsilon) {
+    parts.push(`Kasse ind: ${lineCashIncome.toFixed(2)} ≠ ${cashIn.toFixed(2)} kr`);
+  }
+  if (Math.abs(lineCashExpense - cashOut) > epsilon) {
+    parts.push(`Kasse ud: ${lineCashExpense.toFixed(2)} ≠ ${cashOut.toFixed(2)} kr`);
+  }
+  if (Math.abs(lineBankIncome - bankIn) > epsilon) {
+    parts.push(`Bank ind: ${lineBankIncome.toFixed(2)} ≠ ${bankIn.toFixed(2)} kr`);
+  }
+  if (Math.abs(lineBankExpense - bankOut) > epsilon) {
+    parts.push(`Bank ud: ${lineBankExpense.toFixed(2)} ≠ ${bankOut.toFixed(2)} kr`);
+  }
+
+  if (parts.length > 0) {
+    errors.lineBalance = parts.join('. ');
+  }
+
   return errors;
 }
 
@@ -171,12 +213,54 @@ export function TransactionDialog({
     setFormData((prev) => ({ ...prev, [field]: value }));
   }
 
+  // Sync description to first line on blur (when leaving the field)
+  function handleDescriptionBlur() {
+    if (initialData?.id) return; // Don't sync when editing existing transaction
+
+    setFormData((prev) => {
+      if (prev.lines.length === 0) return prev;
+
+      const currentLineDesc = prev.lines[0].lineDescription;
+      // Only sync if line description is empty (user hasn't manually set it)
+      if (!currentLineDesc) {
+        const newLines = [...prev.lines];
+        newLines[0] = { ...newLines[0], lineDescription: prev.description || null };
+        return { ...prev, lines: newLines };
+      }
+      return prev;
+    });
+  }
+
   function handleNumberChange(
     field: 'cashIn' | 'cashOut' | 'bankIn' | 'bankOut',
     value: string
   ) {
     const numValue = value === '' ? null : parseFloat(value);
-    handleFieldChange(field, numValue);
+    setFormData((prev) => ({ ...prev, [field]: numValue }));
+  }
+
+  // Sync amount to first line on blur (when leaving the field)
+  function handleAmountBlur(field: 'cashIn' | 'cashOut' | 'bankIn' | 'bankOut') {
+    if (initialData?.id) return; // Don't sync when editing existing transaction
+
+    setFormData((prev) => {
+      if (prev.lines.length === 0) return prev;
+
+      const currentLineAmount = prev.lines[0].amount;
+      // Only sync if line amount is still 0 (user hasn't manually set it)
+      if (currentLineAmount !== 0) return prev;
+
+      const amount = prev[field] ?? 0;
+      if (amount > 0) {
+        const isIncome = field === 'cashIn' || field === 'bankIn';
+        const source = field === 'cashIn' || field === 'cashOut' ? 'CASH' : 'BANK';
+        const newLines = [...prev.lines];
+        newLines[0] = { ...newLines[0], amount, isIncome, source };
+        return { ...prev, lines: newLines };
+      }
+
+      return prev;
+    });
   }
 
   function handleLineChange<K extends keyof TransactionLineFormData>(
@@ -278,6 +362,7 @@ export function TransactionDialog({
                   type="text"
                   value={formData.description}
                   onChange={(e) => handleFieldChange('description', e.target.value)}
+                  onBlur={handleDescriptionBlur}
                   placeholder="F.eks. Kontingent, Patronkøb..."
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
                     touched && errors.description ? 'border-red-500' : 'border-gray-300'
@@ -307,6 +392,7 @@ export function TransactionDialog({
                       min="0"
                       value={formData.cashIn ?? ''}
                       onChange={(e) => handleNumberChange('cashIn', e.target.value)}
+                      onBlur={() => handleAmountBlur('cashIn')}
                       placeholder="0,00"
                       className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     />
@@ -328,6 +414,7 @@ export function TransactionDialog({
                       min="0"
                       value={formData.cashOut ?? ''}
                       onChange={(e) => handleNumberChange('cashOut', e.target.value)}
+                      onBlur={() => handleAmountBlur('cashOut')}
                       placeholder="0,00"
                       className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     />
@@ -349,6 +436,7 @@ export function TransactionDialog({
                       min="0"
                       value={formData.bankIn ?? ''}
                       onChange={(e) => handleNumberChange('bankIn', e.target.value)}
+                      onBlur={() => handleAmountBlur('bankIn')}
                       placeholder="0,00"
                       className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     />
@@ -370,6 +458,7 @@ export function TransactionDialog({
                       min="0"
                       value={formData.bankOut ?? ''}
                       onChange={(e) => handleNumberChange('bankOut', e.target.value)}
+                      onBlur={() => handleAmountBlur('bankOut')}
                       placeholder="0,00"
                       className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     />
@@ -538,6 +627,41 @@ export function TransactionDialog({
                             </div>
                           </div>
 
+                          {/* Cash/Bank Toggle */}
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">
+                              Kilde
+                            </label>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleLineChange(index, 'source', 'CASH')
+                                }
+                                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                  line.source === 'CASH'
+                                    ? 'bg-amber-100 text-amber-700 border-2 border-amber-500'
+                                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+                                }`}
+                              >
+                                Kasse
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleLineChange(index, 'source', 'BANK')
+                                }
+                                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                  line.source === 'BANK'
+                                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
+                                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+                                }`}
+                              >
+                                Bank
+                              </button>
+                            </div>
+                          </div>
+
                           {/* Member */}
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">
@@ -558,7 +682,7 @@ export function TransactionDialog({
                               {activeMembers.map((member) => (
                                 <option
                                   key={member.internalId}
-                                  value={member.membershipId || member.internalId}
+                                  value={member.internalId}
                                 >
                                   {member.firstName} {member.lastName}
                                   {member.membershipId ? ` (${member.membershipId})` : ' (Prøvemedlem)'}
@@ -611,6 +735,10 @@ export function TransactionDialog({
                   );
                 })}
               </div>
+
+              {touched && errors.lineBalance && (
+                <p className="text-sm text-red-500 mt-3">{errors.lineBalance}</p>
+              )}
             </div>
           </div>
         </form>

@@ -1142,6 +1142,28 @@ ipcMain.handle('photo:get-path', (event, { internalId }) => {
   };
 });
 
+ipcMain.handle('photo:read', (event, { internalId }) => {
+  const photoPath = path.join(getPhotosDir(), `${internalId}.jpg`);
+  if (!fs.existsSync(photoPath)) {
+    return { success: false, error: 'Photo file not found' };
+  }
+  try {
+    const data = fs.readFileSync(photoPath);
+    const base64 = data.toString('base64');
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update(data).digest('hex');
+    return {
+      success: true,
+      base64Data: base64,
+      contentHash: hash,
+      sizeBytes: data.length
+    };
+  } catch (error) {
+    console.error('[Photo] Read error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // ===== File Save API =====
 
 ipcMain.handle('file:show-save-dialog', async (event, options = {}) => {

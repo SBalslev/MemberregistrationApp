@@ -238,6 +238,7 @@ export function FinancePage() {
           categoryId: line.categoryId,
           amount: line.amount,
           isIncome: line.isIncome,
+          source: line.source,
           memberId: line.memberId,
           lineDescription: line.lineDescription,
         }))
@@ -265,12 +266,13 @@ export function FinancePage() {
           categoryId: line.categoryId,
           amount: line.amount,
           isIncome: line.isIncome,
+          source: line.source,
           memberId: line.memberId,
           lineDescription: line.lineDescription,
         }))
       );
     }
-    
+
     setIsDialogOpen(false);
     setEditingTransaction(undefined);
     loadData();
@@ -295,6 +297,7 @@ export function FinancePage() {
         categoryId: line.categoryId,
         amount: line.amount,
         isIncome: line.isIncome,
+        source: line.source,
         memberId: line.memberId,
         lineDescription: line.lineDescription,
       })),

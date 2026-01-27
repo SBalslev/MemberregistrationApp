@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 // File version - increment when making changes
-const SYNC_PUSH_VERSION = '1.2.0';  // 1.2.0: Added transaction_lines, pending_fee_payments handlers; full finance sync
+const SYNC_PUSH_VERSION = '1.4.0';  // 1.4.0: Added new_member_registrations, skv_registrations, skv_weapons
 
 // ===== Helper Functions =====
 
@@ -208,6 +208,31 @@ function handleSyncPush(): void
         $pendingFeePaymentsData = getEntity($entities, 'pending_fee_payments', 'pendingFeePayments');
         if (!empty($pendingFeePaymentsData)) {
             $result['processed']['pending_fee_payments'] = processPendingFeePaymentsPush($pendingFeePaymentsData, $deviceId);
+        }
+
+        $scanEventsData = getEntity($entities, 'scan_events', 'scanEvents');
+        if (!empty($scanEventsData)) {
+            $result['processed']['scan_events'] = processScanEventsPush($scanEventsData, $deviceId);
+        }
+
+        $memberPreferencesData = getEntity($entities, 'member_preferences', 'memberPreferences');
+        if (!empty($memberPreferencesData)) {
+            $result['processed']['member_preferences'] = processMemberPreferencesPush($memberPreferencesData, $deviceId);
+        }
+
+        $registrationsData = getEntity($entities, 'new_member_registrations', 'newMemberRegistrations');
+        if (!empty($registrationsData)) {
+            $result['processed']['new_member_registrations'] = processNewMemberRegistrationsPush($registrationsData, $deviceId);
+        }
+
+        $skvRegistrationsData = getEntity($entities, 'skv_registrations', 'skvRegistrations');
+        if (!empty($skvRegistrationsData)) {
+            $result['processed']['skv_registrations'] = processSkvRegistrationsPush($skvRegistrationsData, $deviceId);
+        }
+
+        $skvWeaponsData = getEntity($entities, 'skv_weapons', 'skvWeapons');
+        if (!empty($skvWeaponsData)) {
+            $result['processed']['skv_weapons'] = processSkvWeaponsPush($skvWeaponsData, $deviceId);
         }
 
         // Record batch as processed
@@ -660,8 +685,9 @@ function processTrainerInfosPush(array $infos, string $deviceId): array
             }
 
             dbExecute(
-                "UPDATE trainer_info SET has_skydeleder_certificate = ?, certified_date = ?, notes = ?, device_id = ?, sync_version = ?, modified_at_utc = ?, synced_at_utc = NOW() WHERE internal_member_id = ?",
+                "UPDATE trainer_info SET is_trainer = ?, has_skydeleder_certificate = ?, certified_date = ?, notes = ?, device_id = ?, sync_version = ?, modified_at_utc = ?, synced_at_utc = NOW() WHERE internal_member_id = ?",
                 [
+                    toBool($info['is_trainer'] ?? false),
                     toBool($info['has_skydeleder_certificate'] ?? false),
                     $info['certified_date'] ?? null,
                     $info['notes'] ?? null,
@@ -674,9 +700,10 @@ function processTrainerInfosPush(array $infos, string $deviceId): array
             $stats['updated']++;
         } else {
             dbExecute(
-                "INSERT INTO trainer_info (internal_member_id, has_skydeleder_certificate, certified_date, notes, device_id, sync_version, created_at_utc, modified_at_utc, synced_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                "INSERT INTO trainer_info (internal_member_id, is_trainer, has_skydeleder_certificate, certified_date, notes, device_id, sync_version, created_at_utc, modified_at_utc, synced_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
                 [
                     $memberId,
+                    toBool($info['is_trainer'] ?? false),
                     toBool($info['has_skydeleder_certificate'] ?? false),
                     $info['certified_date'] ?? null,
                     $info['notes'] ?? null,
@@ -718,11 +745,13 @@ function processTrainerDisciplinesPush(array $disciplines, string $deviceId): ar
         }
 
         dbExecute(
-            "INSERT INTO trainer_disciplines (id, internal_member_id, discipline, device_id, sync_version, created_at_utc, synced_at_utc) VALUES (?, ?, ?, ?, ?, ?, NOW())",
+            "INSERT INTO trainer_disciplines (id, internal_member_id, discipline, level, certified_date, device_id, sync_version, created_at_utc, synced_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
             [
                 $id,
                 $discipline['internal_member_id'],
                 $discipline['discipline'],
+                $discipline['level'] ?? null,
+                $discipline['certified_date'] ?? null,
                 $deviceId,
                 $discipline['sync_version'] ?? 1,
                 toMySqlDateTime($discipline['created_at_utc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
@@ -961,12 +990,13 @@ function processTransactionLinesPush(array $lines, string $deviceId): array
 
         if ($existing) {
             dbExecute(
-                "UPDATE transaction_lines SET transaction_id = ?, category_id = ?, amount = ?, is_income = ?, member_id = ?, line_description = ?, synced_at_utc = NOW() WHERE id = ?",
+                "UPDATE transaction_lines SET transaction_id = ?, category_id = ?, amount = ?, is_income = ?, source = ?, member_id = ?, line_description = ?, synced_at_utc = NOW() WHERE id = ?",
                 [
                     $line['transaction_id'] ?? $line['transactionId'],
                     $line['category_id'] ?? $line['categoryId'],
                     $line['amount'],
                     toBool($line['is_income'] ?? $line['isIncome'] ?? false),
+                    $line['source'] ?? 'CASH',
                     $line['member_id'] ?? $line['memberId'] ?? null,
                     $line['line_description'] ?? $line['lineDescription'] ?? null,
                     $id,
@@ -975,13 +1005,14 @@ function processTransactionLinesPush(array $lines, string $deviceId): array
             $stats['updated']++;
         } else {
             dbExecute(
-                "INSERT INTO transaction_lines (id, transaction_id, category_id, amount, is_income, member_id, line_description, synced_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+                "INSERT INTO transaction_lines (id, transaction_id, category_id, amount, is_income, source, member_id, line_description, synced_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
                 [
                     $id,
                     $line['transaction_id'] ?? $line['transactionId'],
                     $line['category_id'] ?? $line['categoryId'],
                     $line['amount'],
                     toBool($line['is_income'] ?? $line['isIncome'] ?? false),
+                    $line['source'] ?? 'CASH',
                     $line['member_id'] ?? $line['memberId'] ?? null,
                     $line['line_description'] ?? $line['lineDescription'] ?? null,
                 ]
@@ -1055,6 +1086,379 @@ function processPendingFeePaymentsPush(array $payments, string $deviceId): array
                     $payment['sync_version'] ?? $payment['syncVersion'] ?? 1,
                     toMySqlDateTime($payment['created_at_utc'] ?? $payment['createdAtUtc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
                     toMySqlDateTime($clientModified) ?? gmdate('Y-m-d H:i:s'),
+                ]
+            );
+            $stats['inserted']++;
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Process scan events push
+ */
+function processScanEventsPush(array $events, string $deviceId): array
+{
+    $stats = ['inserted' => 0, 'updated' => 0, 'deleted' => 0, 'skipped' => 0];
+
+    foreach ($events as $event) {
+        $action = $event['_action'] ?? 'upsert';
+        $id = $event['id'] ?? null;
+        if (!$id) continue;
+
+        if ($action === 'delete') {
+            dbExecute("DELETE FROM scan_events WHERE id = ?", [$id]);
+            $stats['deleted']++;
+            continue;
+        }
+
+        $existing = dbQueryOne("SELECT id FROM scan_events WHERE id = ?", [$id]);
+
+        if ($existing) {
+            dbExecute(
+                "UPDATE scan_events SET internal_member_id = ?, scan_type = ?, linked_check_in_id = ?, linked_session_id = ?, canceled_flag = ?, device_id = ?, sync_version = ?, synced_at_utc = NOW() WHERE id = ?",
+                [
+                    $event['internal_member_id'] ?? $event['internalMemberId'],
+                    $event['scan_type'] ?? $event['scanType'],
+                    $event['linked_check_in_id'] ?? $event['linkedCheckInId'] ?? null,
+                    $event['linked_session_id'] ?? $event['linkedSessionId'] ?? null,
+                    toBool($event['canceled_flag'] ?? $event['canceledFlag'] ?? false),
+                    $deviceId,
+                    $event['sync_version'] ?? $event['syncVersion'] ?? 1,
+                    $id,
+                ]
+            );
+            $stats['updated']++;
+        } else {
+            dbExecute(
+                "INSERT INTO scan_events (id, internal_member_id, created_at_utc, scan_type, linked_check_in_id, linked_session_id, canceled_flag, device_id, sync_version, synced_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                [
+                    $id,
+                    $event['internal_member_id'] ?? $event['internalMemberId'],
+                    toMySqlDateTime($event['created_at_utc'] ?? $event['createdAtUtc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
+                    $event['scan_type'] ?? $event['scanType'],
+                    $event['linked_check_in_id'] ?? $event['linkedCheckInId'] ?? null,
+                    $event['linked_session_id'] ?? $event['linkedSessionId'] ?? null,
+                    toBool($event['canceled_flag'] ?? $event['canceledFlag'] ?? false),
+                    $deviceId,
+                    $event['sync_version'] ?? $event['syncVersion'] ?? 1,
+                ]
+            );
+            $stats['inserted']++;
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Process member preferences push
+ */
+function processMemberPreferencesPush(array $preferences, string $deviceId): array
+{
+    $stats = ['inserted' => 0, 'updated' => 0, 'deleted' => 0, 'skipped' => 0];
+
+    foreach ($preferences as $pref) {
+        $action = $pref['_action'] ?? 'upsert';
+        $memberId = $pref['member_id'] ?? $pref['memberId'] ?? null;
+        if (!$memberId) continue;
+
+        if ($action === 'delete') {
+            dbExecute("DELETE FROM member_preferences WHERE member_id = ?", [$memberId]);
+            $stats['deleted']++;
+            continue;
+        }
+
+        $clientModified = $pref['modified_at_utc'] ?? $pref['modifiedAtUtc'] ?? null;
+        $existing = dbQueryOne("SELECT modified_at_utc FROM member_preferences WHERE member_id = ?", [$memberId]);
+
+        if ($existing) {
+            if ($clientModified && strtotime($clientModified) <= strtotime($existing['modified_at_utc'])) {
+                $stats['skipped']++;
+                continue;
+            }
+
+            dbExecute(
+                "UPDATE member_preferences SET last_practice_type = ?, last_classification = ?, device_id = ?, sync_version = ?, modified_at_utc = ?, synced_at_utc = NOW() WHERE member_id = ?",
+                [
+                    $pref['last_practice_type'] ?? $pref['lastPracticeType'] ?? null,
+                    $pref['last_classification'] ?? $pref['lastClassification'] ?? null,
+                    $deviceId,
+                    $pref['sync_version'] ?? $pref['syncVersion'] ?? 1,
+                    toMySqlDateTime($clientModified) ?? gmdate('Y-m-d H:i:s'),
+                    $memberId,
+                ]
+            );
+            $stats['updated']++;
+        } else {
+            dbExecute(
+                "INSERT INTO member_preferences (member_id, last_practice_type, last_classification, device_id, sync_version, modified_at_utc, synced_at_utc) VALUES (?, ?, ?, ?, ?, ?, NOW())",
+                [
+                    $memberId,
+                    $pref['last_practice_type'] ?? $pref['lastPracticeType'] ?? null,
+                    $pref['last_classification'] ?? $pref['lastClassification'] ?? null,
+                    $deviceId,
+                    $pref['sync_version'] ?? $pref['syncVersion'] ?? 1,
+                    toMySqlDateTime($clientModified) ?? gmdate('Y-m-d H:i:s'),
+                ]
+            );
+            $stats['inserted']++;
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Process new member registrations push
+ */
+function processNewMemberRegistrationsPush(array $registrations, string $deviceId): array
+{
+    $stats = ['inserted' => 0, 'updated' => 0, 'deleted' => 0, 'skipped' => 0];
+
+    foreach ($registrations as $reg) {
+        $action = $reg['_action'] ?? 'upsert';
+        $id = $reg['id'] ?? null;
+        if (!$id) continue;
+
+        if ($action === 'delete') {
+            dbExecute("DELETE FROM new_member_registrations WHERE id = ?", [$id]);
+            $stats['deleted']++;
+            continue;
+        }
+
+        $clientModified = $reg['modified_at_utc'] ?? $reg['modifiedAtUtc'] ?? $reg['created_at_utc'] ?? $reg['createdAtUtc'] ?? null;
+        $existing = dbQueryOne("SELECT modified_at_utc FROM new_member_registrations WHERE id = ?", [$id]);
+
+        if ($existing) {
+            if ($clientModified && strtotime($clientModified) <= strtotime($existing['modified_at_utc'])) {
+                $stats['skipped']++;
+                continue;
+            }
+
+            dbExecute(
+                "UPDATE new_member_registrations SET
+                    first_name = ?, last_name = ?, birthday = ?, gender = ?,
+                    email = ?, phone = ?, address = ?, zip_code = ?, city = ?, notes = ?,
+                    photo_path = ?, guardian_name = ?, guardian_phone = ?, guardian_email = ?,
+                    source_device_id = ?, source_device_name = ?,
+                    approval_status = ?, approved_at_utc = ?, rejected_at_utc = ?,
+                    rejection_reason = ?, created_member_id = ?,
+                    device_id = ?, sync_version = ?, modified_at_utc = ?, synced_at_utc = NOW()
+                WHERE id = ?",
+                [
+                    $reg['first_name'] ?? $reg['firstName'],
+                    $reg['last_name'] ?? $reg['lastName'],
+                    $reg['birthday'] ?? null,
+                    $reg['gender'] ?? null,
+                    $reg['email'] ?? null,
+                    $reg['phone'] ?? null,
+                    $reg['address'] ?? null,
+                    $reg['zip_code'] ?? $reg['zipCode'] ?? null,
+                    $reg['city'] ?? null,
+                    $reg['notes'] ?? null,
+                    $reg['photo_path'] ?? $reg['photoPath'] ?? null,
+                    $reg['guardian_name'] ?? $reg['guardianName'] ?? null,
+                    $reg['guardian_phone'] ?? $reg['guardianPhone'] ?? null,
+                    $reg['guardian_email'] ?? $reg['guardianEmail'] ?? null,
+                    $reg['source_device_id'] ?? $reg['sourceDeviceId'],
+                    $reg['source_device_name'] ?? $reg['sourceDeviceName'] ?? null,
+                    $reg['approval_status'] ?? $reg['approvalStatus'] ?? 'PENDING',
+                    toMySqlDateTime($reg['approved_at_utc'] ?? $reg['approvedAtUtc'] ?? null),
+                    toMySqlDateTime($reg['rejected_at_utc'] ?? $reg['rejectedAtUtc'] ?? null),
+                    $reg['rejection_reason'] ?? $reg['rejectionReason'] ?? null,
+                    $reg['created_member_id'] ?? $reg['createdMemberId'] ?? null,
+                    $deviceId,
+                    $reg['sync_version'] ?? $reg['syncVersion'] ?? 1,
+                    toMySqlDateTime($clientModified) ?? gmdate('Y-m-d H:i:s'),
+                    $id,
+                ]
+            );
+            $stats['updated']++;
+        } else {
+            dbExecute(
+                "INSERT INTO new_member_registrations (
+                    id, first_name, last_name, birthday, gender,
+                    email, phone, address, zip_code, city, notes,
+                    photo_path, guardian_name, guardian_phone, guardian_email,
+                    source_device_id, source_device_name,
+                    approval_status, approved_at_utc, rejected_at_utc,
+                    rejection_reason, created_member_id, created_at_utc,
+                    device_id, sync_version, modified_at_utc, synced_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                [
+                    $id,
+                    $reg['first_name'] ?? $reg['firstName'],
+                    $reg['last_name'] ?? $reg['lastName'],
+                    $reg['birthday'] ?? null,
+                    $reg['gender'] ?? null,
+                    $reg['email'] ?? null,
+                    $reg['phone'] ?? null,
+                    $reg['address'] ?? null,
+                    $reg['zip_code'] ?? $reg['zipCode'] ?? null,
+                    $reg['city'] ?? null,
+                    $reg['notes'] ?? null,
+                    $reg['photo_path'] ?? $reg['photoPath'] ?? null,
+                    $reg['guardian_name'] ?? $reg['guardianName'] ?? null,
+                    $reg['guardian_phone'] ?? $reg['guardianPhone'] ?? null,
+                    $reg['guardian_email'] ?? $reg['guardianEmail'] ?? null,
+                    $reg['source_device_id'] ?? $reg['sourceDeviceId'],
+                    $reg['source_device_name'] ?? $reg['sourceDeviceName'] ?? null,
+                    $reg['approval_status'] ?? $reg['approvalStatus'] ?? 'PENDING',
+                    toMySqlDateTime($reg['approved_at_utc'] ?? $reg['approvedAtUtc'] ?? null),
+                    toMySqlDateTime($reg['rejected_at_utc'] ?? $reg['rejectedAtUtc'] ?? null),
+                    $reg['rejection_reason'] ?? $reg['rejectionReason'] ?? null,
+                    $reg['created_member_id'] ?? $reg['createdMemberId'] ?? null,
+                    toMySqlDateTime($reg['created_at_utc'] ?? $reg['createdAtUtc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
+                    $deviceId,
+                    $reg['sync_version'] ?? $reg['syncVersion'] ?? 1,
+                    toMySqlDateTime($clientModified) ?? gmdate('Y-m-d H:i:s'),
+                ]
+            );
+            $stats['inserted']++;
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Process SKV registrations push
+ */
+function processSkvRegistrationsPush(array $registrations, string $deviceId): array
+{
+    $stats = ['inserted' => 0, 'updated' => 0, 'deleted' => 0, 'skipped' => 0];
+
+    foreach ($registrations as $reg) {
+        $action = $reg['_action'] ?? 'upsert';
+        $id = $reg['id'] ?? null;
+        if (!$id) continue;
+
+        if ($action === 'delete') {
+            dbExecute("DELETE FROM skv_registrations WHERE id = ?", [$id]);
+            $stats['deleted']++;
+            continue;
+        }
+
+        $clientUpdated = $reg['updated_at_utc'] ?? $reg['updatedAtUtc'] ?? null;
+        $existing = dbQueryOne("SELECT updated_at_utc FROM skv_registrations WHERE id = ?", [$id]);
+
+        if ($existing) {
+            if ($clientUpdated && strtotime($clientUpdated) <= strtotime($existing['updated_at_utc'])) {
+                $stats['skipped']++;
+                continue;
+            }
+
+            dbExecute(
+                "UPDATE skv_registrations SET
+                    member_id = ?, skv_level = ?, status = ?, last_approved_date = ?,
+                    updated_at_utc = ?, device_id = ?, sync_version = ?, synced_at_utc = NOW()
+                WHERE id = ?",
+                [
+                    $reg['member_id'] ?? $reg['memberId'],
+                    $reg['skv_level'] ?? $reg['skvLevel'] ?? 6,
+                    $reg['status'] ?? 'not_started',
+                    $reg['last_approved_date'] ?? $reg['lastApprovedDate'] ?? null,
+                    toMySqlDateTime($clientUpdated) ?? gmdate('Y-m-d H:i:s'),
+                    $deviceId,
+                    $reg['sync_version'] ?? $reg['syncVersion'] ?? 1,
+                    $id,
+                ]
+            );
+            $stats['updated']++;
+        } else {
+            dbExecute(
+                "INSERT INTO skv_registrations (
+                    id, member_id, skv_level, status, last_approved_date,
+                    created_at_utc, updated_at_utc, device_id, sync_version, synced_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                [
+                    $id,
+                    $reg['member_id'] ?? $reg['memberId'],
+                    $reg['skv_level'] ?? $reg['skvLevel'] ?? 6,
+                    $reg['status'] ?? 'not_started',
+                    $reg['last_approved_date'] ?? $reg['lastApprovedDate'] ?? null,
+                    toMySqlDateTime($reg['created_at_utc'] ?? $reg['createdAtUtc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
+                    toMySqlDateTime($clientUpdated) ?? gmdate('Y-m-d H:i:s'),
+                    $deviceId,
+                    $reg['sync_version'] ?? $reg['syncVersion'] ?? 1,
+                ]
+            );
+            $stats['inserted']++;
+        }
+    }
+
+    return $stats;
+}
+
+/**
+ * Process SKV weapons push
+ */
+function processSkvWeaponsPush(array $weapons, string $deviceId): array
+{
+    $stats = ['inserted' => 0, 'updated' => 0, 'deleted' => 0, 'skipped' => 0];
+
+    foreach ($weapons as $weapon) {
+        $action = $weapon['_action'] ?? 'upsert';
+        $id = $weapon['id'] ?? null;
+        if (!$id) continue;
+
+        if ($action === 'delete') {
+            dbExecute("DELETE FROM skv_weapons WHERE id = ?", [$id]);
+            $stats['deleted']++;
+            continue;
+        }
+
+        $clientUpdated = $weapon['updated_at_utc'] ?? $weapon['updatedAtUtc'] ?? null;
+        $existing = dbQueryOne("SELECT updated_at_utc FROM skv_weapons WHERE id = ?", [$id]);
+
+        if ($existing) {
+            if ($clientUpdated && strtotime($clientUpdated) <= strtotime($existing['updated_at_utc'])) {
+                $stats['skipped']++;
+                continue;
+            }
+
+            dbExecute(
+                "UPDATE skv_weapons SET
+                    skv_registration_id = ?, model = ?, description = ?, serial = ?,
+                    type = ?, caliber = ?, last_reviewed_date = ?,
+                    updated_at_utc = ?, device_id = ?, sync_version = ?, synced_at_utc = NOW()
+                WHERE id = ?",
+                [
+                    $weapon['skv_registration_id'] ?? $weapon['skvRegistrationId'],
+                    $weapon['model'],
+                    $weapon['description'] ?? null,
+                    $weapon['serial'],
+                    $weapon['type'],
+                    $weapon['caliber'] ?? null,
+                    $weapon['last_reviewed_date'] ?? $weapon['lastReviewedDate'] ?? null,
+                    toMySqlDateTime($clientUpdated) ?? gmdate('Y-m-d H:i:s'),
+                    $deviceId,
+                    $weapon['sync_version'] ?? $weapon['syncVersion'] ?? 1,
+                    $id,
+                ]
+            );
+            $stats['updated']++;
+        } else {
+            dbExecute(
+                "INSERT INTO skv_weapons (
+                    id, skv_registration_id, model, description, serial, type, caliber,
+                    last_reviewed_date, created_at_utc, updated_at_utc, device_id, sync_version, synced_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                [
+                    $id,
+                    $weapon['skv_registration_id'] ?? $weapon['skvRegistrationId'],
+                    $weapon['model'],
+                    $weapon['description'] ?? null,
+                    $weapon['serial'],
+                    $weapon['type'],
+                    $weapon['caliber'] ?? null,
+                    $weapon['last_reviewed_date'] ?? $weapon['lastReviewedDate'] ?? null,
+                    toMySqlDateTime($weapon['created_at_utc'] ?? $weapon['createdAtUtc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
+                    toMySqlDateTime($clientUpdated) ?? gmdate('Y-m-d H:i:s'),
+                    $deviceId,
+                    $weapon['sync_version'] ?? $weapon['syncVersion'] ?? 1,
                 ]
             );
             $stats['inserted']++;

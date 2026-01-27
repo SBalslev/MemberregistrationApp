@@ -91,6 +91,9 @@ export interface ElectronAPI {
   /** Get the path to a member's photo file */
   getPhotoPath?: (internalId: string) => Promise<{ photoPath: string | null; exists: boolean }>;
 
+  /** Read a member's photo file content (for syncing) */
+  readPhoto?: (internalId: string) => Promise<{ success: boolean; base64Data?: string; contentHash?: string; sizeBytes?: number; error?: string }>;
+
   /** Show a save dialog and return the selected path */
   showSaveDialog?: (options: { defaultPath: string; filters?: { name: string; extensions: string[] }[] }) => Promise<{ canceled: boolean; filePath: string | null }>;
 

@@ -49,7 +49,7 @@ export function MemberFeeStatusTable({
 
   // Calculate fee status for each member
   const feeStatuses: FeeStatusRow[] = useMemo(() => {
-    const FEES_CATEGORY_ID = 'FEES';
+    const FEES_CATEGORY_ID = 'cat-kontingent';
 
     return members
       .filter((m) => m.status === 'ACTIVE')
@@ -69,7 +69,7 @@ export function MemberFeeStatusTable({
           for (const line of txn.lines) {
             if (
               line.categoryId === FEES_CATEGORY_ID &&
-              line.memberId === member.membershipId &&
+              line.memberId === member.internalId &&
               line.isIncome
             ) {
               paidAmount += line.amount;
@@ -82,7 +82,7 @@ export function MemberFeeStatusTable({
 
         // Sum pending payments for this member
         const pendingAmount = pendingPayments
-          .filter((p) => p.memberId === member.membershipId)
+          .filter((p) => p.memberId === member.internalId)
           .reduce((sum, p) => sum + p.amount, 0);
 
         const outstandingAmount = expectedAmount - paidAmount - pendingAmount;
@@ -90,7 +90,7 @@ export function MemberFeeStatusTable({
         const hasPending = pendingAmount > 0;
 
         return {
-          memberId: member.membershipId || member.internalId, // Use internalId for trials
+          memberId: member.internalId, // Always use internalId for consistency
           memberName: `${member.firstName} ${member.lastName}`,
           memberType: feeCategory,
           expectedAmount,

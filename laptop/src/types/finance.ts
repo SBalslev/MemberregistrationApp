@@ -91,6 +91,7 @@ export interface TransactionLine {
   categoryId: string;
   amount: number;
   isIncome: boolean;
+  source: PaymentMethod;
   memberId: string | null;
   lineDescription: string | null;
 }
@@ -108,6 +109,7 @@ export interface TransactionLineFormData {
   categoryId: string;
   amount: number;
   isIncome: boolean;
+  source: PaymentMethod;
   memberId: string | null;
   lineDescription: string | null;
 }

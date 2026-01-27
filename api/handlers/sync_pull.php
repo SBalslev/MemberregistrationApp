@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 // File version - increment when making changes
-const SYNC_PULL_VERSION = '1.2.0';  // 1.2.0: Added fiscal_years, fee_rates, posting_categories, transaction_lines, pending_fee_payments
+const SYNC_PULL_VERSION = '1.4.0';  // 1.4.0: Added new_member_registrations, skv_registrations, skv_weapons
 
 /**
  * Convert practice type from MySQL ENUM to laptop format.
@@ -115,6 +115,26 @@ function handleSyncPull(): void
 
             case 'pending_fee_payments':
                 $result['entities']['pending_fee_payments'] = pullPendingFeePayments($sinceDate, $limit);
+                break;
+
+            case 'scan_events':
+                $result['entities']['scan_events'] = pullScanEvents($sinceDate, $limit);
+                break;
+
+            case 'member_preferences':
+                $result['entities']['member_preferences'] = pullMemberPreferences($sinceDate, $limit);
+                break;
+
+            case 'new_member_registrations':
+                $result['entities']['new_member_registrations'] = pullNewMemberRegistrations($sinceDate, $limit);
+                break;
+
+            case 'skv_registrations':
+                $result['entities']['skv_registrations'] = pullSkvRegistrations($sinceDate, $limit);
+                break;
+
+            case 'skv_weapons':
+                $result['entities']['skv_weapons'] = pullSkvWeapons($sinceDate, $limit);
                 break;
         }
     }
@@ -316,7 +336,7 @@ function pullEquipmentCheckouts(string $since, int $limit): array
 function pullTrainerInfos(string $since, int $limit): array
 {
     $records = dbQuery(
-        "SELECT internal_member_id, has_skydeleder_certificate, certified_date, notes, device_id, sync_version, modified_at_utc
+        "SELECT internal_member_id, is_trainer, has_skydeleder_certificate, certified_date, notes, device_id, sync_version, created_at_utc, modified_at_utc
          FROM trainer_info
          WHERE modified_at_utc > ?
          ORDER BY modified_at_utc ASC
@@ -327,11 +347,13 @@ function pullTrainerInfos(string $since, int $limit): array
     return array_map(function ($row) {
         return [
             'internal_member_id' => $row['internal_member_id'],
+            'is_trainer' => (bool)$row['is_trainer'],
             'has_skydeleder_certificate' => (bool)$row['has_skydeleder_certificate'],
             'certified_date' => $row['certified_date'],
             'notes' => $row['notes'],
             'device_id' => $row['device_id'],
             'sync_version' => (int)$row['sync_version'],
+            'created_at_utc' => formatDatetime($row['created_at_utc']),
             'modified_at_utc' => formatDatetime($row['modified_at_utc']),
         ];
     }, $records);
@@ -343,7 +365,7 @@ function pullTrainerInfos(string $since, int $limit): array
 function pullTrainerDisciplines(string $since, int $limit): array
 {
     $records = dbQuery(
-        "SELECT id, internal_member_id, discipline, device_id, sync_version, created_at_utc
+        "SELECT id, internal_member_id, discipline, level, certified_date, device_id, sync_version, created_at_utc
          FROM trainer_disciplines
          WHERE created_at_utc > ?
          ORDER BY created_at_utc ASC
@@ -356,6 +378,8 @@ function pullTrainerDisciplines(string $since, int $limit): array
             'id' => $row['id'],
             'internal_member_id' => $row['internal_member_id'],
             'discipline' => $row['discipline'],
+            'level' => $row['level'],
+            'certified_date' => $row['certified_date'],
             'device_id' => $row['device_id'],
             'sync_version' => (int)$row['sync_version'],
             'created_at_utc' => formatDatetime($row['created_at_utc']),
@@ -481,7 +505,7 @@ function pullPostingCategories(string $since, int $limit): array
 function pullTransactionLines(string $since, int $limit): array
 {
     $records = dbQuery(
-        "SELECT tl.id, tl.transaction_id, tl.category_id, tl.amount, tl.is_income, tl.member_id, tl.line_description
+        "SELECT tl.id, tl.transaction_id, tl.category_id, tl.amount, tl.is_income, tl.source, tl.member_id, tl.line_description
          FROM transaction_lines tl
          JOIN financial_transactions ft ON tl.transaction_id = ft.id
          WHERE ft.modified_at_utc > ?
@@ -497,6 +521,7 @@ function pullTransactionLines(string $since, int $limit): array
             'category_id' => $row['category_id'],
             'amount' => (float)$row['amount'],
             'is_income' => (bool)$row['is_income'],
+            'source' => $row['source'] ?? 'CASH',
             'member_id' => $row['member_id'],
             'line_description' => $row['line_description'],
         ];
@@ -532,6 +557,177 @@ function pullPendingFeePayments(string $since, int $limit): array
             'sync_version' => (int)$row['sync_version'],
             'created_at_utc' => formatDatetime($row['created_at_utc']),
             'modified_at_utc' => formatDatetime($row['modified_at_utc']),
+        ];
+    }, $records);
+}
+
+/**
+ * Pull scan events
+ */
+function pullScanEvents(string $since, int $limit): array
+{
+    $records = dbQuery(
+        "SELECT id, internal_member_id, scan_type, linked_check_in_id, linked_session_id, canceled_flag, device_id, sync_version, created_at_utc, synced_at_utc
+         FROM scan_events
+         WHERE synced_at_utc > ? OR (synced_at_utc IS NULL AND created_at_utc > ?)
+         ORDER BY created_at_utc ASC
+         LIMIT ?",
+        [$since, $since, $limit]
+    );
+
+    return array_map(function ($row) {
+        return [
+            'id' => $row['id'],
+            'internal_member_id' => $row['internal_member_id'],
+            'scan_type' => $row['scan_type'],
+            'linked_check_in_id' => $row['linked_check_in_id'],
+            'linked_session_id' => $row['linked_session_id'],
+            'canceled_flag' => (bool)$row['canceled_flag'],
+            'device_id' => $row['device_id'],
+            'sync_version' => (int)$row['sync_version'],
+            'created_at_utc' => formatDatetime($row['created_at_utc']),
+            'synced_at_utc' => formatDatetime($row['synced_at_utc']),
+        ];
+    }, $records);
+}
+
+/**
+ * Pull member preferences
+ */
+function pullMemberPreferences(string $since, int $limit): array
+{
+    $records = dbQuery(
+        "SELECT member_id, last_practice_type, last_classification, device_id, sync_version, modified_at_utc
+         FROM member_preferences
+         WHERE modified_at_utc > ?
+         ORDER BY modified_at_utc ASC
+         LIMIT ?",
+        [$since, $limit]
+    );
+
+    return array_map(function ($row) {
+        return [
+            'member_id' => $row['member_id'],
+            'last_practice_type' => $row['last_practice_type'],
+            'last_classification' => $row['last_classification'],
+            'device_id' => $row['device_id'],
+            'sync_version' => (int)$row['sync_version'],
+            'modified_at_utc' => formatDatetime($row['modified_at_utc']),
+        ];
+    }, $records);
+}
+
+/**
+ * Pull new member registrations
+ */
+function pullNewMemberRegistrations(string $since, int $limit): array
+{
+    $records = dbQuery(
+        "SELECT id, first_name, last_name, birthday, gender,
+                email, phone, address, zip_code, city, notes, photo_path,
+                guardian_name, guardian_phone, guardian_email,
+                source_device_id, source_device_name,
+                approval_status, approved_at_utc, rejected_at_utc,
+                rejection_reason, created_member_id, created_at_utc,
+                device_id, sync_version, modified_at_utc
+         FROM new_member_registrations
+         WHERE modified_at_utc > ?
+         ORDER BY modified_at_utc ASC
+         LIMIT ?",
+        [$since, $limit]
+    );
+
+    return array_map(function ($row) {
+        return [
+            'id' => $row['id'],
+            'first_name' => $row['first_name'],
+            'last_name' => $row['last_name'],
+            'birthday' => $row['birthday'],
+            'gender' => $row['gender'],
+            'email' => $row['email'],
+            'phone' => $row['phone'],
+            'address' => $row['address'],
+            'zip_code' => $row['zip_code'],
+            'city' => $row['city'],
+            'notes' => $row['notes'],
+            'photo_path' => $row['photo_path'],
+            'guardian_name' => $row['guardian_name'],
+            'guardian_phone' => $row['guardian_phone'],
+            'guardian_email' => $row['guardian_email'],
+            'source_device_id' => $row['source_device_id'],
+            'source_device_name' => $row['source_device_name'],
+            'approval_status' => $row['approval_status'],
+            'approved_at_utc' => formatDatetime($row['approved_at_utc']),
+            'rejected_at_utc' => formatDatetime($row['rejected_at_utc']),
+            'rejection_reason' => $row['rejection_reason'],
+            'created_member_id' => $row['created_member_id'],
+            'created_at_utc' => formatDatetime($row['created_at_utc']),
+            'device_id' => $row['device_id'],
+            'sync_version' => (int)$row['sync_version'],
+            'modified_at_utc' => formatDatetime($row['modified_at_utc']),
+        ];
+    }, $records);
+}
+
+/**
+ * Pull SKV registrations
+ */
+function pullSkvRegistrations(string $since, int $limit): array
+{
+    $records = dbQuery(
+        "SELECT id, member_id, skv_level, status, last_approved_date,
+                created_at_utc, updated_at_utc, device_id, sync_version
+         FROM skv_registrations
+         WHERE updated_at_utc > ?
+         ORDER BY updated_at_utc ASC
+         LIMIT ?",
+        [$since, $limit]
+    );
+
+    return array_map(function ($row) {
+        return [
+            'id' => $row['id'],
+            'member_id' => $row['member_id'],
+            'skv_level' => (int)$row['skv_level'],
+            'status' => $row['status'],
+            'last_approved_date' => $row['last_approved_date'],
+            'created_at_utc' => formatDatetime($row['created_at_utc']),
+            'updated_at_utc' => formatDatetime($row['updated_at_utc']),
+            'device_id' => $row['device_id'],
+            'sync_version' => (int)$row['sync_version'],
+        ];
+    }, $records);
+}
+
+/**
+ * Pull SKV weapons
+ */
+function pullSkvWeapons(string $since, int $limit): array
+{
+    $records = dbQuery(
+        "SELECT id, skv_registration_id, model, description, serial, type, caliber,
+                last_reviewed_date, created_at_utc, updated_at_utc, device_id, sync_version
+         FROM skv_weapons
+         WHERE updated_at_utc > ?
+         ORDER BY updated_at_utc ASC
+         LIMIT ?",
+        [$since, $limit]
+    );
+
+    return array_map(function ($row) {
+        return [
+            'id' => $row['id'],
+            'skv_registration_id' => $row['skv_registration_id'],
+            'model' => $row['model'],
+            'description' => $row['description'],
+            'serial' => $row['serial'],
+            'type' => $row['type'],
+            'caliber' => $row['caliber'],
+            'last_reviewed_date' => $row['last_reviewed_date'],
+            'created_at_utc' => formatDatetime($row['created_at_utc']),
+            'updated_at_utc' => formatDatetime($row['updated_at_utc']),
+            'device_id' => $row['device_id'],
+            'sync_version' => (int)$row['sync_version'],
         ];
     }, $records);
 }

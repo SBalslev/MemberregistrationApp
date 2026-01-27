@@ -44,6 +44,16 @@ import {
   trainerInfoFromOnline,
   trainerDisciplineToOnline,
   trainerDisciplineFromOnline,
+  scanEventToOnline,
+  scanEventFromOnline,
+  memberPreferenceToOnline,
+  memberPreferenceFromOnline,
+  newMemberRegistrationToOnline,
+  newMemberRegistrationFromOnline,
+  skvRegistrationToOnline,
+  skvRegistrationFromOnline,
+  skvWeaponToOnline,
+  skvWeaponFromOnline,
   type SyncPushPayload,
   type SyncPullResult,
   type OnlineMember,
@@ -59,13 +69,20 @@ import {
   type OnlineEquipmentCheckout,
   type OnlineTrainerInfo,
   type OnlineTrainerDiscipline,
+  type OnlineScanEvent,
+  type OnlineMemberPreference,
+  type OnlinePhotoMetadata,
+  type OnlineNewMemberRegistration,
+  type OnlineSkvRegistration,
+  type OnlineSkvWeapon,
   type EntityCounts,
   SchemaVersionError,
   ConflictError,
 } from './onlineApiService';
 import { SYNC_SCHEMA_VERSION } from './syncService';
-import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout } from '../types/entities';
+import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout, ScanEvent, MemberPreference, NewMemberRegistration } from '../types/entities';
 import type { TrainerInfo, TrainerDiscipline } from './trainerRepository';
+import type { SkvRegistration, SkvWeapon } from './skvRepository';
 import type {
   FinancialTransaction,
   FiscalYear,
@@ -142,6 +159,11 @@ export interface OnlineSyncResult {
     financialTransactions: number;
     transactionLines: number;
     photos: number;
+    scanEvents?: number;
+    memberPreferences?: number;
+    newMemberRegistrations?: number;
+    skvRegistrations?: number;
+    skvWeapons?: number;
   };
   pulled: {
     members: number;
@@ -154,6 +176,11 @@ export interface OnlineSyncResult {
     financialTransactions: number;
     transactionLines: number;
     photos: number;
+    scanEvents?: number;
+    memberPreferences?: number;
+    newMemberRegistrations?: number;
+    skvRegistrations?: number;
+    skvWeapons?: number;
   };
   deleted: {
     members: number;
@@ -883,6 +910,282 @@ class OnlineSyncService {
       processedCount += trainerDisciplines.length;
     }
 
+    // Push scan events
+    const scanEvents = this.getModifiedScanEvents(fullSync);
+    if (scanEvents.length > 0) {
+      onProgress?.({
+        phase: 'pushing',
+        message: `Sender scan events (${scanEvents.length})...`,
+        current: processedCount,
+        total: totalEntities,
+      });
+
+      const batchId = crypto.randomUUID();
+      const payload: SyncPushPayload = {
+        deviceId,
+        batchId,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        entities: {
+          scanEvents: scanEvents.map(e => scanEventToOnline(e)),
+        },
+      };
+
+      try {
+        const result = await onlineApiService.push(payload);
+        pushed.scanEvents = (pushed.scanEvents || 0) + (result.processed.scan_events?.inserted || 0);
+        pushed.scanEvents = (pushed.scanEvents || 0) + (result.processed.scan_events?.updated || 0);
+      } catch (error) {
+        if (!(error instanceof ConflictError)) {
+          throw error;
+        }
+      }
+
+      processedCount += scanEvents.length;
+    }
+
+    // Push member preferences
+    const memberPreferences = this.getModifiedMemberPreferences(fullSync);
+    if (memberPreferences.length > 0) {
+      onProgress?.({
+        phase: 'pushing',
+        message: `Sender præferencer (${memberPreferences.length})...`,
+        current: processedCount,
+        total: totalEntities,
+      });
+
+      const batchId = crypto.randomUUID();
+      const payload: SyncPushPayload = {
+        deviceId,
+        batchId,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        entities: {
+          memberPreferences: memberPreferences.map(p => memberPreferenceToOnline(p)),
+        },
+      };
+
+      try {
+        const result = await onlineApiService.push(payload);
+        pushed.memberPreferences = (pushed.memberPreferences || 0) + (result.processed.member_preferences?.inserted || 0);
+        pushed.memberPreferences = (pushed.memberPreferences || 0) + (result.processed.member_preferences?.updated || 0);
+      } catch (error) {
+        if (!(error instanceof ConflictError)) {
+          throw error;
+        }
+      }
+
+      processedCount += memberPreferences.length;
+    }
+
+    // Push new member registrations
+    const newMemberRegistrations = this.getModifiedNewMemberRegistrations(fullSync);
+    if (newMemberRegistrations.length > 0) {
+      onProgress?.({
+        phase: 'pushing',
+        message: `Sender nye registreringer (${newMemberRegistrations.length})...`,
+        current: processedCount,
+        total: totalEntities,
+      });
+
+      const batchId = crypto.randomUUID();
+      const payload: SyncPushPayload = {
+        deviceId,
+        batchId,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        entities: {
+          newMemberRegistrations: newMemberRegistrations.map(r => newMemberRegistrationToOnline(r)),
+        },
+      };
+
+      try {
+        const result = await onlineApiService.push(payload);
+        pushed.newMemberRegistrations = (pushed.newMemberRegistrations || 0) + (result.processed.new_member_registrations?.inserted || 0);
+        pushed.newMemberRegistrations = (pushed.newMemberRegistrations || 0) + (result.processed.new_member_registrations?.updated || 0);
+      } catch (error) {
+        if (!(error instanceof ConflictError)) {
+          throw error;
+        }
+      }
+
+      processedCount += newMemberRegistrations.length;
+    }
+
+    // Push SKV registrations
+    const skvRegistrations = this.getModifiedSkvRegistrations(fullSync);
+    if (skvRegistrations.length > 0) {
+      onProgress?.({
+        phase: 'pushing',
+        message: `Sender SKV-registreringer (${skvRegistrations.length})...`,
+        current: processedCount,
+        total: totalEntities,
+      });
+
+      const batchId = crypto.randomUUID();
+      const payload: SyncPushPayload = {
+        deviceId,
+        batchId,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        entities: {
+          skvRegistrations: skvRegistrations.map(r => skvRegistrationToOnline(r)),
+        },
+      };
+
+      try {
+        const result = await onlineApiService.push(payload);
+        pushed.skvRegistrations = (pushed.skvRegistrations || 0) + (result.processed.skv_registrations?.inserted || 0);
+        pushed.skvRegistrations = (pushed.skvRegistrations || 0) + (result.processed.skv_registrations?.updated || 0);
+      } catch (error) {
+        if (!(error instanceof ConflictError)) {
+          throw error;
+        }
+      }
+
+      processedCount += skvRegistrations.length;
+    }
+
+    // Push SKV weapons
+    const skvWeapons = this.getModifiedSkvWeapons(fullSync);
+    if (skvWeapons.length > 0) {
+      onProgress?.({
+        phase: 'pushing',
+        message: `Sender SKV-våben (${skvWeapons.length})...`,
+        current: processedCount,
+        total: totalEntities,
+      });
+
+      const batchId = crypto.randomUUID();
+      const payload: SyncPushPayload = {
+        deviceId,
+        batchId,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        entities: {
+          skvWeapons: skvWeapons.map(w => skvWeaponToOnline(w)),
+        },
+      };
+
+      try {
+        const result = await onlineApiService.push(payload);
+        pushed.skvWeapons = (pushed.skvWeapons || 0) + (result.processed.skv_weapons?.inserted || 0);
+        pushed.skvWeapons = (pushed.skvWeapons || 0) + (result.processed.skv_weapons?.updated || 0);
+      } catch (error) {
+        if (!(error instanceof ConflictError)) {
+          throw error;
+        }
+      }
+
+      processedCount += skvWeapons.length;
+    }
+
+    // Push photos
+    const membersWithPhotos = this.getMembersWithPhotos(fullSync);
+    if (membersWithPhotos.length > 0) {
+      onProgress?.({
+        phase: 'photos',
+        message: `Sender fotos (${membersWithPhotos.length})...`,
+        current: 0,
+        total: membersWithPhotos.length,
+      });
+
+      const electronAPI = (window as unknown as { electronAPI?: { readPhoto?: (id: string) => Promise<{ success: boolean; base64Data?: string; contentHash?: string; sizeBytes?: number; error?: string }> } }).electronAPI;
+
+      if (electronAPI?.readPhoto) {
+        for (let i = 0; i < membersWithPhotos.length; i++) {
+          if (this.abortController?.signal.aborted) {
+            throw new Error('Sync cancelled');
+          }
+
+          const member = membersWithPhotos[i];
+
+          onProgress?.({
+            phase: 'photos',
+            message: `Sender foto ${i + 1} af ${membersWithPhotos.length}...`,
+            current: i,
+            total: membersWithPhotos.length,
+          });
+
+          try {
+            let base64Data: string | null = null;
+            let contentHash: string | null = null;
+
+            // Helper to extract base64 from data URL and generate SHA256 hash
+            const extractDataUrl = async (dataUrl: string): Promise<{ base64: string; hash: string }> => {
+              const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+              const binaryStr = atob(base64);
+              const bytes = new Uint8Array(binaryStr.length);
+              for (let k = 0; k < binaryStr.length; k++) {
+                bytes[k] = binaryStr.charCodeAt(k);
+              }
+              // Use Web Crypto API for SHA256 hash (matches server-side)
+              const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
+              const hashArray = Array.from(new Uint8Array(hashBuffer));
+              const hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+              return { base64, hash };
+            };
+
+            // Check if photoPath is a data URL (stored directly in DB) or a file path
+            if (member.photoPath?.startsWith('data:image')) {
+              const extracted = await extractDataUrl(member.photoPath);
+              base64Data = extracted.base64;
+              contentHash = extracted.hash;
+            } else if (member.photoPath) {
+              // Try to read photo file from disk
+              const photoResult = await electronAPI.readPhoto(member.internalId);
+              if (photoResult.success && photoResult.base64Data && photoResult.contentHash) {
+                base64Data = photoResult.base64Data;
+                contentHash = photoResult.contentHash;
+              }
+            }
+
+            // Fallback to data URL in photoThumbnail (may be full photo stored as data URL)
+            if (!base64Data && member.photoThumbnail?.startsWith('data:image')) {
+              const extracted = await extractDataUrl(member.photoThumbnail);
+              base64Data = extracted.base64;
+              contentHash = extracted.hash;
+            }
+
+            // Fallback to legacy registrationPhotoPath data URL
+            if (!base64Data && (member as unknown as { registrationPhotoPath?: string }).registrationPhotoPath?.startsWith('data:image')) {
+              const extracted = await extractDataUrl((member as unknown as { registrationPhotoPath: string }).registrationPhotoPath);
+              base64Data = extracted.base64;
+              contentHash = extracted.hash;
+            }
+
+            if (base64Data && contentHash) {
+              // Convert base64 to Blob
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let j = 0; j < binaryString.length; j++) {
+                bytes[j] = binaryString.charCodeAt(j);
+              }
+              const blob = new Blob([bytes], { type: 'image/jpeg' });
+
+              console.log(`[OnlineSyncService] Uploading photo for ${member.internalId}, hash: ${contentHash}, size: ${bytes.length}`);
+
+              // Upload to server
+              const uploadResult = await onlineApiService.uploadPhoto(
+                member.internalId,
+                blob,
+                contentHash
+              );
+
+              if ((uploadResult as { duplicate?: boolean }).duplicate) {
+                console.log(`[OnlineSyncService] Photo already exists (duplicate detected by server)`);
+              }
+              pushed.photos++;
+            } else {
+              // No photo data found
+              console.warn(`[OnlineSyncService] No photo data found for ${member.internalId}`);
+              console.warn(`[OnlineSyncService] photoPath: ${member.photoPath}, photoThumbnail: ${member.photoThumbnail ? 'present' : 'null'}`);
+            }
+          } catch (error) {
+            // Log but don't fail entire sync for photo errors
+            console.error(`[OnlineSyncService] Photo sync error for ${member.internalId}:`, error);
+          }
+        }
+      } else {
+        console.warn('[OnlineSyncService] Photo read API not available - skipping photo sync');
+      }
+    }
+
     return { pushed, conflicts };
   }
 
@@ -1050,6 +1353,64 @@ class OnlineSyncService {
             this.upsertPendingFeePaymentFromOnline(payment);
           }
         }
+
+        // Process scan events (PHP returns 'scan_events')
+        const scanEvents = entities['scan_events'] as OnlineScanEvent[] | undefined;
+        if (scanEvents) {
+          for (const event of scanEvents) {
+            this.upsertScanEventFromOnline(event);
+            pulled.scanEvents = (pulled.scanEvents || 0) + 1;
+          }
+        }
+
+        // Process member preferences (PHP returns 'member_preferences')
+        const memberPreferences = entities['member_preferences'] as OnlineMemberPreference[] | undefined;
+        if (memberPreferences) {
+          for (const pref of memberPreferences) {
+            this.upsertMemberPreferenceFromOnline(pref);
+            pulled.memberPreferences = (pulled.memberPreferences || 0) + 1;
+          }
+        }
+
+        // Process new member registrations (PHP returns 'new_member_registrations')
+        const newMemberRegistrations = entities['new_member_registrations'] as OnlineNewMemberRegistration[] | undefined;
+        if (newMemberRegistrations) {
+          for (const reg of newMemberRegistrations) {
+            this.upsertNewMemberRegistrationFromOnline(reg);
+            pulled.newMemberRegistrations = (pulled.newMemberRegistrations || 0) + 1;
+          }
+        }
+
+        // Process SKV registrations (PHP returns 'skv_registrations')
+        const skvRegistrations = entities['skv_registrations'] as OnlineSkvRegistration[] | undefined;
+        if (skvRegistrations) {
+          for (const reg of skvRegistrations) {
+            this.upsertSkvRegistrationFromOnline(reg);
+            pulled.skvRegistrations = (pulled.skvRegistrations || 0) + 1;
+          }
+        }
+
+        // Process SKV weapons (PHP returns 'skv_weapons')
+        const skvWeapons = entities['skv_weapons'] as OnlineSkvWeapon[] | undefined;
+        if (skvWeapons) {
+          for (const weapon of skvWeapons) {
+            this.upsertSkvWeaponFromOnline(weapon);
+            pulled.skvWeapons = (pulled.skvWeapons || 0) + 1;
+          }
+        }
+
+        // Process photos (PHP returns 'photos')
+        // Note: This only processes metadata; actual photo files are not downloaded here.
+        // Photos uploaded from this device will already exist locally.
+        // Photo download from server can be implemented later for disaster recovery.
+        const photos = entities['photos'] as OnlinePhotoMetadata[] | undefined;
+        if (photos) {
+          for (const _photo of photos) {
+            // TODO: If photo doesn't exist locally, download it from server
+            // For now, just count photos received from server
+            pulled.photos++;
+          }
+        }
       });
 
       // Handle deletes - add to pending list for user confirmation
@@ -1111,7 +1472,8 @@ class OnlineSyncService {
     const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
     return query<CheckIn>(
       `SELECT * FROM CheckIn
-       WHERE createdAtUtc > ? OR syncedAtUtc IS NULL
+       WHERE internalMemberId IS NOT NULL
+         AND (createdAtUtc > ? OR syncedAtUtc IS NULL)
        ORDER BY createdAtUtc ASC`,
       [since]
     );
@@ -1121,7 +1483,8 @@ class OnlineSyncService {
     const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
     return query<PracticeSession>(
       `SELECT * FROM PracticeSession
-       WHERE createdAtUtc > ? OR syncedAtUtc IS NULL
+       WHERE internalMemberId IS NOT NULL
+         AND (createdAtUtc > ? OR syncedAtUtc IS NULL)
        ORDER BY createdAtUtc ASC`,
       [since]
     );
@@ -1167,9 +1530,20 @@ class OnlineSyncService {
   private getModifiedTransactionLines(fullSync: boolean): TransactionLine[] {
     const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
     // Get lines for transactions modified since the given time
+    // Translate memberId (which might be membershipId) to internalId for online sync
     return query<TransactionLine>(
-      `SELECT tl.* FROM TransactionLine tl
+      `SELECT
+         tl.id,
+         tl.transactionId,
+         tl.categoryId,
+         tl.amount,
+         tl.isIncome,
+         tl.source,
+         COALESCE(m.internalId, tl.memberId) as memberId,
+         tl.lineDescription
+       FROM TransactionLine tl
        JOIN FinancialTransaction ft ON tl.transactionId = ft.id
+       LEFT JOIN Member m ON tl.memberId = m.membershipId OR tl.memberId = m.internalId
        WHERE ft.updatedAtUtc > ?
        ORDER BY ft.sequenceNumber ASC`,
       [since]
@@ -1178,10 +1552,24 @@ class OnlineSyncService {
 
   private getModifiedPendingFeePayments(fullSync: boolean): PendingFeePayment[] {
     const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    // Translate memberId (which might be membershipId) to internalId for online sync
     return query<PendingFeePayment>(
-      `SELECT * FROM PendingFeePayment
-       WHERE updatedAtUtc > ?
-       ORDER BY paymentDate ASC`,
+      `SELECT
+         p.id,
+         p.fiscalYear,
+         COALESCE(m.internalId, p.memberId) as memberId,
+         p.amount,
+         p.paymentDate,
+         p.paymentMethod,
+         p.notes,
+         p.isConsolidated,
+         p.consolidatedTransactionId,
+         p.createdAtUtc,
+         p.updatedAtUtc
+       FROM PendingFeePayment p
+       LEFT JOIN Member m ON p.memberId = m.membershipId OR p.memberId = m.internalId
+       WHERE p.updatedAtUtc > ?
+       ORDER BY p.paymentDate ASC`,
       [since]
     );
   }
@@ -1200,7 +1588,8 @@ class OnlineSyncService {
     const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
     return query<EquipmentCheckout>(
       `SELECT * FROM EquipmentCheckout
-       WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL
+       WHERE internalMemberId IS NOT NULL
+         AND (modifiedAtUtc > ? OR syncedAtUtc IS NULL)
        ORDER BY checkedOutAtUtc ASC`,
       [since]
     );
@@ -1210,7 +1599,8 @@ class OnlineSyncService {
     const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
     return query<TrainerInfo>(
       `SELECT * FROM TrainerInfo
-       WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL
+       WHERE memberId IS NOT NULL
+         AND (modifiedAtUtc > ? OR syncedAtUtc IS NULL)
        ORDER BY modifiedAtUtc ASC`,
       [since]
     );
@@ -1220,8 +1610,83 @@ class OnlineSyncService {
     const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
     return query<TrainerDiscipline>(
       `SELECT * FROM TrainerDiscipline
-       WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL
+       WHERE memberId IS NOT NULL
+         AND (modifiedAtUtc > ? OR syncedAtUtc IS NULL)
        ORDER BY createdAtUtc ASC`,
+      [since]
+    );
+  }
+
+  private getMembersWithPhotos(fullSync: boolean): Member[] {
+    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    // Get members that have a photo (either file path or data URL) and have been modified since last sync
+    // Photos can be in: photoPath (file), photoThumbnail (data URL), or registrationPhotoPath (legacy data URL)
+    return query<Member>(
+      `SELECT * FROM Member
+       WHERE (photoPath IS NOT NULL
+              OR photoThumbnail LIKE 'data:image%'
+              OR registrationPhotoPath LIKE 'data:image%')
+         AND (updatedAtUtc > ? OR syncedAtUtc IS NULL)
+       ORDER BY lastName, firstName`,
+      [since]
+    );
+  }
+
+  private getModifiedScanEvents(fullSync: boolean): ScanEvent[] {
+    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    return query<ScanEvent>(
+      `SELECT * FROM ScanEvent
+       WHERE internalMemberId IS NOT NULL
+         AND (createdAtUtc > ? OR syncedAtUtc IS NULL)
+       ORDER BY createdAtUtc ASC`,
+      [since]
+    );
+  }
+
+  private getModifiedMemberPreferences(fullSync: boolean): MemberPreference[] {
+    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    return query<MemberPreference>(
+      `SELECT memberId, lastPracticeType, lastClassification, updatedAtUtc as modifiedAtUtc
+       FROM MemberPreference
+       WHERE updatedAtUtc > ?
+       ORDER BY updatedAtUtc ASC`,
+      [since]
+    );
+  }
+
+  private getModifiedNewMemberRegistrations(fullSync: boolean): NewMemberRegistration[] {
+    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    return query<NewMemberRegistration>(
+      `SELECT id, firstName, lastName, birthday, gender, email, phone, address, zipCode, city, notes,
+              photoPath, guardianName, guardianPhone, guardianEmail,
+              sourceDeviceId, sourceDeviceName, approvalStatus, approvedAtUtc, rejectedAtUtc,
+              rejectionReason, createdMemberId, createdAtUtc, syncedAtUtc, syncVersion
+       FROM NewMemberRegistration
+       WHERE (syncedAtUtc IS NULL OR syncedAtUtc > ?)
+       ORDER BY createdAtUtc ASC`,
+      [since]
+    );
+  }
+
+  private getModifiedSkvRegistrations(fullSync: boolean): SkvRegistration[] {
+    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    return query<SkvRegistration>(
+      `SELECT id, memberId, skvLevel, status, lastApprovedDate, createdAtUtc, updatedAtUtc
+       FROM SKVRegistration
+       WHERE updatedAtUtc > ?
+       ORDER BY updatedAtUtc ASC`,
+      [since]
+    );
+  }
+
+  private getModifiedSkvWeapons(fullSync: boolean): SkvWeapon[] {
+    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    return query<SkvWeapon>(
+      `SELECT id, skvRegistrationId, model, description, serial, type, caliber,
+              lastReviewedDate, createdAtUtc, updatedAtUtc
+       FROM SKVWeapon
+       WHERE updatedAtUtc > ?
+       ORDER BY updatedAtUtc ASC`,
       [since]
     );
   }
@@ -1655,9 +2120,9 @@ class OnlineSyncService {
     );
 
     if (existing.length > 0) {
-      // Last-edit-wins: compare timestamps
+      // Last-edit-wins: compare timestamps (use created_at_utc as fallback since online table has no modified_at_utc)
       const localTime = new Date(existing[0].modifiedAtUtc).getTime();
-      const remoteTime = new Date(online.modified_at_utc).getTime();
+      const remoteTime = new Date(online.modified_at_utc || online.created_at_utc).getTime();
 
       if (remoteTime <= localTime) {
         // Local is newer or same, skip
@@ -1849,7 +2314,7 @@ class OnlineSyncService {
       // Update existing
       execute(
         `UPDATE TransactionLine SET
-          transactionId = ?, categoryId = ?, amount = ?, isIncome = ?,
+          transactionId = ?, categoryId = ?, amount = ?, isIncome = ?, source = ?,
           memberId = ?, lineDescription = ?
         WHERE id = ?`,
         [
@@ -1857,6 +2322,7 @@ class OnlineSyncService {
           toSqlValue(local.categoryId),
           toSqlValue(local.amount),
           toSqlValue(local.isIncome),
+          toSqlValue(local.source),
           toSqlValue(local.memberId),
           toSqlValue(local.lineDescription),
           toSqlValue(local.id),
@@ -1866,14 +2332,15 @@ class OnlineSyncService {
       // Insert new
       execute(
         `INSERT INTO TransactionLine (
-          id, transactionId, categoryId, amount, isIncome, memberId, lineDescription
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          id, transactionId, categoryId, amount, isIncome, source, memberId, lineDescription
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           toSqlValue(local.id),
           toSqlValue(local.transactionId),
           toSqlValue(local.categoryId),
           toSqlValue(local.amount),
           toSqlValue(local.isIncome),
+          toSqlValue(local.source),
           toSqlValue(local.memberId),
           toSqlValue(local.lineDescription),
         ]
@@ -1938,6 +2405,312 @@ class OnlineSyncService {
           toSqlValue(local.consolidatedTransactionId),
           toSqlValue(local.createdAtUtc),
           toSqlValue(local.updatedAtUtc),
+        ]
+      );
+    }
+  }
+
+  private upsertScanEventFromOnline(online: OnlineScanEvent): void {
+    const local = scanEventFromOnline(online);
+    const now = new Date().toISOString();
+
+    // Check if scan event exists
+    const existing = query<{ id: string }>(
+      'SELECT id FROM ScanEvent WHERE id = ?',
+      [toSqlValue(local.id)]
+    );
+
+    if (existing.length > 0) {
+      // Update existing
+      execute(
+        `UPDATE ScanEvent SET
+          internalMemberId = ?, scanType = ?, linkedCheckInId = ?,
+          linkedSessionId = ?, canceledFlag = ?, syncedAtUtc = ?, syncVersion = ?
+        WHERE id = ?`,
+        [
+          toSqlValue(local.internalMemberId),
+          toSqlValue(local.scanType),
+          toSqlValue(local.linkedCheckInId),
+          toSqlValue(local.linkedSessionId),
+          local.canceledFlag ? 1 : 0,
+          now,
+          toSqlValue(local.syncVersion),
+          toSqlValue(local.id),
+        ]
+      );
+    } else {
+      // Insert new
+      execute(
+        `INSERT INTO ScanEvent (
+          id, internalMemberId, scanType, linkedCheckInId, linkedSessionId,
+          canceledFlag, createdAtUtc, syncedAtUtc, syncVersion
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          toSqlValue(local.id),
+          toSqlValue(local.internalMemberId),
+          toSqlValue(local.scanType),
+          toSqlValue(local.linkedCheckInId),
+          toSqlValue(local.linkedSessionId),
+          local.canceledFlag ? 1 : 0,
+          toSqlValue(local.createdAtUtc),
+          now,
+          toSqlValue(local.syncVersion),
+        ]
+      );
+    }
+  }
+
+  private upsertMemberPreferenceFromOnline(online: OnlineMemberPreference): void {
+    const local = memberPreferenceFromOnline(online);
+    const now = new Date().toISOString();
+
+    // Check if member preference exists
+    const existing = query<{ memberId: string; updatedAtUtc: string }>(
+      'SELECT memberId, updatedAtUtc FROM MemberPreference WHERE memberId = ?',
+      [toSqlValue(local.memberId)]
+    );
+
+    if (existing.length > 0) {
+      // Last-edit-wins: compare timestamps
+      const localTime = new Date(existing[0].updatedAtUtc).getTime();
+      const remoteTime = new Date(online.modified_at_utc).getTime();
+
+      if (remoteTime <= localTime) {
+        return; // Local is newer or same, skip
+      }
+
+      // Update existing
+      execute(
+        `UPDATE MemberPreference SET
+          lastPracticeType = ?, lastClassification = ?, updatedAtUtc = ?
+        WHERE memberId = ?`,
+        [
+          toSqlValue(local.lastPracticeType),
+          toSqlValue(local.lastClassification),
+          now,
+          toSqlValue(local.memberId),
+        ]
+      );
+    } else {
+      // Insert new
+      execute(
+        `INSERT INTO MemberPreference (
+          memberId, lastPracticeType, lastClassification, updatedAtUtc
+        ) VALUES (?, ?, ?, ?)`,
+        [
+          toSqlValue(local.memberId),
+          toSqlValue(local.lastPracticeType),
+          toSqlValue(local.lastClassification),
+          now,
+        ]
+      );
+    }
+  }
+
+  private upsertNewMemberRegistrationFromOnline(online: OnlineNewMemberRegistration): void {
+    const local = newMemberRegistrationFromOnline(online);
+    const now = new Date().toISOString();
+
+    // Check if registration exists
+    const existing = query<{ id: string; createdAtUtc: string }>(
+      'SELECT id, createdAtUtc FROM NewMemberRegistration WHERE id = ?',
+      [toSqlValue(local.id)]
+    );
+
+    if (existing.length > 0) {
+      // Last-edit-wins: compare timestamps
+      const localTime = new Date(existing[0].createdAtUtc).getTime();
+      const remoteTime = new Date(online.created_at_utc).getTime();
+
+      if (remoteTime <= localTime) {
+        return; // Local is newer or same, skip
+      }
+
+      // Update existing
+      execute(
+        `UPDATE NewMemberRegistration SET
+          firstName = ?, lastName = ?, birthday = ?, gender = ?,
+          email = ?, phone = ?, address = ?, zipCode = ?, city = ?, notes = ?,
+          photoPath = ?, guardianName = ?, guardianPhone = ?, guardianEmail = ?,
+          sourceDeviceId = ?, sourceDeviceName = ?,
+          approvalStatus = ?, approvedAtUtc = ?, rejectedAtUtc = ?,
+          rejectionReason = ?, createdMemberId = ?, syncedAtUtc = ?
+        WHERE id = ?`,
+        [
+          toSqlValue(local.firstName),
+          toSqlValue(local.lastName),
+          toSqlValue(local.birthday),
+          toSqlValue(local.gender),
+          toSqlValue(local.email),
+          toSqlValue(local.phone),
+          toSqlValue(local.address),
+          toSqlValue(local.zipCode),
+          toSqlValue(local.city),
+          toSqlValue(local.notes),
+          toSqlValue(local.photoPath),
+          toSqlValue(local.guardianName),
+          toSqlValue(local.guardianPhone),
+          toSqlValue(local.guardianEmail),
+          toSqlValue(local.sourceDeviceId),
+          toSqlValue(local.sourceDeviceName),
+          toSqlValue(local.approvalStatus),
+          toSqlValue(local.approvedAtUtc),
+          toSqlValue(local.rejectedAtUtc),
+          toSqlValue(local.rejectionReason),
+          toSqlValue(local.createdMemberId),
+          now,
+          toSqlValue(local.id),
+        ]
+      );
+    } else {
+      // Insert new
+      execute(
+        `INSERT INTO NewMemberRegistration (
+          id, firstName, lastName, birthday, gender,
+          email, phone, address, zipCode, city, notes,
+          photoPath, guardianName, guardianPhone, guardianEmail,
+          sourceDeviceId, sourceDeviceName,
+          approvalStatus, approvedAtUtc, rejectedAtUtc,
+          rejectionReason, createdMemberId, createdAtUtc, syncedAtUtc, syncVersion
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          toSqlValue(local.id),
+          toSqlValue(local.firstName),
+          toSqlValue(local.lastName),
+          toSqlValue(local.birthday),
+          toSqlValue(local.gender),
+          toSqlValue(local.email),
+          toSqlValue(local.phone),
+          toSqlValue(local.address),
+          toSqlValue(local.zipCode),
+          toSqlValue(local.city),
+          toSqlValue(local.notes),
+          toSqlValue(local.photoPath),
+          toSqlValue(local.guardianName),
+          toSqlValue(local.guardianPhone),
+          toSqlValue(local.guardianEmail),
+          toSqlValue(local.sourceDeviceId),
+          toSqlValue(local.sourceDeviceName),
+          toSqlValue(local.approvalStatus),
+          toSqlValue(local.approvedAtUtc),
+          toSqlValue(local.rejectedAtUtc),
+          toSqlValue(local.rejectionReason),
+          toSqlValue(local.createdMemberId),
+          toSqlValue(local.createdAtUtc),
+          now,
+          toSqlValue(local.syncVersion),
+        ]
+      );
+    }
+  }
+
+  private upsertSkvRegistrationFromOnline(online: OnlineSkvRegistration): void {
+    const local = skvRegistrationFromOnline(online);
+    const now = new Date().toISOString();
+
+    // Check if registration exists
+    const existing = query<{ id: string; updatedAtUtc: string }>(
+      'SELECT id, updatedAtUtc FROM SKVRegistration WHERE id = ?',
+      [toSqlValue(local.id)]
+    );
+
+    if (existing.length > 0) {
+      // Last-edit-wins: compare timestamps
+      const localTime = new Date(existing[0].updatedAtUtc).getTime();
+      const remoteTime = new Date(online.updated_at_utc).getTime();
+
+      if (remoteTime <= localTime) {
+        return; // Local is newer or same, skip
+      }
+
+      // Update existing
+      execute(
+        `UPDATE SKVRegistration SET
+          memberId = ?, skvLevel = ?, status = ?, lastApprovedDate = ?, updatedAtUtc = ?
+        WHERE id = ?`,
+        [
+          toSqlValue(local.memberId),
+          toSqlValue(local.skvLevel),
+          toSqlValue(local.status),
+          toSqlValue(local.lastApprovedDate),
+          now,
+          toSqlValue(local.id),
+        ]
+      );
+    } else {
+      // Insert new
+      execute(
+        `INSERT INTO SKVRegistration (
+          id, memberId, skvLevel, status, lastApprovedDate, createdAtUtc, updatedAtUtc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          toSqlValue(local.id),
+          toSqlValue(local.memberId),
+          toSqlValue(local.skvLevel),
+          toSqlValue(local.status),
+          toSqlValue(local.lastApprovedDate),
+          toSqlValue(local.createdAtUtc),
+          now,
+        ]
+      );
+    }
+  }
+
+  private upsertSkvWeaponFromOnline(online: OnlineSkvWeapon): void {
+    const local = skvWeaponFromOnline(online);
+    const now = new Date().toISOString();
+
+    // Check if weapon exists
+    const existing = query<{ id: string; updatedAtUtc: string }>(
+      'SELECT id, updatedAtUtc FROM SKVWeapon WHERE id = ?',
+      [toSqlValue(local.id)]
+    );
+
+    if (existing.length > 0) {
+      // Last-edit-wins: compare timestamps
+      const localTime = new Date(existing[0].updatedAtUtc).getTime();
+      const remoteTime = new Date(online.updated_at_utc).getTime();
+
+      if (remoteTime <= localTime) {
+        return; // Local is newer or same, skip
+      }
+
+      // Update existing
+      execute(
+        `UPDATE SKVWeapon SET
+          skvRegistrationId = ?, model = ?, description = ?, serial = ?,
+          type = ?, caliber = ?, lastReviewedDate = ?, updatedAtUtc = ?
+        WHERE id = ?`,
+        [
+          toSqlValue(local.skvRegistrationId),
+          toSqlValue(local.model),
+          toSqlValue(local.description),
+          toSqlValue(local.serial),
+          toSqlValue(local.type),
+          toSqlValue(local.caliber),
+          toSqlValue(local.lastReviewedDate),
+          now,
+          toSqlValue(local.id),
+        ]
+      );
+    } else {
+      // Insert new
+      execute(
+        `INSERT INTO SKVWeapon (
+          id, skvRegistrationId, model, description, serial, type, caliber,
+          lastReviewedDate, createdAtUtc, updatedAtUtc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          toSqlValue(local.id),
+          toSqlValue(local.skvRegistrationId),
+          toSqlValue(local.model),
+          toSqlValue(local.description),
+          toSqlValue(local.serial),
+          toSqlValue(local.type),
+          toSqlValue(local.caliber),
+          toSqlValue(local.lastReviewedDate),
+          toSqlValue(local.createdAtUtc),
+          now,
         ]
       );
     }
