@@ -4,6 +4,49 @@ This document tracks all schema changes to the online database and the correspon
 
 ## Version History
 
+### Version 1.5.0 (2026-01-28)
+
+**Summary:** Added ID photo support for adult verification during trial member registration.
+
+**Feature:** Enhanced Trial Registration with Age Validation & ID Capture (see `docs/features/enhanced-trial-registration/prd.md`)
+
+**Changes:**
+
+1. **Members Table:**
+   - Added `id_photo_path VARCHAR(500)` - Path to ID photo file
+   - Added `id_photo_thumbnail MEDIUMTEXT` - ID photo thumbnail as data URL (150x150)
+   - Added index `idx_members_id_photo` for filtering by ID photo presence
+
+2. **Member Photos Table:**
+   - Updated `photo_type` ENUM to include 'id' type: `ENUM('registration', 'profile', 'id')`
+
+3. **Audit Log Table (new if not exists):**
+   - Created `audit_log` table for tracking sensitive operations like ID photo deletion
+   - Columns: id, event_type, entity_type, entity_id, details (JSON), performed_by_device_id, created_at_utc
+
+4. **Sync Protocol:**
+   - Added `idPhotoBase64` field to member sync payload (for transfer)
+   - Added `idPhotoPath` and `idPhotoThumbnail` fields to member entity
+
+5. **TypeScript (Laptop):**
+   - Added `idPhotoPath` and `idPhotoThumbnail` to `Member` interface
+   - Added utility functions: `calculateAge()`, `isAdult()`, `needsIdPhoto()`, `getIdPhotoStatus()`
+   - Added `IdPhotoStatus` type: `'available' | 'pending' | 'not_required'`
+   - Local schema version: 14
+
+**Migration File:** `api/schema/V1_5_0__add_id_photo_fields.sql`
+
+**Business Rules:**
+- ID photo required for adults (age >= 18) during trial registration
+- ID photo automatically deleted when member receives membershipId AND pays annual fee
+- ID photo deletion logged to audit_log table
+
+**Backward Compatibility:**
+- Existing members will have NULL id_photo_path and id_photo_thumbnail
+- Clients without ID photo support can still sync (fields ignored)
+
+---
+
 ### Version 1.4.2 (2026-01-27)
 
 **Summary:** Added HONORARY member type for honorary members who don't pay fees.

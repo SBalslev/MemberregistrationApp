@@ -28,7 +28,7 @@ const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
 
 // Expected API version - update this when deploying new API versions
-const EXPECTED_API_VERSION = '1.4.2';
+const EXPECTED_API_VERSION = '1.5.0';
 
 // ===== Types =====
 
@@ -220,6 +220,9 @@ export interface OnlineMember {
   member_type: string | null;
   merged_into_id: string | null;
   photo_hash: string | null;
+  // ID photo fields for adult verification (v1.5.0)
+  id_photo_path: string | null;
+  id_photo_thumbnail: string | null;
   created_at_utc: string;
   modified_at_utc: string;
   sync_version: number;
@@ -428,7 +431,7 @@ export interface OnlineMemberPreference {
 export interface OnlinePhotoMetadata {
   id: string;
   internal_member_id: string;
-  photo_type: 'PROFILE' | 'REGISTRATION';
+  photo_type: 'PROFILE' | 'REGISTRATION' | 'ID';
   content_hash: string;
   mime_type: string;
   file_size: number;
@@ -1252,6 +1255,8 @@ export function memberToOnline(member: Member, action: 'upsert' | 'delete' = 'up
     member_type: member.memberType,
     merged_into_id: member.mergedIntoId,
     photo_hash: null, // Photo handled separately
+    id_photo_path: member.idPhotoPath,
+    id_photo_thumbnail: member.idPhotoThumbnail,
     created_at_utc: member.createdAtUtc,
     modified_at_utc: member.updatedAtUtc,
     sync_version: member.syncVersion,
@@ -1283,6 +1288,8 @@ export function memberFromOnline(online: OnlineMember): Partial<Member> {
     expiresOn: online.expires_on,
     memberType: online.member_type as MemberType,
     mergedIntoId: online.merged_into_id,
+    idPhotoPath: online.id_photo_path,
+    idPhotoThumbnail: online.id_photo_thumbnail,
     createdAtUtc: online.created_at_utc,
     updatedAtUtc: online.modified_at_utc,
     syncVersion: online.sync_version,

@@ -6,9 +6,10 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Package, Search, User, Clock, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Package, Search, User, Clock, AlertTriangle, CheckCircle, XCircle, X } from 'lucide-react';
 import { query } from '../database';
 import type { EquipmentItem, EquipmentCheckout } from '../types/entities';
+import { Skeleton, SkeletonEquipmentRow } from '../components';
 
 interface EquipmentWithCheckout extends EquipmentItem {
   currentCheckout?: {
@@ -80,8 +81,28 @@ export function EquipmentPage() {
 
   if (isLoading) {
     return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="h-full flex">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header skeleton */}
+          <div className="p-6 border-b border-gray-200 bg-white">
+            <Skeleton className="h-8 w-32 mb-2" />
+            <Skeleton className="h-4 w-48" />
+            <div className="grid grid-cols-4 gap-4 mt-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="bg-gray-50 rounded-lg p-3">
+                  <Skeleton className="h-8 w-12 mb-1" />
+                  <Skeleton className="h-4 w-16" />
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* List skeleton */}
+          <div className="flex-1 overflow-y-auto">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonEquipmentRow key={i} />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -199,6 +220,18 @@ export function EquipmentPage() {
       {selectedItem && (
         <div className="w-96 border-l border-gray-200 bg-white overflow-y-auto">
           <div className="p-6">
+            {/* Close button */}
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={() => setSelectedItem(null)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Luk detaljer"
+                aria-label="Luk detaljer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
             <div className="flex items-center gap-3 mb-6">
               <div className={`p-3 rounded-xl ${
                 selectedItem.currentCheckout ? 'bg-blue-100' : 'bg-green-100'

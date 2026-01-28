@@ -19,7 +19,7 @@ import { isMessageProcessed, recordProcessedMessage } from './syncOutboxReposito
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
-export const SYNC_SCHEMA_VERSION = '1.4.0'; // 1.4.0: Added new_member_registrations, skv_registrations, skv_weapons tables
+export const SYNC_SCHEMA_VERSION = '1.5.0'; // 1.5.0: Added idPhotoPath, idPhotoThumbnail for adult ID verification
 export const SYNC_SCHEMA_MAJOR = 1;
 
 /**
@@ -87,7 +87,10 @@ interface SyncableMember {
   // Membership
   expiresOn?: string | null;
   registrationPhotoPath?: string | null;
+  /** Profile photo as base64 for sync transfer */
   photoBase64?: string | null;
+  /** ID photo as base64 for sync transfer (adults only) */
+  idPhotoBase64?: string | null;
   mergedIntoId?: string | null;
   // Sync metadata
   deviceId: string;
@@ -620,7 +623,7 @@ async function processMember(
   const memberLifecycleStage = member.memberType || member.memberLifecycleStage || 'FULL';
   const status = member.status || 'ACTIVE';
 
-  // Process photo if base64 provided
+  // Process profile photo if base64 provided
   let photoPath: string | null = null;
   let photoThumbnail: string | null = null;
 
@@ -629,11 +632,29 @@ async function processMember(
       const photoResult = await processPhoto(member.internalId, member.photoBase64);
       photoPath = photoResult.photoPath;
       photoThumbnail = photoResult.photoThumbnail;
-      console.log(`[SyncService] Processed photo for member ${member.internalId}`);
+      console.log(`[SyncService] Processed profile photo for member ${member.internalId}`);
     } catch (error) {
-      console.error(`[SyncService] Photo processing failed for ${member.internalId}:`, error);
+      console.error(`[SyncService] Profile photo processing failed for ${member.internalId}:`, error);
       // Fall back to thumbnail only if processing fails
       photoThumbnail = `data:image/jpeg;base64,${member.photoBase64}`;
+    }
+  }
+
+  // Process ID photo if base64 provided (for adult verification)
+  let idPhotoPath: string | null = null;
+  let idPhotoThumbnail: string | null = null;
+
+  if (member.idPhotoBase64) {
+    try {
+      // Use suffix '_id' to distinguish from profile photo
+      const idPhotoResult = await processPhoto(`${member.internalId}_id`, member.idPhotoBase64);
+      idPhotoPath = idPhotoResult.photoPath;
+      idPhotoThumbnail = idPhotoResult.photoThumbnail;
+      console.log(`[SyncService] Processed ID photo for member ${member.internalId}`);
+    } catch (error) {
+      console.error(`[SyncService] ID photo processing failed for ${member.internalId}:`, error);
+      // Fall back to thumbnail only if processing fails
+      idPhotoThumbnail = `data:image/jpeg;base64,${member.idPhotoBase64}`;
     }
   }
 
@@ -650,7 +671,8 @@ async function processMember(
         firstName = ?, lastName = ?, birthDate = ?, gender = ?,
         email = ?, phone = ?, address = ?, zipCode = ?, city = ?,
         guardianName = ?, guardianPhone = ?, guardianEmail = ?,
-        expiresOn = ?, photoPath = ?, photoThumbnail = ?, mergedIntoId = ?,
+        expiresOn = ?, photoPath = ?, photoThumbnail = ?,
+        idPhotoPath = ?, idPhotoThumbnail = ?, mergedIntoId = ?,
         syncVersion = ?, updatedAtUtc = ?, syncedAtUtc = ?
        WHERE internalId = ?`,
       [
@@ -672,6 +694,8 @@ async function processMember(
         member.expiresOn ?? null,
         photoPath,
         photoThumbnail,
+        idPhotoPath,
+        idPhotoThumbnail,
         member.mergedIntoId ?? null,
         member.syncVersion,
         member.modifiedAtUtc,
@@ -689,9 +713,9 @@ async function processMember(
       internalId, membershipId, memberLifecycleStage, status,
       firstName, lastName, birthDate, gender, email, phone,
       address, zipCode, city, guardianName, guardianPhone, guardianEmail,
-      expiresOn, photoPath, photoThumbnail, mergedIntoId, memberType,
-      createdAtUtc, updatedAtUtc, syncVersion, syncedAtUtc
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      expiresOn, photoPath, photoThumbnail, idPhotoPath, idPhotoThumbnail,
+      mergedIntoId, memberType, createdAtUtc, updatedAtUtc, syncVersion, syncedAtUtc
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       member.internalId,
       member.membershipId ?? null,
@@ -712,6 +736,8 @@ async function processMember(
       member.expiresOn ?? null,
       photoPath,
       photoThumbnail,
+      idPhotoPath,
+      idPhotoThumbnail,
       member.mergedIntoId ?? null,
       getFeeCategoryFromBirthDate(member.birthDate ?? null),
       member.createdAtUtc,

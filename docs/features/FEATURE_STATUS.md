@@ -1,8 +1,43 @@
 # Feature Status Overview
 
 **Project:** Medlemscheckin (Club Member Check-in System)
-**Last Updated:** January 21, 2026
+**Last Updated:** January 27, 2026
 **Updated By:** Claude
+
+---
+
+## Planned Features 📋
+
+| Feature | Status | Target | Documentation |
+|---------|--------|--------|---------------|
+| **Enhanced Trial Registration** | 📋 Planned | TBD | [prd.md](enhanced-trial-registration/prd.md) |
+| **Trainer Experience** | 📋 Draft | TBD | [prd.md](trainer-experience/prd.md) |
+
+### Enhanced Trial Registration
+
+**Summary:** Age validation, ID photo capture for adults, photo review/retake flow, trainer photo management, assisted check-in, and automatic ID photo deletion.
+
+**Key Capabilities (Planned):**
+
+- Birth date validation (valid date, not future, reasonable age)
+- Adult detection (age >= 18)
+- ID photo capture for adults (driver's license or ID card)
+- Photo review and retake flow for both profile and ID photos
+- Trainer can view trial members and their photos
+- Trainer can retake profile or ID photos
+- Trainer assisted check-in and practice session registration
+- ID photo automatically deleted when membershipId assigned AND fee paid
+- ID photo sync to online database
+
+**Epics:**
+
+1. Member App - Age Validation & Photo Review
+2. Member App - ID Photo Capture
+3. Trainer App - Trial Member Management
+4. Trainer App - Assisted Check-in
+5. Laptop Admin - ID Photo Display
+6. ID Photo Lifecycle Management
+7. Sync Protocol Updates
 
 ---
 
@@ -27,12 +62,6 @@
 | **Financial Transactions** | ✅ Complete | 2026-01-20 | [tasks.md](financial-transactions/tasks.md) |
 | **Tablet UX Improvements** | ✅ Complete | 2026-01-20 | [tasks.md](tablet-ux-improvements/tasks.md) |
 | **Member Preference Sync** | ✅ Complete | 2026-01-21 | [tasks.md](member-preference-sync/tasks.md) |
-
-## Not Started Features ❌
-
-*No features are currently in the "Not Started" state.*
-
----
 
 ## Completed Feature Details
 
@@ -177,6 +206,8 @@
 
 ## Next Steps
 
-1. **Production Deployment:** All features are ready for production use.
-2. **Optional:** Implement HTTPS for sync API (SEC-5) if security requirements increase.
-3. **Future:** Consider additional features based on business priority (e.g., MobilePay integration, bank CSV import).
+1. **Enhanced Trial Registration:** Implement age validation, ID photo capture, and photo review flow
+2. **Trainer Experience:** Complete trainer dashboard with assisted check-in features
+3. **Production Deployment:** All completed features are ready for production use
+4. **Optional:** Implement HTTPS for sync API (SEC-5) if security requirements increase
+5. **Future:** Consider additional features (MobilePay integration, bank CSV import)

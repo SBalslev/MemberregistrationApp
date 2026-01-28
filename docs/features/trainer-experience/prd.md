@@ -1,9 +1,9 @@
 # Trainer Experience PRD
 
 **Feature:** Trainer Experience & Practice Management
-**Version:** 0.3 (Draft)
+**Version:** 0.4 (Draft)
 **Status:** In Progress
-**Last Updated:** 2026-01-26
+**Last Updated:** 2026-01-27
 **Updated By:** sbalslev
 **Created:** 2026-01-21
 
@@ -108,6 +108,65 @@ Without this feature, trainers lack efficient tools to fulfill their responsibil
 - [ ] Can filter by member, discipline, or date range
 - [ ] Data is read-only (no editing of historical records)
 
+### US-7: Trial Member Overview
+**As a** trainer
+**I want to** see recently registered trial members
+**So that** I can welcome them and verify their registration quality
+
+**Acceptance Criteria:**
+- [ ] Dashboard shows list of trial members from last 7 days
+- [ ] Each entry shows name, registration date, photo thumbnail
+- [ ] Indicates if member has ID photo on file (for adults)
+- [ ] Can tap to view full member details with photos
+
+### US-8: View Member Photos
+**As a** trainer
+**I want to** view a trial member's profile photo and ID photo
+**So that** I can verify their identity and check photo quality
+
+**Acceptance Criteria:**
+- [ ] Member detail view shows profile photo full-size
+- [ ] Member detail view shows ID photo full-size (if available)
+- [ ] Photos can be zoomed/expanded for inspection
+- [ ] Shows "No ID photo" for minors (not required)
+
+### US-9: Retake Member Photos
+**As a** trainer
+**I want to** retake a member's profile photo or ID photo
+**So that** I can improve photo quality if the original is unacceptable
+
+**Acceptance Criteria:**
+- [ ] "Retake Photo" button available in member detail view
+- [ ] Opens camera, captures new photo
+- [ ] Shows preview with accept/retake options
+- [ ] On accept, replaces existing photo and syncs update
+- [ ] "Retake ID" button only shown for adult members
+
+### US-10: Assisted Check-in
+**As a** trainer
+**I want to** check in a member on their behalf
+**So that** members without cards can still register attendance
+
+**Acceptance Criteria:**
+- [ ] "Check In Member" function accessible from dashboard
+- [ ] Search member by name or internal ID
+- [ ] Confirm member identity (shows photo)
+- [ ] Creates check-in record for current day
+- [ ] Shows message if member already checked in today
+- [ ] Plays check-in sound confirmation
+
+### US-11: Assisted Practice Session
+**As a** trainer
+**I want to** register a practice session for a member
+**So that** members without cards can record their scores
+
+**Acceptance Criteria:**
+- [ ] Option to "Add Practice Session" after assisted check-in
+- [ ] Standard practice session form (discipline, points, classification)
+- [ ] Session linked to member's internalId
+- [ ] Trainer recorded as session source/operator
+- [ ] Session syncs to laptop and leaderboards
+
 ---
 
 ## Functional Requirements
@@ -155,6 +214,45 @@ Discipline-specific trainer levels shall be tracked in a separate `TrainerDiscip
 - Trainers can view all members' data (not filtered by trainer's discipline)
 - Filter by member, discipline, date range
 - Paginated results for large datasets
+
+### FR-7: Trial Member Management
+- Query trial members registered in last 7 days
+- Display in dedicated dashboard section or screen
+- Show photo thumbnail and ID photo status indicator
+- Navigate to full detail view with all photos
+- Refresh on sync completion
+
+### FR-8: Photo Viewing
+- Display profile photo at full resolution
+- Display ID photo at full resolution (adults only)
+- Support pinch-to-zoom or tap-to-expand
+- Clear labels distinguish profile photo from ID photo
+- Handle missing photos gracefully (placeholder image)
+
+### FR-9: Photo Retake
+- Camera capture for profile photo (front camera)
+- Camera capture for ID photo (rear camera, adults only)
+- Preview screen with accept/retake options
+- Replace existing photo on accept
+- Update member record with new photo path
+- Trigger sync to propagate change
+- Record trainer ID as operator for audit
+
+### FR-10: Assisted Check-in
+- Search members by name (fuzzy match) or exact internalId
+- Display member photo and name for confirmation
+- Create CheckIn record with current date
+- Play audio confirmation on success
+- Detect and report if member already checked in today
+- Record trainer ID as check-in operator
+
+### FR-11: Assisted Practice Session
+- Show after assisted check-in completion
+- Use standard practice session form
+- Pre-fill member information
+- Create PracticeSession record linked to member's internalId
+- Set source field to indicate trainer-assisted
+- Record trainer ID as session operator
 
 ---
 
@@ -429,4 +527,5 @@ interface EquipmentTransaction {
 | 0.1 | 2026-01-21 | | Initial draft |
 | 0.2 | 2026-01-21 | | Resolved Q1-Q9; added TrainerDiscipline entity; updated data models |
 | 0.3 | 2026-01-21 | | Resolved Q10-Q12; reuse existing PracticeType enum; laptop admin for trainer designation; extend session popup |
+| 0.4 | 2026-01-27 | sbalslev | Added US-7 to US-11 for trial member management, photo viewing/retake, assisted check-in, and assisted practice session. Added FR-7 to FR-11. |
 

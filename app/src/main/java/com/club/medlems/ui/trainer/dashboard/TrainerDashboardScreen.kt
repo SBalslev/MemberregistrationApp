@@ -1,14 +1,30 @@
 package com.club.medlems.ui.trainer.dashboard
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PersonSearch
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -36,9 +52,24 @@ fun TrainerDashboardScreen(
     onNavigateToEquipment: () -> Unit,
     onNavigateToCheckouts: () -> Unit,
     onNavigateToAdmin: () -> Unit,
+    onNavigateToTrialMemberDetail: (String) -> Unit = {},
     viewModel: TrainerDashboardViewModel = hiltViewModel()
 ) {
     val state by viewModel.combinedState.collectAsState()
+
+    // Assisted check-in dialog state
+    var showAssistedCheckInDialog by remember { mutableStateOf(false) }
+
+    // Assisted check-in dialog
+    if (showAssistedCheckInDialog) {
+        AssistedCheckInDialog(
+            onDismiss = { showAssistedCheckInDialog = false },
+            onCheckInComplete = {
+                showAssistedCheckInDialog = false
+                viewModel.refresh()
+            }
+        )
+    }
 
     // Session expiry warning dialog
     if (state.sessionExpiring) {
@@ -130,6 +161,19 @@ fun TrainerDashboardScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // ═══════════════════════════════════════════════════════════
+            // TRIAL MEMBERS: Recent trial registrations (last 7 days)
+            // ═══════════════════════════════════════════════════════════
+            if (state.trialMembers.isNotEmpty()) {
+                TrialMembersSection(
+                    trialMembers = state.trialMembers,
+                    onMemberClick = { member ->
+                        onNavigateToTrialMemberDetail(member.member.internalId)
+                    }
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            // ═══════════════════════════════════════════════════════════
             // SECONDARY: Today's Overview (Smaller, below equipment)
             // ═══════════════════════════════════════════════════════════
             Row(
@@ -144,15 +188,31 @@ fun TrainerDashboardScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                // Admin button (smaller, secondary)
-                TextButton(onClick = onNavigateToAdmin) {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Admin")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Assisted check-in button
+                    FilledTonalButton(
+                        onClick = { showAssistedCheckInDialog = true },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PersonSearch,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Check-in", style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    // Admin button (smaller, secondary)
+                    TextButton(onClick = onNavigateToAdmin) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Admin")
+                    }
                 }
             }
 
@@ -514,4 +574,154 @@ private fun SessionExpiryDialog(
             }
         }
     )
+}
+
+// ═══════════════════════════════════════════════════════════
+// Trial Members Section
+// ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun TrialMembersSection(
+    trialMembers: List<TrialMemberListItem>,
+    onMemberClick: (TrialMemberListItem) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.PersonAdd,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "NYE PRØVEMEDLEMMER",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+            AssistChip(
+                onClick = { },
+                label = { Text("${trialMembers.size}") }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Horizontal scrolling list of trial members
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            trialMembers.take(4).forEach { member ->
+                TrialMemberCard(
+                    member = member,
+                    onClick = { onMemberClick(member) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            // Fill remaining space if less than 4 members
+            repeat(maxOf(0, 4 - trialMembers.size)) {
+                Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrialMemberCard(
+    member: TrialMemberListItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedCard(
+        onClick = onClick,
+        modifier = modifier.height(100.dp),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = if (member.isAdult && !member.hasIdPhoto) {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Name and date
+            Column {
+                Text(
+                    text = member.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = member.registrationDate,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Status icons row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Age badge
+                if (member.age != null) {
+                    AssistChip(
+                        onClick = { },
+                        label = {
+                            Text(
+                                text = "${member.age} år",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        },
+                        modifier = Modifier.height(24.dp)
+                    )
+                }
+
+                // Photo status icons
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Profile photo indicator
+                    Icon(
+                        imageVector = Icons.Default.Photo,
+                        contentDescription = if (member.hasProfilePhoto) "Har billede" else "Mangler billede",
+                        modifier = Modifier.size(16.dp),
+                        tint = if (member.hasProfilePhoto) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        }
+                    )
+
+                    // ID photo indicator (only for adults)
+                    if (member.isAdult) {
+                        Icon(
+                            imageVector = Icons.Default.CreditCard,
+                            contentDescription = if (member.hasIdPhoto) "Har ID-billede" else "Mangler ID-billede",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (member.hasIdPhoto) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

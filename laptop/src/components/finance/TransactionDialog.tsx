@@ -5,7 +5,7 @@
  * @see [prd.md] - Financial Transactions Management
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import type { Member } from '../../types/entities';
 import type {
@@ -13,6 +13,7 @@ import type {
   TransactionFormData,
   TransactionLineFormData,
 } from '../../types/finance';
+import { useDialogKeyboard } from '../../hooks';
 
 // ===== Props Interface =====
 
@@ -185,9 +186,19 @@ export function TransactionDialog({
   );
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [touched, setTouched] = useState(false);
+  // Track which individual fields have been touched for inline validation
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
 
   // Track previous isOpen to detect dialog opening
   const [wasOpen, setWasOpen] = useState(false);
+
+  // Ref to form for programmatic submit
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Keyboard shortcuts: Escape to close, Ctrl+S to save
+  useDialogKeyboard(isOpen, onClose, () => {
+    formRef.current?.requestSubmit();
+  });
 
   // Reset form when dialog opens
   if (isOpen && !wasOpen) {
@@ -195,6 +206,7 @@ export function TransactionDialog({
     setFormData(initialData ?? createEmptyFormData());
     setErrors({});
     setTouched(false);
+    setTouchedFields(new Set());
   } else if (!isOpen && wasOpen) {
     setWasOpen(false);
   }
@@ -206,11 +218,24 @@ export function TransactionDialog({
 
   // ===== Event Handlers =====
 
+  // Mark a field as touched (for inline validation on blur)
+  function markFieldTouched(field: string) {
+    setTouchedFields((prev) => new Set(prev).add(field));
+  }
+
+  // Check if a field should show its error
+  function shouldShowError(field: string): boolean {
+    return touched || touchedFields.has(field);
+  }
+
   function handleFieldChange<K extends keyof TransactionFormData>(
     field: K,
     value: TransactionFormData[K]
   ) {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    const newFormData = { ...formData, [field]: value };
+    setFormData(newFormData);
+    // Validate on change for immediate feedback
+    setErrors(validateForm(newFormData));
   }
 
   // Sync description to first line on blur (when leaving the field)
@@ -236,11 +261,15 @@ export function TransactionDialog({
     value: string
   ) {
     const numValue = value === '' ? null : parseFloat(value);
-    setFormData((prev) => ({ ...prev, [field]: numValue }));
+    const newFormData = { ...formData, [field]: numValue };
+    setFormData(newFormData);
+    // Validate on change for immediate feedback
+    setErrors(validateForm(newFormData));
   }
 
   // Sync amount to first line on blur (when leaving the field)
   function handleAmountBlur(field: 'cashIn' | 'cashOut' | 'bankIn' | 'bankOut') {
+    markFieldTouched('amounts');
     if (initialData?.id) return; // Don't sync when editing existing transaction
 
     setFormData((prev) => {
@@ -325,13 +354,14 @@ export function TransactionDialog({
             type="button"
             onClick={onClose}
             className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Luk dialog"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
+        <form ref={formRef} onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
             {/* Basic Fields */}
             <div className="grid grid-cols-2 gap-4">
@@ -344,11 +374,12 @@ export function TransactionDialog({
                   type="date"
                   value={formData.date}
                   onChange={(e) => handleFieldChange('date', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
-                    touched && errors.date ? 'border-red-500' : 'border-gray-300'
+                  onBlur={() => markFieldTouched('date')}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors ${
+                    shouldShowError('date') && errors.date ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
                 />
-                {touched && errors.date && (
+                {shouldShowError('date') && errors.date && (
                   <p className="text-sm text-red-500 mt-1">{errors.date}</p>
                 )}
               </div>
@@ -362,13 +393,13 @@ export function TransactionDialog({
                   type="text"
                   value={formData.description}
                   onChange={(e) => handleFieldChange('description', e.target.value)}
-                  onBlur={handleDescriptionBlur}
+                  onBlur={() => { markFieldTouched('description'); handleDescriptionBlur(); }}
                   placeholder="F.eks. Kontingent, Patronkøb..."
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
-                    touched && errors.description ? 'border-red-500' : 'border-gray-300'
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors ${
+                    shouldShowError('description') && errors.description ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
                 />
-                {touched && errors.description && (
+                {shouldShowError('description') && errors.description && (
                   <p className="text-sm text-red-500 mt-1">{errors.description}</p>
                 )}
               </div>
@@ -468,7 +499,7 @@ export function TransactionDialog({
                   </div>
                 </div>
               </div>
-              {touched && errors.amounts && (
+              {shouldShowError('amounts') && errors.amounts && (
                 <p className="text-sm text-red-500 mt-2">{errors.amounts}</p>
               )}
             </div>
@@ -505,7 +536,7 @@ export function TransactionDialog({
                 </button>
               </div>
 
-              {touched && errors.lines && (
+              {shouldShowError('lines') && errors.lines && (
                 <p className="text-sm text-red-500 mb-2">{errors.lines}</p>
               )}
 
@@ -736,7 +767,7 @@ export function TransactionDialog({
                 })}
               </div>
 
-              {touched && errors.lineBalance && (
+              {shouldShowError('lineBalance') && errors.lineBalance && (
                 <p className="text-sm text-red-500 mt-3">{errors.lineBalance}</p>
               )}
             </div>

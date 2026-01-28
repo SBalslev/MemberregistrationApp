@@ -3,8 +3,8 @@
  * Shows fee payment status for all active members.
  */
 
-import { useMemo, useState } from 'react';
-import { Check, X, AlertCircle, Filter, Clock, CreditCard, Search } from 'lucide-react';
+import { useMemo, useState, useCallback } from 'react';
+import { Check, X, AlertCircle, Filter, Clock, CreditCard, Search, CheckSquare, Square, MinusSquare } from 'lucide-react';
 import type { TransactionWithLines, FeeRate, PendingFeePaymentWithMember, MemberType } from '../../types';
 import type { Member } from '../../types/entities';
 import { MEMBER_TYPE_LABELS } from '../../types';
@@ -33,6 +33,7 @@ interface MemberFeeStatusTableProps {
   pendingPayments?: PendingFeePaymentWithMember[];
   onMemberClick?: (memberId: string) => void;
   onQuickPayment?: (memberId: string) => void;
+  onBatchPayment?: (memberIds: string[]) => void;
 }
 
 type FilterType = 'all' | 'paid' | 'unpaid' | 'partial';
@@ -45,9 +46,11 @@ export function MemberFeeStatusTable({
   pendingPayments = [],
   onMemberClick,
   onQuickPayment,
+  onBatchPayment,
 }: MemberFeeStatusTableProps) {
   const [filter, setFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
 
   // Calculate fee status for each member
   const feeStatuses: FeeStatusRow[] = useMemo(() => {
@@ -159,6 +162,56 @@ export function MemberFeeStatusTable({
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString('da-DK');
 
+  // Get selectable members (those who haven't paid in full)
+  const selectableMembers = useMemo(() =>
+    filteredStatuses.filter(s => !s.isPaidInFull),
+    [filteredStatuses]
+  );
+
+  // Check if all selectable members are selected
+  const allSelected = selectableMembers.length > 0 &&
+    selectableMembers.every(s => selectedMemberIds.has(s.memberId));
+  const someSelected = selectableMembers.some(s => selectedMemberIds.has(s.memberId));
+
+  // Toggle single member selection
+  const toggleMemberSelection = useCallback((memberId: string) => {
+    setSelectedMemberIds(prev => {
+      const next = new Set(prev);
+      if (next.has(memberId)) {
+        next.delete(memberId);
+      } else {
+        next.add(memberId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Toggle all selectable members
+  const toggleSelectAll = useCallback(() => {
+    if (allSelected) {
+      // Deselect all
+      setSelectedMemberIds(new Set());
+    } else {
+      // Select all selectable members in current filter
+      setSelectedMemberIds(new Set(selectableMembers.map(s => s.memberId)));
+    }
+  }, [allSelected, selectableMembers]);
+
+  // Handle batch payment
+  const handleBatchPayment = useCallback(() => {
+    if (selectedMemberIds.size > 0 && onBatchPayment) {
+      onBatchPayment(Array.from(selectedMemberIds));
+      setSelectedMemberIds(new Set());
+    }
+  }, [selectedMemberIds, onBatchPayment]);
+
+  // Calculate total for selected members
+  const selectedTotal = useMemo(() => {
+    return filteredStatuses
+      .filter(s => selectedMemberIds.has(s.memberId))
+      .reduce((sum, s) => sum + s.outstandingAmount, 0);
+  }, [filteredStatuses, selectedMemberIds]);
+
   return (
     <div className="space-y-4">
       {/* Summary Cards */}
@@ -242,12 +295,59 @@ export function MemberFeeStatusTable({
         </div>
       </div>
 
+      {/* Batch Action Bar */}
+      {onBatchPayment && selectedMemberIds.size > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="text-blue-700 font-medium">
+              {selectedMemberIds.size} medlem{selectedMemberIds.size > 1 ? 'mer' : ''} valgt
+            </span>
+            <span className="text-blue-600">
+              Total udestående: {formatCurrency(selectedTotal)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedMemberIds(new Set())}
+              className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+            >
+              Fravælg alle
+            </button>
+            <button
+              onClick={handleBatchPayment}
+              className="px-4 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <CreditCard className="w-4 h-4" />
+              Registrer betalinger
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
+                {onBatchPayment && (
+                  <th className="px-4 py-3 w-10">
+                    <button
+                      onClick={toggleSelectAll}
+                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                      title={allSelected ? 'Fravælg alle' : 'Vælg alle'}
+                      aria-label={allSelected ? 'Fravælg alle' : 'Vælg alle'}
+                    >
+                      {allSelected ? (
+                        <CheckSquare className="w-5 h-5 text-blue-600" />
+                      ) : someSelected ? (
+                        <MinusSquare className="w-5 h-5 text-blue-400" />
+                      ) : (
+                        <Square className="w-5 h-5" />
+                      )}
+                    </button>
+                  </th>
+                )}
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Medlem</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Type</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-600">Forventet</th>
@@ -264,19 +364,42 @@ export function MemberFeeStatusTable({
             <tbody>
               {filteredStatuses.length === 0 ? (
                 <tr>
-                  <td colSpan={onQuickPayment ? 9 : 8} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={onQuickPayment ? 10 : onBatchPayment ? 9 : 8} className="px-4 py-8 text-center text-gray-500">
                     Ingen medlemmer matcher filteret
                   </td>
                 </tr>
               ) : (
-                filteredStatuses.map((status) => (
+                filteredStatuses.map((status) => {
+                  const isSelected = selectedMemberIds.has(status.memberId);
+                  const canSelect = !status.isPaidInFull;
+
+                  return (
                   <tr
                     key={status.memberId}
                     className={`border-b border-gray-100 hover:bg-gray-50 ${
                       onMemberClick ? 'cursor-pointer' : ''
-                    }`}
+                    } ${isSelected ? 'bg-blue-50' : ''}`}
                     onClick={() => onMemberClick?.(status.memberId)}
                   >
+                    {onBatchPayment && (
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        {canSelect ? (
+                          <button
+                            onClick={() => toggleMemberSelection(status.memberId)}
+                            className="text-gray-400 hover:text-gray-600 transition-colors"
+                            aria-label={isSelected ? 'Fravælg medlem' : 'Vælg medlem'}
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-5 h-5 text-blue-600" />
+                            ) : (
+                              <Square className="w-5 h-5" />
+                            )}
+                          </button>
+                        ) : (
+                          <span className="w-5 h-5 block" />
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 font-medium text-gray-900">
                       {status.memberName}
                     </td>
@@ -350,7 +473,8 @@ export function MemberFeeStatusTable({
                       </td>
                     )}
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

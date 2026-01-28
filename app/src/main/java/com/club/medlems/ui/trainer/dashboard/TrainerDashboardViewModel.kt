@@ -6,8 +6,11 @@ import com.club.medlems.data.dao.CheckInDao
 import com.club.medlems.data.dao.MemberDao
 import com.club.medlems.data.dao.PracticeSessionDao
 import com.club.medlems.data.entity.CheckIn
+import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.domain.trainer.TrainerSessionManager
+import com.club.medlems.util.BirthDateValidator
+import kotlin.time.Duration.Companion.days
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +54,19 @@ data class DashboardStats(
 )
 
 /**
+ * Represents a trial member for the trainer dashboard list.
+ */
+data class TrialMemberListItem(
+    val member: Member,
+    val displayName: String,
+    val registrationDate: String,
+    val age: Int?,
+    val isAdult: Boolean,
+    val hasIdPhoto: Boolean,
+    val hasProfilePhoto: Boolean
+)
+
+/**
  * UI state for the trainer dashboard.
  */
 data class TrainerDashboardState(
@@ -63,6 +79,8 @@ data class TrainerDashboardState(
     val filteredCheckIns: List<CheckInWithMember> = emptyList(),
     /** Filtered sessions (based on search query) */
     val filteredSessions: List<PracticeSessionWithMember> = emptyList(),
+    /** Recent trial members (last 7 days) */
+    val trialMembers: List<TrialMemberListItem> = emptyList(),
     val stats: DashboardStats = DashboardStats(),
     val searchQuery: String = "",
     val isLoading: Boolean = false,
@@ -176,10 +194,15 @@ class TrainerDashboardViewModel @Inject constructor(
 
     private suspend fun loadDataInternal() {
         val today = getToday()
+        val now = Clock.System.now()
 
         // Fetch today's check-ins and sessions
         val checkIns = checkInDao.allCheckInsForDate(today)
         val sessions = practiceSessionDao.allSessionsForDate(today)
+
+        // Fetch recent trial members (last 7 days)
+        val sevenDaysAgo = now - 7.days
+        val recentTrialMembers = memberDao.getRecentTrialMembers(sevenDaysAgo)
 
         // Collect unique member IDs
         val memberIds = (checkIns.map { it.internalMemberId } + sessions.map { it.internalMemberId }).distinct()
@@ -212,13 +235,40 @@ class TrainerDashboardViewModel @Inject constructor(
             )
         }.sortedByDescending { it.session.createdAtUtc }
 
+        // Map trial members for display
+        val trialMemberItems = recentTrialMembers.map { member ->
+            val birthDateStr = member.birthDate?.toString()
+            val validationResult = if (birthDateStr != null) {
+                BirthDateValidator.validate(birthDateStr)
+            } else null
+            val age = when (validationResult) {
+                is com.club.medlems.util.BirthDateValidationResult.Valid -> validationResult.age
+                else -> null
+            }
+            val isAdult = age != null && age >= 18
+
+            val createdAt = member.createdAtUtc.toLocalDateTime(TimeZone.currentSystemDefault())
+            val dateStr = String.format("%02d/%02d", createdAt.dayOfMonth, createdAt.monthNumber)
+
+            TrialMemberListItem(
+                member = member,
+                displayName = listOfNotNull(member.firstName, member.lastName).joinToString(" "),
+                registrationDate = dateStr,
+                age = age,
+                isAdult = isAdult,
+                hasIdPhoto = member.idPhotoPath != null,
+                hasProfilePhoto = member.registrationPhotoPath != null
+            )
+        }
+
         // Update time
-        val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
-        val timeStr = String.format("%02d:%02d", now.hour, now.minute)
+        val nowLocal = now.toLocalDateTime(TimeZone.currentSystemDefault())
+        val timeStr = String.format("%02d:%02d", nowLocal.hour, nowLocal.minute)
 
         _state.value = _state.value.copy(
             allCheckIns = checkInsWithMembers,
             allSessions = sessionsWithMembers,
+            trialMembers = trialMemberItems,
             stats = DashboardStats(
                 totalCheckIns = checkInsWithMembers.size,
                 totalSessions = sessionsWithMembers.size

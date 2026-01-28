@@ -3,12 +3,15 @@
  */
 
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge, Edit2 } from 'lucide-react';
+import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock } from 'lucide-react';
 import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, getDefaultSkvRegistration, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, type ActivityType } from '../database';
 import type { Member, Gender } from '../types';
+import { getIdPhotoStatus } from '../types/entities';
+import { onMembershipIdAssigned } from '../services/idPhotoLifecycleService';
 import type { SkvRegistration, SkvWeapon, SkvStatus } from '../database/skvRepository';
 import type { MergeResult } from '../database/memberRepository';
 import { useAppStore } from '../store';
+import { showSuccess, showError } from '../store/toastStore';
 import { getPhotoSrc } from '../utils/photoStorage';
 
 export function MembersPage() {
@@ -16,7 +19,9 @@ export function MembersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ACTIVE' | 'INACTIVE'>('all');
   const [memberTypeFilter, setMemberTypeFilter] = useState<'all' | 'TRIAL' | 'FULL'>('all');
+  const [idPhotoFilter, setIdPhotoFilter] = useState<'all' | 'has_id' | 'needs_id' | 'not_required'>('all');
   const [viewMode, setViewMode] = useState<'members' | 'duplicates'>('members');
+  const [enlargedPhoto, setEnlargedPhoto] = useState<{ src: string; title: string } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<{ member: Member; duplicate: Member } | null>(null);
@@ -51,8 +56,21 @@ export function MembersPage() {
       result = result.filter((m) => m.memberLifecycleStage === memberTypeFilter);
     }
 
+    // Apply ID photo filter
+    if (idPhotoFilter !== 'all') {
+      result = result.filter((m) => {
+        const status = getIdPhotoStatus(m);
+        switch (idPhotoFilter) {
+          case 'has_id': return status === 'available';
+          case 'needs_id': return status === 'pending';
+          case 'not_required': return status === 'not_required';
+          default: return true;
+        }
+      });
+    }
+
     return result;
-  }, [members, searchQuery, statusFilter, memberTypeFilter]);
+  }, [members, searchQuery, statusFilter, memberTypeFilter, idPhotoFilter]);
 
   // Count trial members for badge
   const trialMemberCount = useMemo(() => {
@@ -64,7 +82,60 @@ export function MembersPage() {
     return getMembersWithDuplicates().length;
   }, [members]);
 
+  // Count members by ID photo status for filter labels
+  const idPhotoStatusCounts = useMemo(() => {
+    const counts = { has_id: 0, needs_id: 0, not_required: 0 };
+    members.forEach((m) => {
+      const status = getIdPhotoStatus(m);
+      if (status === 'available') counts.has_id++;
+      else if (status === 'pending') counts.needs_id++;
+      else counts.not_required++;
+    });
+    return counts;
+  }, [members]);
+
+  // Count active/inactive for filter labels
+  const statusCounts = useMemo(() => {
+    const counts = { active: 0, inactive: 0 };
+    members.forEach((m) => {
+      if (m.status === 'ACTIVE') counts.active++;
+      else counts.inactive++;
+    });
+    return counts;
+  }, [members]);
+
+  // Count full members for filter labels
+  const fullMemberCount = useMemo(() => {
+    return members.filter((m) => m.memberLifecycleStage === 'FULL').length;
+  }, [members]);
+
   return (
+    <>
+      {/* Photo Enlargement Modal */}
+      {enlargedPhoto && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8"
+          onClick={() => setEnlargedPhoto(null)}
+        >
+          <div className="relative max-w-4xl max-h-full">
+            <button
+              onClick={() => setEnlargedPhoto(null)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300"
+              aria-label="Luk billede"
+            >
+              <X className="w-8 h-8" />
+            </button>
+            <img
+              src={enlargedPhoto.src}
+              alt={enlargedPhoto.title}
+              className="max-w-full max-h-[80vh] object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <p className="text-white text-center mt-4 text-lg">{enlargedPhoto.title}</p>
+          </div>
+        </div>
+      )}
+
     <div className="flex h-full">
       {/* Member List */}
       <div className="flex-1 flex flex-col border-r border-gray-200">
@@ -139,9 +210,9 @@ export function MembersPage() {
                 onChange={(e) => setMemberTypeFilter(e.target.value as 'all' | 'TRIAL' | 'FULL')}
                 className="pl-9 pr-8 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
               >
-                <option value="all">Alle typer</option>
+                <option value="all">Alle typer ({members.length})</option>
                 <option value="TRIAL">Prøvemedlemmer ({trialMemberCount})</option>
-                <option value="FULL">Fuldgyldige</option>
+                <option value="FULL">Fuldgyldige ({fullMemberCount})</option>
               </select>
             </div>
             <div className="relative">
@@ -151,9 +222,22 @@ export function MembersPage() {
                 onChange={(e) => setStatusFilter(e.target.value as 'all' | 'ACTIVE' | 'INACTIVE')}
                 className="pl-9 pr-8 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
               >
-                <option value="all">Alle status</option>
-                <option value="ACTIVE">Aktive</option>
-                <option value="INACTIVE">Inaktive</option>
+                <option value="all">Alle status ({members.length})</option>
+                <option value="ACTIVE">Aktive ({statusCounts.active})</option>
+                <option value="INACTIVE">Inaktive ({statusCounts.inactive})</option>
+              </select>
+            </div>
+            <div className="relative">
+              <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <select
+                value={idPhotoFilter}
+                onChange={(e) => setIdPhotoFilter(e.target.value as 'all' | 'has_id' | 'needs_id' | 'not_required')}
+                className="pl-9 pr-8 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
+              >
+                <option value="all">Alle ID-status ({members.length})</option>
+                <option value="has_id">Har ID-billede ({idPhotoStatusCounts.has_id})</option>
+                <option value="needs_id">Mangler ID-billede ({idPhotoStatusCounts.needs_id})</option>
+                <option value="not_required">ID ikke påkrævet ({idPhotoStatusCounts.not_required})</option>
               </select>
             </div>
           </div>
@@ -166,9 +250,21 @@ export function MembersPage() {
             // Member List View
             <>
               {filteredMembers.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
                   <User className="w-12 h-12 mb-4 text-gray-300" />
-                  <p>Ingen medlemmer fundet</p>
+                  <p className="text-lg font-medium mb-2">Ingen medlemmer fundet</p>
+                  {searchQuery.trim() ? (
+                    <div className="text-center text-sm">
+                      <p className="mb-2">Prøv at:</p>
+                      <ul className="text-left space-y-1">
+                        <li>• Søge på fornavn eller efternavn</li>
+                        <li>• Søge på medlemsnummer</li>
+                        <li>• Fjerne eller ændre filtre</li>
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="text-sm">Tilføj et medlem for at komme i gang</p>
+                  )}
                 </div>
               ) : (
                 <ul className="divide-y divide-gray-100">
@@ -209,13 +305,35 @@ export function MembersPage() {
                           {member.firstName} {member.lastName}
                         </p>
                         {member.memberLifecycleStage === 'TRIAL' && (
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            trialWarning === 'error' ? 'bg-red-100 text-red-700' :
-                            trialWarning === 'warning' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-purple-100 text-purple-700'
-                          }`}>
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium cursor-help ${
+                              trialWarning === 'error' ? 'bg-red-100 text-red-700' :
+                              trialWarning === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-purple-100 text-purple-700'
+                            }`}
+                            title={
+                              trialWarning === 'error'
+                                ? `Prøveperiode overskredet (${daysSinceRegistration} dage) - bør konverteres eller afsluttes`
+                                : trialWarning === 'warning'
+                                ? `Prøveperiode snart slut (${daysSinceRegistration} dage) - overvej konvertering`
+                                : `Ny prøvemedlem (${daysSinceRegistration} dage)`
+                            }
+                          >
                             Prøve {daysSinceRegistration > 0 && `(${daysSinceRegistration}d)`}
                           </span>
+                        )}
+                        {/* ID photo status indicator for TRIAL adults only */}
+                        {getIdPhotoStatus(member) !== 'not_required' && (
+                          getIdPhotoStatus(member) === 'available' ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700" title="ID-billede verificeret">
+                              <CreditCard className="w-3 h-3" />
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700" title="Mangler ID-billede">
+                              <CreditCard className="w-3 h-3" />
+                              <span>!</span>
+                            </span>
+                          )
                         )}
                       </div>
                       <p className="text-sm text-gray-500 truncate">
@@ -325,7 +443,7 @@ export function MembersPage() {
       {/* Member Detail Panel */}
       <div className="w-96 bg-gray-50 overflow-y-auto">
         {selectedMember ? (
-          <MemberDetailPanel member={selectedMember} onMemberUpdated={loadMembers} />
+          <MemberDetailPanel member={selectedMember} onMemberUpdated={loadMembers} onEnlargePhoto={setEnlargedPhoto} onClose={() => setSelectedMember(null)} />
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-500">
             <User className="w-16 h-16 mb-4 text-gray-300" />
@@ -361,18 +479,20 @@ export function MembersPage() {
               loadMembers();
               setShowAddModal(false);
               setSelectedMember(member);
+              showSuccess(`${member.firstName} ${member.lastName} oprettet`);
             } catch (error) {
               console.error('Failed to save member:', error);
-              alert('Kunne ikke gemme medlem. Prøv igen.');
+              showError('Kunne ikke gemme medlem. Prøv igen.');
             }
           }}
         />
       )}
     </div>
+    </>
   );
 }
 
-function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemberUpdated: () => void }) {
+function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }: { member: Member; onMemberUpdated: () => void; onEnlargePhoto: (photo: { src: string; title: string }) => void; onClose: () => void }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAssignIdModal, setShowAssignIdModal] = useState(false);
   const [skvRegistration, setSkvRegistration] = useState<SkvRegistration | null>(null);
@@ -461,9 +581,24 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
 
   return (
     <div className="p-6">
+      {/* Close button */}
+      <div className="flex justify-end mb-2">
+        <button
+          onClick={onClose}
+          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          title="Luk detaljer"
+          aria-label="Luk detaljer"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
       {/* Header */}
       <div className="text-center mb-6">
-        <div className="w-20 h-20 bg-gray-200 rounded-full mx-auto mb-4 flex items-center justify-center overflow-hidden">
+        <div
+          className={`w-20 h-20 bg-gray-200 rounded-full mx-auto mb-4 flex items-center justify-center overflow-hidden ${photoSrc ? 'cursor-pointer hover:ring-2 hover:ring-blue-400' : ''}`}
+          onClick={() => photoSrc && onEnlargePhoto({ src: photoSrc, title: `${member.firstName} ${member.lastName} - Profilbillede` })}
+        >
           {photoSrc ? (
             <img
               src={photoSrc}
@@ -527,6 +662,54 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
             {member.guardianPhone && <DetailRow label="Telefon" value={member.guardianPhone} />}
             {member.guardianEmail && <DetailRow label="Email" value={member.guardianEmail} />}
           </div>
+        </div>
+      )}
+
+      {/* ID Photo section for TRIAL adults only */}
+      {getIdPhotoStatus(member) !== 'not_required' && (
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-gray-600" />
+              <h3 className="text-sm font-semibold text-gray-900">ID-bekræftelse</h3>
+            </div>
+            {getIdPhotoStatus(member) === 'available' ? (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                <CheckCircle2 className="w-3 h-3" />
+                Verificeret
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                <Clock className="w-3 h-3" />
+                Afventer
+              </span>
+            )}
+          </div>
+          {member.idPhotoPath ? (
+            <div className="flex items-start gap-4">
+              <div
+                className="w-32 h-20 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400"
+                onClick={() => onEnlargePhoto({ src: getPhotoSrc(member.idPhotoPath) || '', title: `${member.firstName} ${member.lastName} - ID-billede` })}
+              >
+                <img
+                  src={getPhotoSrc(member.idPhotoPath) || undefined}
+                  alt="ID-billede"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              </div>
+              <p className="text-sm text-gray-600">
+                ID-billede uploadet fra tablet ved registrering.<br />
+                <span className="text-xs text-gray-400">Klik for at forstørre</span>
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">
+              Intet ID-billede tilgængeligt. Voksne prøvemedlemmer skal tage et ID-billede ved registrering på tabletten.
+            </p>
+          )}
         </div>
       )}
 
@@ -719,14 +902,17 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
           onAssigned={(membershipId) => {
             try {
               assignMembershipId(member.internalId, membershipId);
+              // Check if ID photo should be deleted (membership assigned + fee paid)
+              onMembershipIdAssigned(member.internalId);
               onMemberUpdated();
               setShowAssignIdModal(false);
               // Reload member with new data
               const updatedMember = { ...member, membershipId, memberLifecycleStage: 'FULL' as const };
               setSelectedMember(updatedMember);
+              showSuccess(`Medlemsnummer ${membershipId} tildelt`);
             } catch (error) {
               console.error('Failed to assign member ID:', error);
-              alert('Kunne ikke tildele medlemsnummer. Prøv igen.');
+              showError('Kunne ikke tildele medlemsnummer. Prøv igen.');
             }
           }}
         />
@@ -743,9 +929,10 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
               onMemberUpdated();
               setShowEditModal(false);
               setSelectedMember(updatedMember);
+              showSuccess('Medlem opdateret');
             } catch (error) {
               console.error('Failed to update member:', error);
-              alert('Kunne ikke opdatere medlem. Prøv igen.');
+              showError('Kunne ikke opdatere medlem. Prøv igen.');
             }
           }}
         />
@@ -761,6 +948,7 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
             setSkvRegistration(saved);
             refreshSkv();
             setShowSkvModal(false);
+            showSuccess('SKV registrering opdateret');
           }}
         />
       )}
@@ -779,11 +967,13 @@ function MemberDetailPanel({ member, onMemberUpdated }: { member: Member; onMemb
                 ...editingWeapon,
                 ...values
               });
+              showSuccess('Våben opdateret');
             } else {
               addSkvWeapon({
                 ...values,
                 skvRegistrationId: registration.id
               });
+              showSuccess('Våben tilføjet');
             }
             refreshSkv();
             setShowWeaponModal(false);
@@ -1550,6 +1740,8 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
       registrationPhotoPath: null,
       photoPath,
       photoThumbnail: null,
+      idPhotoPath: null,
+      idPhotoThumbnail: null,
       mergedIntoId: null,
       createdAtUtc: now,
       updatedAtUtc: now,

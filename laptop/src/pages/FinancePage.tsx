@@ -10,6 +10,7 @@ import { Wallet, Plus, Download, ChevronDown, Settings, Printer, BarChart3 } fro
 import { TransactionTable, TransactionDialog, YearSettingsDialog, CategoryTotals, MemberFeeStatusTable, MemberHistoryDialog, TransactionFilterBar, applyTransactionFilters, DEFAULT_FILTERS, PrintView, FinanceCharts, QuickFeePaymentDialog, ConsolidateFeePaymentsDialog } from '../components/finance';
 import type { TransactionFilters } from '../components/finance';
 import { ConfirmDialog } from '../components';
+import { showSuccess, showWarning } from '../store/toastStore';
 import {
   getTransactionsWithLinesByYear,
   getCategories,
@@ -31,7 +32,9 @@ import {
 } from '../database';
 import { onlineSyncService } from '../database/onlineSyncService';
 import { getAllMembers } from '../database/memberRepository';
+import { onFeePaymentRecorded } from '../services/idPhotoLifecycleService';
 import { exportKassebog } from '../utils';
+import { getEffectiveMemberType } from '../utils/feeCategory';
 import { MEMBER_TYPE_LABELS } from '../types';
 import type {
   TransactionWithLines,
@@ -281,6 +284,7 @@ export function FinancePage() {
     setIsDialogOpen(false);
     setEditingTransaction(undefined);
     loadData();
+    showSuccess(formData.id ? 'Transaktion opdateret' : 'Transaktion oprettet');
   };
 
   // Handle edit
@@ -320,6 +324,7 @@ export function FinancePage() {
       deleteTransactionDb(deleteConfirmId);
       setDeleteConfirmId(null);
       loadData();
+      showSuccess('Transaktion slettet');
     }
   };
 
@@ -327,7 +332,7 @@ export function FinancePage() {
   const handleExport = () => {
     const fiscalYear = getFiscalYear(selectedYear);
     if (!fiscalYear) {
-      alert('Ingen data at eksportere for dette år');
+      showWarning('Ingen data at eksportere for dette år');
       return;
     }
     exportKassebog({
@@ -335,6 +340,7 @@ export function FinancePage() {
       transactions,
       categories,
     });
+    showSuccess('Kassebog eksporteret');
   };
 
   // Handle quick fee payment
@@ -357,9 +363,12 @@ export function FinancePage() {
       createdAtUtc: now,
       updatedAtUtc: now,
     });
+    // Check if ID photo should be deleted (membership assigned + fee paid)
+    onFeePaymentRecorded(payment.memberId);
     setIsQuickPaymentOpen(false);
     setQuickPaymentMemberId(undefined);
     loadData();
+    showSuccess('Kontingentbetaling registreret');
   };
 
   // Handle consolidate fee payments
@@ -372,6 +381,7 @@ export function FinancePage() {
     consolidatePendingFeePayments(selectedYear, paymentIds, description, date, categoryId);
     setIsConsolidateOpen(false);
     loadData();
+    showSuccess(`${paymentIds.length} betalinger samlet til én postering`);
   };
 
   // Handle delete pending payment
@@ -380,12 +390,52 @@ export function FinancePage() {
     // Also push delete to online database
     await onlineSyncService.pushPendingFeePaymentDelete(paymentId);
     loadData();
+    showSuccess('Afventende betaling slettet');
   };
 
   // Open quick payment with optional preselected member
   const openQuickPayment = (memberId?: string) => {
     setQuickPaymentMemberId(memberId);
     setIsQuickPaymentOpen(true);
+  };
+
+  // Handle batch payment for multiple members
+  const handleBatchPayment = (memberIds: string[]) => {
+    const now = new Date().toISOString();
+    const today = now.split('T')[0];
+    let successCount = 0;
+
+    for (const memberId of memberIds) {
+      const member = members.find(m => m.internalId === memberId);
+      if (!member) continue;
+
+      // Get the expected fee amount for this member
+      const feeCategory = getEffectiveMemberType(member);
+      const feeRate = feeRates.find(r => r.memberType === feeCategory && r.fiscalYear === selectedYear);
+      const amount = feeRate?.feeAmount ?? 0;
+
+      if (amount > 0) {
+        createPendingFeePayment({
+          id: crypto.randomUUID(),
+          fiscalYear: selectedYear,
+          memberId,
+          amount,
+          paymentDate: today,
+          paymentMethod: 'CASH',
+          notes: null,
+          createdAtUtc: now,
+          updatedAtUtc: now,
+        });
+        // Check if ID photo should be deleted (membership assigned + fee paid)
+        onFeePaymentRecorded(memberId);
+        successCount++;
+      }
+    }
+
+    loadData();
+    if (successCount > 0) {
+      showSuccess(`${successCount} kontingentbetaling${successCount > 1 ? 'er' : ''} registreret`);
+    }
   };
 
   // Handle year settings
@@ -725,6 +775,7 @@ export function FinancePage() {
               pendingPayments={pendingPayments}
               onMemberClick={(memberId) => setSelectedMemberId(memberId)}
               onQuickPayment={openQuickPayment}
+              onBatchPayment={handleBatchPayment}
             />
           </div>
         )}

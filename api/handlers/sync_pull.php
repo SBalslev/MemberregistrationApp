@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 // File version - increment when making changes
-const SYNC_PULL_VERSION = '1.4.0';  // 1.4.0: Added new_member_registrations, skv_registrations, skv_weapons
+const SYNC_PULL_VERSION = '1.5.0';  // 1.5.0: Added id_photo_path and id_photo_thumbnail fields for adult verification
 
 /**
  * Convert practice type from MySQL ENUM to laptop format.
@@ -154,6 +154,7 @@ function pullMembers(string $since, int $limit): array
             email, phone, address, zip_code, city,
             guardian_name, guardian_phone, guardian_email,
             expires_on, merged_into_id,
+            id_photo_path, id_photo_thumbnail,
             device_id, sync_version,
             created_at_utc, modified_at_utc, synced_at_utc
          FROM members
@@ -185,6 +186,8 @@ function pullMembers(string $since, int $limit): array
             'guardian_email' => $row['guardian_email'],
             'expires_on' => $row['expires_on'],
             'merged_into_id' => $row['merged_into_id'],
+            'id_photo_path' => $row['id_photo_path'],
+            'id_photo_thumbnail' => $row['id_photo_thumbnail'],
             'device_id' => $row['device_id'],
             'sync_version' => (int)$row['sync_version'],
             'created_at_utc' => formatDatetime($row['created_at_utc']),

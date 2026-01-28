@@ -3,15 +3,15 @@
  * Shows quick stats and recent activity.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Users,
   UserPlus,
   Package,
   Laptop,
   CheckCircle,
-  Clock,
   AlertTriangle,
+  WifiOff,
 } from 'lucide-react';
 import { getMemberCountByStatus, getTrialMemberCount, getRecentTrialMembers, type TrialMemberWithActivity } from '../database';
 import { useAppStore } from '../store';
@@ -39,9 +39,32 @@ function getInitialStats(): Stats {
   };
 }
 
+// Device search timeout in milliseconds
+const DEVICE_SEARCH_TIMEOUT_MS = 10000;
+
 export function DashboardPage() {
-  const { setCurrentPage } = useAppStore();
+  const { setCurrentPage, pairedDevices } = useAppStore();
   const [stats] = useState<Stats>(getInitialStats);
+  const [deviceSearchTimedOut, setDeviceSearchTimedOut] = useState(false);
+
+  // Track online devices from store
+  const onlineDevices = pairedDevices.filter(d => d.isOnline);
+
+  // Set timeout for device search
+  useEffect(() => {
+    // If we already have devices, no need for timeout
+    if (pairedDevices.length > 0) {
+      setDeviceSearchTimedOut(false);
+      return;
+    }
+
+    // Start timeout
+    const timer = setTimeout(() => {
+      setDeviceSearchTimedOut(true);
+    }, DEVICE_SEARCH_TIMEOUT_MS);
+
+    return () => clearTimeout(timer);
+  }, [pairedDevices.length]);
 
   return (
     <div className="p-8">
@@ -74,7 +97,7 @@ export function DashboardPage() {
         <StatCard
           icon={Laptop}
           label="Enheder online"
-          value={stats.onlineDevices}
+          value={onlineDevices.length}
           color="green"
         />
       </div>
@@ -142,13 +165,59 @@ export function DashboardPage() {
             <h2 className="text-lg font-semibold text-gray-900">
               Enhedsstatus
             </h2>
+            {pairedDevices.length > 0 && (
+              <span className={`text-sm font-medium px-3 py-1 rounded-full ${
+                onlineDevices.length > 0
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-gray-100 text-gray-600'
+              }`}>
+                {onlineDevices.length} / {pairedDevices.length} online
+              </span>
+            )}
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center gap-3 text-gray-500 py-8 justify-center">
-              <Clock className="w-5 h-5" />
-              <span>Søger efter enheder...</span>
-            </div>
+            {pairedDevices.length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {pairedDevices.map((device) => (
+                  <div key={device.id} className="py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full ${
+                        device.isOnline ? 'bg-green-500' : 'bg-gray-300'
+                      }`} />
+                      <div>
+                        <p className="font-medium text-gray-900">{device.name}</p>
+                        <p className="text-sm text-gray-500">{device.type}</p>
+                      </div>
+                    </div>
+                    <span className={`text-sm ${
+                      device.isOnline ? 'text-green-600' : 'text-gray-400'
+                    }`}>
+                      {device.isOnline ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : deviceSearchTimedOut ? (
+              <div className="flex flex-col items-center gap-2 text-gray-500 py-8 justify-center">
+                <WifiOff className="w-8 h-8 text-gray-300" />
+                <span>Ingen enheder fundet</span>
+                <p className="text-sm text-gray-400 text-center">
+                  Sørg for at tablets er tændt og på samme netværk
+                </p>
+                <button
+                  onClick={() => setCurrentPage('devices')}
+                  className="mt-2 text-blue-600 hover:text-blue-700 text-sm font-medium"
+                >
+                  Gå til Enheder →
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 text-gray-500 py-8 justify-center">
+                <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+                <span>Søger efter enheder...</span>
+              </div>
+            )}
           </div>
         </div>
 

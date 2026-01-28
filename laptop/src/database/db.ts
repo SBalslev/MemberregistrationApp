@@ -8,7 +8,9 @@
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 
 // Schema version matching Android app
-const SCHEMA_VERSION = 13;
+// v14: Added idPhotoPath and idPhotoThumbnail for adult ID verification
+// v15: Added AuditLog table for ID photo deletion tracking
+const SCHEMA_VERSION = 15;
 
 // SQL.js instance (singleton)
 let SQL: SqlJsStatic | null = null;
@@ -586,6 +588,37 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('FeeRate.HONORARY added');
   }
 
+  // ===== Migration: Schema v14 - ID Photo for Adult Verification =====
+  // Add idPhotoPath for full-resolution ID photo file path
+  if (!existingMemberColumns.includes('idPhotoPath')) {
+    db.run('ALTER TABLE Member ADD COLUMN idPhotoPath TEXT');
+    migrationsRun.push('Member.idPhotoPath');
+  }
+
+  // Add idPhotoThumbnail for 150x150 ID photo thumbnail data URL
+  if (!existingMemberColumns.includes('idPhotoThumbnail')) {
+    db.run('ALTER TABLE Member ADD COLUMN idPhotoThumbnail TEXT');
+    migrationsRun.push('Member.idPhotoThumbnail');
+  }
+
+  // ===== Migration: Schema v15 - AuditLog table for ID photo deletion tracking =====
+  const auditLogCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='AuditLog'");
+  if (auditLogCheck.length === 0 || auditLogCheck[0].values.length === 0) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS AuditLog (
+        id TEXT PRIMARY KEY NOT NULL,
+        entityType TEXT NOT NULL,
+        entityId TEXT NOT NULL,
+        action TEXT NOT NULL,
+        details TEXT,
+        createdAtUtc TEXT NOT NULL
+      )
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_AuditLog_entityType_action ON AuditLog(entityType, action)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_AuditLog_createdAtUtc ON AuditLog(createdAtUtc)');
+    migrationsRun.push('AuditLog table created');
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -599,7 +632,7 @@ async function createSchema(): Promise<void> {
   if (!db) throw new Error('Database not initialized');
 
   db.run(`
-    -- Members table (Schema v10 - Trial Member Registration)
+    -- Members table (Schema v14 - ID Photo for Adult Verification)
     CREATE TABLE IF NOT EXISTS Member (
       internalId TEXT PRIMARY KEY NOT NULL,
       membershipId TEXT UNIQUE,
@@ -621,6 +654,8 @@ async function createSchema(): Promise<void> {
       registrationPhotoPath TEXT,
       photoPath TEXT,
       photoThumbnail TEXT,
+      idPhotoPath TEXT,
+      idPhotoThumbnail TEXT,
       mergedIntoId TEXT,
       memberType TEXT DEFAULT 'ADULT',
       createdAtUtc TEXT NOT NULL,
@@ -961,6 +996,38 @@ async function createSchema(): Promise<void> {
       FOREIGN KEY (skvRegistrationId) REFERENCES SKVRegistration(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_SKVWeapon_registrationId ON SKVWeapon(skvRegistrationId);
+
+    -- ===== Pending Fee Payments =====
+
+    CREATE TABLE IF NOT EXISTS PendingFeePayment (
+      id TEXT PRIMARY KEY NOT NULL,
+      fiscalYear INTEGER NOT NULL,
+      memberId TEXT NOT NULL,
+      amount REAL NOT NULL,
+      paymentDate TEXT NOT NULL,
+      paymentMethod TEXT NOT NULL DEFAULT 'CASH',
+      notes TEXT,
+      isConsolidated INTEGER NOT NULL DEFAULT 0,
+      consolidatedTransactionId TEXT,
+      createdAtUtc TEXT NOT NULL,
+      updatedAtUtc TEXT NOT NULL,
+      FOREIGN KEY (memberId) REFERENCES Member(internalId)
+    );
+    CREATE INDEX IF NOT EXISTS idx_PendingFeePayment_year ON PendingFeePayment(fiscalYear);
+    CREATE INDEX IF NOT EXISTS idx_PendingFeePayment_member ON PendingFeePayment(memberId);
+
+    -- ===== Audit Log =====
+
+    CREATE TABLE IF NOT EXISTS AuditLog (
+      id TEXT PRIMARY KEY NOT NULL,
+      entityType TEXT NOT NULL,
+      entityId TEXT NOT NULL,
+      action TEXT NOT NULL,
+      details TEXT,
+      createdAtUtc TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_AuditLog_entityType_action ON AuditLog(entityType, action);
+    CREATE INDEX IF NOT EXISTS idx_AuditLog_createdAtUtc ON AuditLog(createdAtUtc);
 
     -- Schema version metadata
     CREATE TABLE IF NOT EXISTS _schema_version (

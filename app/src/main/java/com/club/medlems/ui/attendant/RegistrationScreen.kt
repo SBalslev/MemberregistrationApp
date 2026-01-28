@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,22 +51,31 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
 import java.io.File
+import com.club.medlems.util.BirthDateValidator
+import com.club.medlems.util.BirthDateValidationResult
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
 
 data class RegistrationState(
-    val currentStep: Int = 1, // 1=details, 2=photo, 3=guardian/save
+    val currentStep: Int = 1, // 1=details, 2=camera, 3=photo preview, 4=ID camera (adults), 5=ID preview (adults), 6=guardian/save
     val firstName: String = "",
     val lastName: String = "",
     val email: String = "",
     val phone: String = "",
     val birthDate: String = "",
+    val birthDateError: String? = null,
+    val birthDateValid: Boolean = false,
+    val calculatedAge: Int? = null,
+    val isAdult: Boolean = false,
     val gender: String = "",
     val address: String = "",
     val zipCode: String = "",
     val city: String = "",
     val photoPath: String? = null,
+    val idPhotoPath: String? = null, // ID photo for adults
     val guardianName: String = "",
     val guardianPhone: String = "",
     val guardianEmail: String = "",
@@ -108,7 +118,22 @@ class RegistrationViewModel @Inject constructor(
     }
     
     fun updateBirthDate(date: String) {
-        _state.value = _state.value.copy(birthDate = date)
+        val validationResult = BirthDateValidator.validate(date)
+        val errorMessage = BirthDateValidator.getErrorMessage(validationResult)
+
+        val (isValid, age, isAdult) = when (validationResult) {
+            is BirthDateValidationResult.Valid -> Triple(true, validationResult.age, validationResult.age >= 18)
+            is BirthDateValidationResult.Empty -> Triple(false, null, false)
+            else -> Triple(false, null, false)
+        }
+
+        _state.value = _state.value.copy(
+            birthDate = date,
+            birthDateError = errorMessage,
+            birthDateValid = isValid,
+            calculatedAge = age,
+            isAdult = isAdult
+        )
     }
     
     fun updateGender(gender: String) {
@@ -129,26 +154,72 @@ class RegistrationViewModel @Inject constructor(
     
     fun nextStep() {
         val current = _state.value.currentStep
-        if (current < 3) {
+        val maxStep = if (_state.value.isAdult) 6 else 6 // 6 is final step for both
+        if (current < maxStep) {
             _state.value = _state.value.copy(currentStep = current + 1)
         }
     }
-    
+
     fun previousStep() {
         val current = _state.value.currentStep
         if (current > 1) {
             _state.value = _state.value.copy(currentStep = current - 1, errorMessage = null)
         }
     }
-    
+
     fun startTakingPhoto() {
         _state.value = _state.value.copy(isTakingPhoto = true, errorMessage = null)
     }
-    
+
+    /** Profile photo taken - go to preview (step 3) */
     fun setPhotoTaken(path: String) {
-        _state.value = _state.value.copy(photoPath = path, currentStep = 3, errorMessage = null, isTakingPhoto = false)
+        _state.value = _state.value.copy(
+            photoPath = path,
+            currentStep = 3, // Photo preview step
+            errorMessage = null,
+            isTakingPhoto = false
+        )
     }
-    
+
+    /** Accept profile photo - proceed to ID photo (adults) or final step (minors) */
+    fun acceptPhoto() {
+        val nextStep = if (_state.value.isAdult) 4 else 6 // Adults go to ID camera, minors skip to save
+        _state.value = _state.value.copy(currentStep = nextStep, errorMessage = null)
+    }
+
+    /** Retake profile photo - go back to camera */
+    fun retakePhoto() {
+        _state.value = _state.value.copy(
+            photoPath = null,
+            currentStep = 2, // Back to camera
+            errorMessage = null
+        )
+    }
+
+    /** ID photo taken - go to ID preview (step 5) */
+    fun setIdPhotoTaken(path: String) {
+        _state.value = _state.value.copy(
+            idPhotoPath = path,
+            currentStep = 5, // ID photo preview step
+            errorMessage = null,
+            isTakingPhoto = false
+        )
+    }
+
+    /** Accept ID photo - proceed to final step */
+    fun acceptIdPhoto() {
+        _state.value = _state.value.copy(currentStep = 6, errorMessage = null)
+    }
+
+    /** Retake ID photo - go back to ID camera */
+    fun retakeIdPhoto() {
+        _state.value = _state.value.copy(
+            idPhotoPath = null,
+            currentStep = 4, // Back to ID camera
+            errorMessage = null
+        )
+    }
+
     fun setPhotoError(error: String) {
         _state.value = _state.value.copy(errorMessage = error, isTakingPhoto = false)
     }
@@ -229,6 +300,7 @@ class RegistrationViewModel @Inject constructor(
                     guardianPhone = _state.value.guardianPhone.takeIf { it.isNotBlank() },
                     guardianEmail = _state.value.guardianEmail.takeIf { it.isNotBlank() },
                     registrationPhotoPath = photoPath,
+                    idPhotoPath = _state.value.idPhotoPath, // ID photo for adults
                     expiresOn = null,
                     mergedIntoId = null,
                     createdAtUtc = now,
@@ -240,15 +312,24 @@ class RegistrationViewModel @Inject constructor(
                 
                 withContext(Dispatchers.IO) {
                     memberDao.upsert(member)
-                    // Encode photo for sync if available
+                    // Encode profile photo for sync if available
                     val photoBase64 = try {
                         val photoFile = File(photoPath)
                         if (photoFile.exists()) {
                             android.util.Base64.encodeToString(photoFile.readBytes(), android.util.Base64.NO_WRAP)
                         } else null
                     } catch (e: Exception) { null }
+                    // Encode ID photo for sync if available (adults only)
+                    val idPhotoBase64 = try {
+                        _state.value.idPhotoPath?.let { idPath ->
+                            val idPhotoFile = File(idPath)
+                            if (idPhotoFile.exists()) {
+                                android.util.Base64.encodeToString(idPhotoFile.readBytes(), android.util.Base64.NO_WRAP)
+                            } else null
+                        }
+                    } catch (e: Exception) { null }
                     // Queue trial member for sync and trigger reactive sync
-                    syncOutboxManager.queueMember(member, trustManager.getThisDeviceId(), photoBase64 = photoBase64)
+                    syncOutboxManager.queueMember(member, trustManager.getThisDeviceId(), photoBase64 = photoBase64, idPhotoBase64 = idPhotoBase64)
                     syncManager.notifyEntityChanged("Member", member.internalId)
                     saveRegistrationInfo(internalId, photoPath)
                 }
@@ -376,6 +457,18 @@ fun RegistrationScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
+                val totalSteps = if (state.isAdult) 6 else 4
+
+                // Visual step progress indicator
+                RegistrationStepIndicator(
+                    currentStep = state.currentStep,
+                    totalSteps = totalSteps,
+                    isAdult = state.isAdult,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+
                 when (state.currentStep) {
                     1 -> MemberDetailsForm(
                         state = state,
@@ -404,16 +497,50 @@ fun RegistrationScreen(
                         onBack = viewModel::previousStep,
                         errorMessage = state.errorMessage,
                         isTakingPhoto = state.isTakingPhoto,
+                        stepLabel = "Trin 2 af $totalSteps: Tag profilbillede",
+                        useFrontCamera = true,
                         modifier = Modifier.weight(1f)
                     )
-                    3 -> RegistrationForm(
+                    3 -> PhotoPreviewScreen(
+                        photoPath = state.photoPath ?: "",
+                        onAccept = viewModel::acceptPhoto,
+                        onRetake = viewModel::retakePhoto,
+                        stepLabel = "Trin 3 af $totalSteps: Godkend profilbillede",
+                        photoLabel = "Profilbillede",
+                        modifier = Modifier.weight(1f)
+                    )
+                    4 -> CameraPreview(
+                        onPhotoTaken = { path ->
+                            viewModel.setIdPhotoTaken(path)
+                        },
+                        onPhotoError = { error ->
+                            viewModel.setPhotoError(error)
+                        },
+                        onStartTaking = viewModel::startTakingPhoto,
+                        onBack = viewModel::acceptPhoto, // Go back to after profile photo accepted
+                        errorMessage = state.errorMessage,
+                        isTakingPhoto = state.isTakingPhoto,
+                        stepLabel = "Trin 4 af $totalSteps: Tag billede af ID",
+                        useFrontCamera = true, // Front camera (tablet is wall-mounted)
+                        instructionText = "Hold dit ID-kort eller kørekort op foran kameraet",
+                        modifier = Modifier.weight(1f)
+                    )
+                    5 -> PhotoPreviewScreen(
+                        photoPath = state.idPhotoPath ?: "",
+                        onAccept = viewModel::acceptIdPhoto,
+                        onRetake = viewModel::retakeIdPhoto,
+                        stepLabel = "Trin 5 af $totalSteps: Godkend ID-billede",
+                        photoLabel = "ID-billede",
+                        modifier = Modifier.weight(1f)
+                    )
+                    6 -> RegistrationForm(
                         state = state,
                         onGuardianNameChange = viewModel::updateGuardianName,
                         onGuardianPhoneChange = viewModel::updateGuardianPhone,
                         onGuardianEmailChange = viewModel::updateGuardianEmail,
                         onToggleGuardianFields = viewModel::toggleGuardianFields,
                         onSave = viewModel::saveRegistration,
-                        onRetakePhoto = viewModel::previousStep,
+                        onRetakePhoto = { viewModel.retakePhoto() },
                         modifier = Modifier
                             .weight(1f)
                             .verticalScroll(rememberScrollState())
@@ -421,6 +548,86 @@ fun RegistrationScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Visual step progress indicator showing current registration progress.
+ * Displays colored dots for each step with the current step highlighted.
+ */
+@Composable
+private fun RegistrationStepIndicator(
+    currentStep: Int,
+    totalSteps: Int,
+    isAdult: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val stepLabels = if (isAdult) {
+        listOf("Oplysninger", "Profilbillede", "Godkend", "ID-billede", "Godkend ID", "Gem")
+    } else {
+        listOf("Oplysninger", "Profilbillede", "Godkend", "Gem")
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Step dots row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            for (i in 1..totalSteps) {
+                // Step dot
+                Surface(
+                    modifier = Modifier.size(if (i == currentStep) 16.dp else 12.dp),
+                    shape = MaterialTheme.shapes.small,
+                    color = when {
+                        i < currentStep -> MaterialTheme.colorScheme.primary
+                        i == currentStep -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    }
+                ) {
+                    if (i < currentStep) {
+                        // Completed step - show checkmark
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(if (i == currentStep) 16.dp else 12.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+                }
+
+                // Connector line (except after last step)
+                if (i < totalSteps) {
+                    Box(
+                        modifier = Modifier
+                            .width(24.dp)
+                            .height(2.dp)
+                            .background(
+                                if (i < currentStep) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Current step label
+        Text(
+            text = "Trin $currentStep af $totalSteps: ${stepLabels.getOrElse(currentStep - 1) { "" }}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }
 
@@ -446,12 +653,8 @@ fun MemberDetailsForm(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Trin 1 af 3: Indtast medlemsoplysninger",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        
+        // Step label is now shown in the RegistrationStepIndicator
+
         if (state.errorMessage != null) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -508,10 +711,32 @@ fun MemberDetailsForm(
         OutlinedTextField(
             value = state.birthDate,
             onValueChange = onBirthDateChange,
-            label = { Text("Fødselsdato (dd-mm-åååå)") },
+            label = { Text("Fødselsdato (dd-mm-åååå) *") },
             placeholder = { Text("01-01-2000") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            isError = state.birthDateError != null,
+            supportingText = {
+                when {
+                    state.birthDateError != null -> {
+                        Text(
+                            text = state.birthDateError,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    state.birthDateValid && state.calculatedAge != null -> {
+                        val ageText = if (state.isAdult) {
+                            "Alder: ${state.calculatedAge} år (voksen - ID kræves)"
+                        } else {
+                            "Alder: ${state.calculatedAge} år (barn)"
+                        }
+                        Text(
+                            text = ageText,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
         )
         
         // Gender dropdown
@@ -590,7 +815,7 @@ fun MemberDetailsForm(
         Button(
             onClick = onNext,
             modifier = Modifier.fillMaxWidth(),
-            enabled = state.firstName.isNotBlank() && state.lastName.isNotBlank()
+            enabled = state.firstName.isNotBlank() && state.lastName.isNotBlank() && state.birthDateValid
         ) {
             Text("Næste: Tag billede")
         }
@@ -605,14 +830,23 @@ fun CameraPreview(
     onBack: () -> Unit,
     errorMessage: String?,
     isTakingPhoto: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    stepLabel: String = "Tag billede",
+    useFrontCamera: Boolean = true,
+    instructionText: String? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    
+
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-    
+    val cameraSelector = if (useFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+
+    // Rebind camera when selector changes
+    DisposableEffect(useFrontCamera) {
+        onDispose { }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         // Header with step indicator and back button
         Column(
@@ -630,12 +864,21 @@ fun CameraPreview(
                     Icon(Icons.Default.ArrowBack, "Tilbage")
                 }
                 Text(
-                    text = "Trin 2 af 3: Tag billede",
+                    text = stepLabel,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-            
+
+            if (instructionText != null) {
+                Text(
+                    text = instructionText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 48.dp, top = 4.dp)
+                )
+            }
+
             if (errorMessage != null) {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -652,26 +895,26 @@ fun CameraPreview(
                 }
             }
         }
-        
+
         AndroidView(
             factory = { ctx ->
                 val previewView = PreviewView(ctx)
-                
+
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
-                    
+
                     val preview = Preview.Builder().build().also {
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
-                    
+
                     val imageCaptureBuilder = ImageCapture.Builder()
                     imageCapture = imageCaptureBuilder.build()
-                    
+
                     try {
                         cameraProvider.unbindAll()
                         cameraProvider.bindToLifecycle(
                             lifecycleOwner,
-                            CameraSelector.DEFAULT_FRONT_CAMERA,
+                            cameraSelector,
                             preview,
                             imageCapture
                         )
@@ -679,7 +922,7 @@ fun CameraPreview(
                         onPhotoError("Kamerafejl: ${e.message}")
                     }
                 }, ContextCompat.getMainExecutor(ctx))
-                
+
                 previewView
             },
             modifier = Modifier.fillMaxSize()
@@ -758,6 +1001,115 @@ fun CameraPreview(
     }
 }
 
+/**
+ * Photo preview screen with Accept/Retake options.
+ * Used for both profile photo and ID photo preview.
+ */
+@Composable
+fun PhotoPreviewScreen(
+    photoPath: String,
+    onAccept: () -> Unit,
+    onRetake: () -> Unit,
+    stepLabel: String,
+    photoLabel: String,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Header
+        Text(
+            text = stepLabel,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+        )
+
+        Text(
+            text = photoLabel,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        // Photo preview
+        Card(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            if (photoPath.isNotBlank()) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(File(photoPath))
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = photoLabel,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Intet billede",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = "Er billedet tydeligt og korrekt?",
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(vertical = 16.dp)
+        )
+
+        // Action buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedButton(
+                onClick = onRetake,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    Icons.Default.CameraAlt,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Tag nyt")
+            }
+
+            Button(
+                onClick = onAccept,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Godkend")
+            }
+        }
+    }
+}
+
 @Composable
 fun RegistrationForm(
     state: RegistrationState,
@@ -775,12 +1127,8 @@ fun RegistrationForm(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Trin 3 af 3: Valgfri værgeoplysninger",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        
+        // Step label is now shown in the RegistrationStepIndicator
+
         if (state.saveSuccess) {
             Card(
                 modifier = Modifier.fillMaxWidth(),

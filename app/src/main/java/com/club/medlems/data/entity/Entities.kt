@@ -67,7 +67,11 @@ data class Member(
     // === Membership Details ===
     val expiresOn: String? = null, // ISO local date string for simplicity
     val registrationPhotoPath: String? = null,
-    
+
+    // === ID Photo for Adult Verification (Enhanced Trial Registration) ===
+    /** Path to ID photo file on disk (adults only, for verification) */
+    val idPhotoPath: String? = null,
+
     // === Merge Tracking (per DD-10) ===
     /** If merged into another member, points to surviving member's internalId */
     val mergedIntoId: String? = null,

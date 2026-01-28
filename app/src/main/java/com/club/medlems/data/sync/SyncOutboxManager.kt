@@ -593,13 +593,15 @@ class SyncOutboxManager @Inject constructor(
      * @param member The Member entity
      * @param deviceId The device ID creating/updating this member
      * @param operation INSERT for new members, UPDATE for modifications
-     * @param photoBase64 Optional base64-encoded photo data (for trial members)
+     * @param photoBase64 Optional base64-encoded profile photo data (for trial members)
+     * @param idPhotoBase64 Optional base64-encoded ID photo data (for adult trial members)
      */
     suspend fun queueMember(
         member: Member,
         deviceId: String,
         operation: OutboxOperation = OutboxOperation.INSERT,
-        photoBase64: String? = null
+        photoBase64: String? = null,
+        idPhotoBase64: String? = null
     ) {
         val syncable = SyncableMember(
             internalId = member.internalId,
@@ -621,6 +623,8 @@ class SyncOutboxManager @Inject constructor(
             expiresOn = member.expiresOn,
             registrationPhotoPath = member.registrationPhotoPath,
             photoBase64 = photoBase64,
+            idPhotoPath = member.idPhotoPath,
+            idPhotoBase64 = idPhotoBase64,
             mergedIntoId = member.mergedIntoId,
             deviceId = deviceId,
             syncVersion = member.syncVersion + 1,

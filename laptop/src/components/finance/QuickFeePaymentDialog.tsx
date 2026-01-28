@@ -1,14 +1,19 @@
 /**
  * Quick Fee Payment Dialog.
  * Allows recording a fee payment for a member before consolidating into a transaction.
+ *
+ * Keyboard shortcuts:
+ * - Escape: Close dialog
+ * - Ctrl+S: Save payment
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { X, CreditCard, Banknote, Building2 } from 'lucide-react';
 import type { Member } from '../../types/entities';
 import type { PaymentMethod, FeeRate } from '../../types';
 import { PAYMENT_METHOD_LABELS, MEMBER_TYPE_LABELS } from '../../types';
 import { getEffectiveMemberType } from '../../utils/feeCategory';
+import { useDialogKeyboard } from '../../hooks';
 
 interface QuickFeePaymentDialogProps {
   isOpen: boolean;
@@ -56,6 +61,14 @@ export function QuickFeePaymentDialog({
 
   // Track previous isOpen to detect dialog opening
   const [wasOpen, setWasOpen] = useState(false);
+
+  // Ref to form for programmatic submit
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Keyboard shortcuts: Escape to close, Ctrl+S to save
+  useDialogKeyboard(isOpen, onClose, () => {
+    formRef.current?.requestSubmit();
+  });
 
   // Reset form when dialog opens
   if (isOpen && !wasOpen) {
@@ -116,13 +129,14 @@ export function QuickFeePaymentDialog({
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-500"
+              aria-label="Luk dialog"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <form ref={formRef} onSubmit={handleSubmit} className="p-4 space-y-4">
             {/* Member Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

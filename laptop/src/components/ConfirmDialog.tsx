@@ -1,10 +1,15 @@
 /**
  * Reusable confirmation dialog component.
  * Use for delete confirmations and other destructive actions.
+ *
+ * Keyboard shortcuts:
+ * - Escape: Close dialog
+ * - Enter: Confirm action
  */
 
 import { AlertTriangle, X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useKeyboardShortcuts } from '../hooks';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -27,6 +32,16 @@ export function ConfirmDialog({
   cancelText = 'Annuller',
   variant = 'danger',
 }: ConfirmDialogProps) {
+  // Keyboard shortcuts: Escape to close, Enter to confirm
+  useKeyboardShortcuts({
+    onEscape: onClose,
+    onEnter: () => {
+      onConfirm();
+      onClose();
+    },
+    enabled: isOpen,
+  });
+
   if (!isOpen) return null;
 
   const variantStyles = {
@@ -61,6 +76,7 @@ export function ConfirmDialog({
           <button
             onClick={onClose}
             className="absolute top-4 right-4 text-gray-400 hover:text-gray-500"
+            aria-label="Luk dialog"
           >
             <X className="w-5 h-5" />
           </button>

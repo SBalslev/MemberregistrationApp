@@ -54,10 +54,16 @@ data class SyncableMember(
     // === Membership Details ===
     val expiresOn: String? = null,
     val registrationPhotoPath: String? = null,
-    
+
     /** Base64 encoded photo data for sync transfer */
     val photoBase64: String? = null,
-    
+
+    // === ID Photo for Adult Verification (Enhanced Trial Registration) ===
+    /** Path to ID photo file on disk (adults only) */
+    val idPhotoPath: String? = null,
+    /** Base64 encoded ID photo data for sync transfer */
+    val idPhotoBase64: String? = null,
+
     // === Merge Tracking (per DD-10) ===
     val mergedIntoId: String? = null,
     

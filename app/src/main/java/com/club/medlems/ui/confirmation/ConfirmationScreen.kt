@@ -28,12 +28,13 @@ fun ConfirmationScreen(
     onDone: () -> Unit,
     vm: ConfirmationViewModel = hiltViewModel()
 ) {
-    var seconds by remember { mutableStateOf(5) }
+    var seconds by remember { mutableStateOf(8) }
     val name by vm.memberName.collectAsState()
     LaunchedEffect(memberId) { vm.load(memberId) }
     // Use IdleCountdown to unify idle logic.
+    // Extended to 8 seconds to give users more time to read and decide
     IdleCountdown(
-        totalSeconds = 5,
+        totalSeconds = 8,
         restartKey = Unit,
         active = true,
         onTick = { seconds = it },

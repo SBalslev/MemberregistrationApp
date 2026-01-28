@@ -58,6 +58,12 @@ export interface Member {
   /** Small 150x150 thumbnail as data URL for list views */
   photoThumbnail: string | null;
 
+  // ID photo for adult verification (Enhanced Trial Registration)
+  /** Path to ID photo file on disk (adults only) */
+  idPhotoPath: string | null;
+  /** Small 150x150 ID photo thumbnail as data URL */
+  idPhotoThumbnail: string | null;
+
   // Merge tracking (per DD-10)
   mergedIntoId: string | null;
 
@@ -85,7 +91,10 @@ export interface MemberListItem {
   status: MemberStatus;
   firstName: string;
   lastName: string;
+  birthDate: string | null;
   photoThumbnail: string | null;
+  /** ID photo thumbnail for showing ID status in lists */
+  idPhotoThumbnail: string | null;
   createdAtUtc: string;
 }
 
@@ -322,4 +331,68 @@ export interface SyncPayload {
   registrations?: NewMemberRegistration[];
   equipmentItems?: EquipmentItem[];
   equipmentCheckouts?: EquipmentCheckout[];
+}
+
+// ===== Member Utility Functions =====
+
+/**
+ * Calculate age from a birth date string.
+ * @param birthDate ISO date string (YYYY-MM-DD) or null
+ * @returns Age in years, or null if birthDate is invalid
+ */
+export function calculateAge(birthDate: string | null): number | null {
+  if (!birthDate) return null;
+
+  try {
+    const birth = new Date(birthDate);
+    if (isNaN(birth.getTime())) return null;
+
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+
+    // Adjust age if birthday hasn't occurred yet this year
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+
+    return age;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if a member is an adult (age >= 18).
+ * @param member The member to check
+ * @returns true if adult, false if minor or age cannot be determined
+ */
+export function isAdult(member: Member): boolean {
+  const age = calculateAge(member.birthDate);
+  return age !== null && age >= 18;
+}
+
+/**
+ * Check if a member needs an ID photo (adult TRIAL member without ID photo).
+ * FULL members don't need ID verification - only TRIAL members do.
+ * @param member The member to check
+ * @returns true if adult TRIAL member and missing ID photo
+ */
+export function needsIdPhoto(member: Member): boolean {
+  return isAdult(member) && member.memberLifecycleStage === 'TRIAL' && !member.idPhotoPath;
+}
+
+/** Status of ID photo requirement */
+export type IdPhotoStatus = 'available' | 'pending' | 'not_required';
+
+/**
+ * Get the ID photo status for a member.
+ * @param member The member to check
+ * @returns 'available' if ID photo exists, 'pending' if adult TRIAL member needs ID, 'not_required' for minors/FULL members
+ */
+export function getIdPhotoStatus(member: Member): IdPhotoStatus {
+  if (!isAdult(member)) return 'not_required';
+  if (member.memberLifecycleStage === 'FULL') return 'not_required';
+  if (member.idPhotoPath) return 'available';
+  return 'pending';
 }

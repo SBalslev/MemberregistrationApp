@@ -476,6 +476,8 @@ export function ImportPage() {
         registrationPhotoPath: null,
         photoPath: existingMember?.photoPath ?? null,
         photoThumbnail: existingMember?.photoThumbnail ?? null,
+        idPhotoPath: existingMember?.idPhotoPath ?? null,
+        idPhotoThumbnail: existingMember?.idPhotoThumbnail ?? null,
         mergedIntoId: existingMember?.mergedIntoId ?? null,
         createdAtUtc: existingMember?.createdAtUtc ?? parsed.data.createdAtUtc ?? new Date().toISOString(),
         updatedAtUtc: parsed.data.updatedAtUtc ?? new Date().toISOString(),

@@ -186,6 +186,7 @@ private fun EquipmentItemCard(
     onRetire: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var showRetireConfirmDialog by remember { mutableStateOf(false) }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -263,7 +264,7 @@ private fun EquipmentItemCard(
                             text = { Text("Retire") },
                             onClick = {
                                 showMenu = false
-                                onRetire()
+                                showRetireConfirmDialog = true
                             },
                             leadingIcon = {
                                 Icon(Icons.Default.Delete, contentDescription = null)
@@ -273,6 +274,63 @@ private fun EquipmentItemCard(
                 }
             }
         }
+    }
+
+    // Retire confirmation dialog
+    if (showRetireConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showRetireConfirmDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("Pensioner udstyr") },
+            text = {
+                Column {
+                    Text("Er du sikker på, at du vil pensionere dette udstyr?")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = item.serialNumber,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (item.description != null) {
+                        Text(
+                            text = item.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Denne handling kan ikke fortrydes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRetireConfirmDialog = false
+                        onRetire()
+                    }
+                ) {
+                    Text(
+                        "Pensioner",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRetireConfirmDialog = false }) {
+                    Text("Annuller")
+                }
+            }
+        )
     }
 }
 

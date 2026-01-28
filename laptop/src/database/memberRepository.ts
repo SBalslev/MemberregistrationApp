@@ -17,12 +17,13 @@ export function getAllMembers(): Member[] {
 /**
  * Get members for list views (lightweight - only essential fields).
  * Uses photoThumbnail instead of full photoPath for performance.
+ * Includes birthDate for age calculation and idPhotoThumbnail for ID status.
  */
 export function getMembersForList(): MemberListItem[] {
   return query<MemberListItem>(`
     SELECT
       internalId, membershipId, memberLifecycleStage, status,
-      firstName, lastName, photoThumbnail, createdAtUtc
+      firstName, lastName, birthDate, photoThumbnail, idPhotoThumbnail, createdAtUtc
     FROM Member
     ORDER BY lastName, firstName
   `);
@@ -185,9 +186,9 @@ export function upsertMember(member: Member, skipOutbox = false): void {
       internalId, membershipId, memberLifecycleStage, status,
       firstName, lastName, birthDate, gender, email, phone, address,
       zipCode, city, guardianName, guardianPhone, guardianEmail,
-      memberType, expiresOn, photoPath, mergedIntoId,
-      createdAtUtc, updatedAtUtc, syncedAtUtc, syncVersion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      memberType, expiresOn, photoPath, photoThumbnail, idPhotoPath, idPhotoThumbnail,
+      mergedIntoId, createdAtUtc, updatedAtUtc, syncedAtUtc, syncVersion
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(internalId) DO UPDATE SET
       membershipId = excluded.membershipId,
       memberLifecycleStage = excluded.memberLifecycleStage,
@@ -207,6 +208,9 @@ export function upsertMember(member: Member, skipOutbox = false): void {
       memberType = excluded.memberType,
       expiresOn = excluded.expiresOn,
       photoPath = excluded.photoPath,
+      photoThumbnail = excluded.photoThumbnail,
+      idPhotoPath = excluded.idPhotoPath,
+      idPhotoThumbnail = excluded.idPhotoThumbnail,
       mergedIntoId = excluded.mergedIntoId,
       updatedAtUtc = excluded.updatedAtUtc,
       syncVersion = syncVersion + 1`,
@@ -230,6 +234,9 @@ export function upsertMember(member: Member, skipOutbox = false): void {
       member.memberType,
       member.expiresOn,
       member.photoPath,
+      member.photoThumbnail,
+      member.idPhotoPath,
+      member.idPhotoThumbnail,
       member.mergedIntoId,
       member.createdAtUtc || now,
       now,

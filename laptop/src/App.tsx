@@ -3,8 +3,10 @@
  * Sets up the app shell with sidebar navigation and page routing.
  */
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
+import { ToastContainer } from './components/Toast';
+import { showInfo, showError } from './store/toastStore';
 import {
   DashboardPage,
   MembersPage,
@@ -18,6 +20,7 @@ import {
   TrainersPage
 } from './pages';
 import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, getMemberPreferencesForSync, getTrainerDataForSync, runPhotoMigration, isMigrationNeeded, type SyncPayload } from './database';
+import { processAllEligibleIdPhotoDeletions } from './services/idPhotoLifecycleService';
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
 
@@ -30,7 +33,6 @@ const DISCOVERY_SYNC_DEBOUNCE_MS = 3000;
 function App() {
   const { isDbInitialized, setDbInitialized, currentPage, triggerSync } = useAppStore();
   const [error, setError] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   // Task 6.5: Track last discovery sync to debounce
   const lastDiscoverySyncRef = useRef<number>(0);
@@ -59,6 +61,18 @@ function App() {
           }
         }
 
+        // Process ID photo deletions for eligible members (membership assigned + fee paid)
+        try {
+          const deletionResults = processAllEligibleIdPhotoDeletions();
+          if (deletionResults.length > 0) {
+            const successCount = deletionResults.filter(r => r.success).length;
+            console.log(`[App] Processed ${deletionResults.length} ID photo deletions, ${successCount} successful`);
+          }
+        } catch (deletionError) {
+          console.error('[App] ID photo deletion check error:', deletionError);
+          // Don't fail app startup if deletion check fails
+        }
+
         // Set up sync listener if running in Electron
         if (isElectron()) {
           const api = getElectronAPI();
@@ -66,36 +80,32 @@ function App() {
           // Listen for incoming sync pushes from tablets
           api?.onIncomingPush(async (payload: unknown) => {
             console.log('[App] Received sync push:', payload);
-            setSyncStatus('Synkroniserer...');
-            
+            showInfo('Synkroniserer...');
+
             try {
               const result = await processSyncPayload(payload as SyncPayload);
               console.log('[App] Sync result:', result);
-              
+
               if (result.registrationsAdded > 0) {
-                setSyncStatus(`${result.registrationsAdded} nye registreringer modtaget`);
+                showInfo(`${result.registrationsAdded} nye registreringer modtaget`);
               } else {
-                setSyncStatus('Synkroniseret');
+                showInfo('Synkroniseret');
               }
-              
-              // Clear status after 3 seconds
-              setTimeout(() => setSyncStatus(null), 3000);
             } catch (err) {
               console.error('[App] Sync error:', err);
-              setSyncStatus('Synkroniseringsfejl');
-              setTimeout(() => setSyncStatus(null), 5000);
+              showError('Synkroniseringsfejl');
             }
           });
 
           // FR-23: Listen for initial sync requests from tablets
           api?.onInitialSyncRequest(async (payload: unknown) => {
             console.log('[App] Initial sync request:', payload);
-            setSyncStatus('Indledende synkronisering...');
-            
+            showInfo('Indledende synkronisering...');
+
             try {
               const result = await processInitialSyncPayload(payload as SyncPayload);
               console.log('[App] Initial sync result:', result);
-              
+
               // Send result back to main process
               api?.sendInitialSyncResult({
                 success: result.success,
@@ -106,14 +116,11 @@ function App() {
                 memberConflicts: result.memberConflicts,
                 errors: result.errors
               });
-              
-              const msg = `Modtaget: ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessioner`;
-              setSyncStatus(msg);
-              setTimeout(() => setSyncStatus(null), 5000);
+
+              showInfo(`Modtaget: ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessioner`);
             } catch (err) {
               console.error('[App] Initial sync error:', err);
-              setSyncStatus('Fejl ved indledende synkronisering');
-              setTimeout(() => setSyncStatus(null), 5000);
+              showError('Fejl ved indledende synkronisering');
             }
           });
 
@@ -177,7 +184,7 @@ function App() {
               `${payload.entities.newMemberRegistrations?.length || 0} registrations`
             );
 
-            setSyncStatus('Synkroniserer...');
+            showInfo('Synkroniserer...');
 
             try {
               const result = await processSyncPayload(payload as SyncPayload);
@@ -189,11 +196,10 @@ function App() {
                 (result.sessionsAdded || 0);
 
               if (accepted > 0) {
-                setSyncStatus(`${accepted} elementer modtaget`);
+                showInfo(`${accepted} elementer modtaget`);
               } else {
-                setSyncStatus('Synkroniseret');
+                showInfo('Synkroniseret');
               }
-              setTimeout(() => setSyncStatus(null), 3000);
 
               return {
                 accepted,
@@ -201,8 +207,7 @@ function App() {
               };
             } catch (err) {
               console.error('[App] Process push error:', err);
-              setSyncStatus('Synkroniseringsfejl');
-              setTimeout(() => setSyncStatus(null), 5000);
+              showError('Synkroniseringsfejl');
               return {
                 accepted: 0,
                 errors: [err instanceof Error ? err.message : 'Unknown error']
@@ -284,15 +289,8 @@ function App() {
       <Sidebar />
       <main className="flex-1 overflow-hidden bg-gray-50 relative">
         <PageRouter currentPage={currentPage} />
-        
-        {/* Sync status toast */}
-        {syncStatus && (
-          <div className="absolute bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 animate-fade-in">
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            <span>{syncStatus}</span>
-          </div>
-        )}
       </main>
+      <ToastContainer />
     </div>
   );
 }

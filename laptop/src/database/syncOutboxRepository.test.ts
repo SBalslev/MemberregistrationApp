@@ -246,6 +246,8 @@ describe('Sync Outbox Repository', () => {
     registrationPhotoPath: null,
     photoPath: null,
     photoThumbnail: null,
+    idPhotoPath: null,
+    idPhotoThumbnail: null,
     mergedIntoId: null,
     createdAtUtc: '2026-01-01T00:00:00Z',
     updatedAtUtc: '2026-01-01T00:00:00Z',

@@ -49,6 +49,10 @@ interface MemberDao {
     @Query("SELECT * FROM Member WHERE memberType = 'TRIAL' ORDER BY createdAtUtc DESC")
     suspend fun getTrialMembers(): List<Member>
 
+    /** Get recent trial members (created within last N days) */
+    @Query("SELECT * FROM Member WHERE memberType = 'TRIAL' AND createdAtUtc >= :since ORDER BY createdAtUtc DESC")
+    suspend fun getRecentTrialMembers(since: Instant): List<Member>
+
     @Query("SELECT internalId, membershipId, firstName, lastName FROM Member WHERE internalId IN (:ids)")
     suspend fun getMemberNames(ids: List<String>): List<MemberNameProjection>
 

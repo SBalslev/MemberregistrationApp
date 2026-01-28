@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 // File version - increment when making changes
-const SYNC_PUSH_VERSION = '1.4.0';  // 1.4.0: Added new_member_registrations, skv_registrations, skv_weapons
+const SYNC_PUSH_VERSION = '1.5.0';  // 1.5.0: Added id_photo_path, id_photo_thumbnail for adult ID verification
 
 // ===== Helper Functions =====
 
@@ -377,6 +377,7 @@ function insertMember(array $member, string $deviceId): void
         email, phone, address, zip_code, city,
         guardian_name, guardian_phone, guardian_email,
         member_fee_type, expires_on, merged_into_id,
+        id_photo_path, id_photo_thumbnail,
         device_id, sync_version, created_at_utc, modified_at_utc, synced_at_utc
     ) VALUES (
         ?, ?, ?, ?,
@@ -384,6 +385,7 @@ function insertMember(array $member, string $deviceId): void
         ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?,
+        ?, ?,
         ?, ?, ?, ?, NOW()
     )";
 
@@ -407,6 +409,8 @@ function insertMember(array $member, string $deviceId): void
         $member['member_type'] ?? 'ADULT',  // Fee type: ADULT, CHILD, CHILD_PLUS
         $member['expires_on'] ?? null,
         $member['merged_into_id'] ?? null,
+        $member['id_photo_path'] ?? null,
+        $member['id_photo_thumbnail'] ?? null,
         $deviceId,
         $member['sync_version'] ?? 1,
         toMySqlDateTime($member['created_at_utc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
@@ -438,6 +442,8 @@ function updateMember(array $member, string $deviceId): void
         member_fee_type = ?,
         expires_on = ?,
         merged_into_id = ?,
+        id_photo_path = ?,
+        id_photo_thumbnail = ?,
         device_id = ?,
         sync_version = ?,
         modified_at_utc = ?,
@@ -463,6 +469,8 @@ function updateMember(array $member, string $deviceId): void
         $member['member_type'] ?? 'ADULT',  // Fee type: ADULT, CHILD, CHILD_PLUS
         $member['expires_on'] ?? null,
         $member['merged_into_id'] ?? null,
+        $member['id_photo_path'] ?? null,
+        $member['id_photo_thumbnail'] ?? null,
         $deviceId,
         $member['sync_version'] ?? 1,
         toMySqlDateTime($member['modified_at_utc'] ?? $member['updated_at_utc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
