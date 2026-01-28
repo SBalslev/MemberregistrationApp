@@ -19,9 +19,11 @@ interface FeeStatusRow {
   expectedAmount: number;
   paidAmount: number;
   pendingAmount: number;
+  externallyPaidAmount: number;
   outstandingAmount: number;
   isPaidInFull: boolean;
   hasPending: boolean;
+  hasExternallyPaid: boolean;
   paymentDates: string[];
 }
 
@@ -31,6 +33,7 @@ interface MemberFeeStatusTableProps {
   feeRates: FeeRate[];
   year: number;
   pendingPayments?: PendingFeePaymentWithMember[];
+  externallyPaidPayments?: PendingFeePaymentWithMember[];
   onMemberClick?: (memberId: string) => void;
   onQuickPayment?: (memberId: string) => void;
   onBatchPayment?: (memberIds: string[]) => void;
@@ -44,6 +47,7 @@ export function MemberFeeStatusTable({
   feeRates,
   year,
   pendingPayments = [],
+  externallyPaidPayments = [],
   onMemberClick,
   onQuickPayment,
   onBatchPayment,
@@ -90,9 +94,16 @@ export function MemberFeeStatusTable({
           .filter((p) => p.memberId === member.internalId)
           .reduce((sum, p) => sum + p.amount, 0);
 
-        const outstandingAmount = expectedAmount - paidAmount - pendingAmount;
-        const isPaidInFull = paidAmount >= expectedAmount;
+        // Sum externally paid amounts for this member (paid in different year)
+        const externallyPaidAmount = externallyPaidPayments
+          .filter((p) => p.memberId === member.internalId)
+          .reduce((sum, p) => sum + p.amount, 0);
+
+        const totalPaidOrPending = paidAmount + pendingAmount + externallyPaidAmount;
+        const outstandingAmount = expectedAmount - totalPaidOrPending;
+        const isPaidInFull = totalPaidOrPending >= expectedAmount;
         const hasPending = pendingAmount > 0;
+        const hasExternallyPaid = externallyPaidAmount > 0;
 
         return {
           memberId: member.internalId, // Always use internalId for consistency
@@ -102,14 +113,16 @@ export function MemberFeeStatusTable({
           expectedAmount,
           paidAmount,
           pendingAmount,
+          externallyPaidAmount,
           outstandingAmount: outstandingAmount > 0 ? outstandingAmount : 0,
           isPaidInFull,
           hasPending,
+          hasExternallyPaid,
           paymentDates: paymentDates.sort(),
         };
       })
       .sort((a, b) => a.memberName.localeCompare(b.memberName, 'da'));
-  }, [members, transactions, feeRates, year, pendingPayments]);
+  }, [members, transactions, feeRates, year, pendingPayments, externallyPaidPayments]);
 
   // Apply filter and search
   const filteredStatuses = useMemo(() => {
@@ -120,12 +133,12 @@ export function MemberFeeStatusTable({
         result = feeStatuses.filter((s) => s.isPaidInFull);
         break;
       case 'unpaid':
-        // No payment activity at all (neither paid nor pending)
-        result = feeStatuses.filter((s) => s.paidAmount === 0 && s.pendingAmount === 0);
+        // No payment activity at all (neither paid nor pending nor externally paid)
+        result = feeStatuses.filter((s) => s.paidAmount === 0 && s.pendingAmount === 0 && s.externallyPaidAmount === 0);
         break;
       case 'partial':
-        // Some payment activity (paid or pending) but not fully paid
-        result = feeStatuses.filter((s) => (s.paidAmount > 0 || s.pendingAmount > 0) && !s.isPaidInFull);
+        // Some payment activity (paid, pending, or externally paid) but not fully paid
+        result = feeStatuses.filter((s) => (s.paidAmount > 0 || s.pendingAmount > 0 || s.externallyPaidAmount > 0) && !s.isPaidInFull);
         break;
       default:
         result = feeStatuses;
@@ -147,13 +160,14 @@ export function MemberFeeStatusTable({
   const stats = useMemo(() => {
     const total = feeStatuses.length;
     const paid = feeStatuses.filter((s) => s.isPaidInFull).length;
-    const partial = feeStatuses.filter((s) => s.paidAmount > 0 && !s.isPaidInFull).length;
-    const unpaid = feeStatuses.filter((s) => s.paidAmount === 0 && s.pendingAmount === 0).length;
+    const partial = feeStatuses.filter((s) => (s.paidAmount > 0 || s.externallyPaidAmount > 0) && !s.isPaidInFull).length;
+    const unpaid = feeStatuses.filter((s) => s.paidAmount === 0 && s.pendingAmount === 0 && s.externallyPaidAmount === 0).length;
     const pending = feeStatuses.filter((s) => s.hasPending && !s.isPaidInFull).length;
     const totalExpected = feeStatuses.reduce((acc, s) => acc + s.expectedAmount, 0);
     const totalPaid = feeStatuses.reduce((acc, s) => acc + s.paidAmount, 0);
     const totalPending = feeStatuses.reduce((acc, s) => acc + s.pendingAmount, 0);
-    return { total, paid, partial, unpaid, pending, totalExpected, totalPaid, totalPending };
+    const totalExternallyPaid = feeStatuses.reduce((acc, s) => acc + s.externallyPaidAmount, 0);
+    return { total, paid, partial, unpaid, pending, totalExpected, totalPaid, totalPending, totalExternallyPaid };
   }, [feeStatuses]);
 
   const formatCurrency = (amount: number) =>
@@ -251,10 +265,16 @@ export function MemberFeeStatusTable({
               <p className="text-xl font-bold text-amber-600">{formatCurrency(stats.totalPending)}</p>
             </div>
           )}
+          {stats.totalExternallyPaid > 0 && (
+            <div className="text-right">
+              <p className="text-sm text-purple-600">Betalt i andet år</p>
+              <p className="text-xl font-bold text-purple-600">{formatCurrency(stats.totalExternallyPaid)}</p>
+            </div>
+          )}
           <div className="text-right">
             <p className="text-sm text-gray-600">Udestående</p>
             <p className="text-xl font-bold text-red-600">
-              {formatCurrency(stats.totalExpected - stats.totalPaid - stats.totalPending)}
+              {formatCurrency(stats.totalExpected - stats.totalPaid - stats.totalPending - stats.totalExternallyPaid)}
             </p>
           </div>
         </div>
@@ -409,8 +429,21 @@ export function MemberFeeStatusTable({
                     <td className="px-4 py-3 text-right text-gray-600">
                       {formatCurrency(status.expectedAmount)}
                     </td>
-                    <td className="px-4 py-3 text-right text-green-600">
-                      {status.paidAmount > 0 ? formatCurrency(status.paidAmount) : '-'}
+                    <td className="px-4 py-3 text-right">
+                      {status.paidAmount > 0 || status.externallyPaidAmount > 0 ? (
+                        <div className="space-y-0.5">
+                          {status.paidAmount > 0 && (
+                            <span className="text-green-600">{formatCurrency(status.paidAmount)}</span>
+                          )}
+                          {status.externallyPaidAmount > 0 && (
+                            <span className="block text-purple-600 text-xs" title="Betalt i andet år">
+                              +{formatCurrency(status.externallyPaidAmount)} (ext)
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        '-'
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {status.pendingAmount > 0 ? (
@@ -434,16 +467,23 @@ export function MemberFeeStatusTable({
                     </td>
                     <td className="px-4 py-3 text-center">
                       {status.isPaidInFull ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                          <Check className="w-3 h-3" />
-                          Betalt
-                        </span>
+                        status.hasExternallyPaid && status.paidAmount === 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium" title="Betalt i andet år">
+                            <Check className="w-3 h-3" />
+                            Betalt (ext)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                            <Check className="w-3 h-3" />
+                            Betalt
+                          </span>
+                        )
                       ) : status.hasPending ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
                           <Clock className="w-3 h-3" />
                           Afventer
                         </span>
-                      ) : status.paidAmount > 0 ? (
+                      ) : status.paidAmount > 0 || status.externallyPaidAmount > 0 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
                           <AlertCircle className="w-3 h-3" />
                           Delvist

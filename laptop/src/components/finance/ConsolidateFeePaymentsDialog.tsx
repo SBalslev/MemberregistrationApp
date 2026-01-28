@@ -4,7 +4,7 @@
  */
 
 import { useState, useMemo } from 'react';
-import { X, Check, FileStack, Trash2 } from 'lucide-react';
+import { X, Check, FileStack, Trash2, Calendar } from 'lucide-react';
 import type { PendingFeePaymentWithMember, PostingCategory } from '../../types';
 import { PAYMENT_METHOD_LABELS } from '../../types';
 
@@ -13,6 +13,7 @@ interface ConsolidateFeePaymentsDialogProps {
   onClose: () => void;
   onConsolidate: (paymentIds: string[], description: string, date: string, categoryId: string) => void;
   onDelete?: (paymentId: string) => void | Promise<void>;
+  onMarkPaidExternally?: (paymentId: string, paidInYear: number) => void | Promise<void>;
   pendingPayments: PendingFeePaymentWithMember[];
   categories: PostingCategory[];
   year: number;
@@ -41,6 +42,7 @@ export function ConsolidateFeePaymentsDialog({
   onClose,
   onConsolidate,
   onDelete,
+  onMarkPaidExternally,
   pendingPayments,
   categories,
   year,
@@ -50,8 +52,21 @@ export function ConsolidateFeePaymentsDialog({
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [categoryId, setCategoryId] = useState('');
 
+  // State for "mark paid externally" mini-dialog
+  const [externalPaymentId, setExternalPaymentId] = useState<string | null>(null);
+  const [externalYear, setExternalYear] = useState<number>(year - 1);
+
   // Find the member fee category as default
   const feesCategory = categories.find(c => c.id === 'cat-kontingent');
+
+  // Generate year options (current year and 5 years back)
+  const yearOptions = useMemo(() => {
+    const years: number[] = [];
+    for (let i = 0; i <= 5; i++) {
+      years.push(year - i);
+    }
+    return years;
+  }, [year]);
 
   // Reset form when dialog opens
   useState(() => {
@@ -60,6 +75,8 @@ export function ConsolidateFeePaymentsDialog({
       setDescription(`Kontingent ${year}`);
       setDate(new Date().toISOString().split('T')[0]);
       setCategoryId(feesCategory?.id ?? categories[0]?.id ?? '');
+      setExternalPaymentId(null);
+      setExternalYear(year - 1);
     }
   });
 
@@ -98,6 +115,25 @@ export function ConsolidateFeePaymentsDialog({
     onConsolidate(Array.from(selectedIds), description, date, categoryId);
     onClose();
   };
+
+  // Open the "mark paid externally" mini-dialog
+  const handleOpenExternalDialog = (paymentId: string) => {
+    setExternalPaymentId(paymentId);
+    setExternalYear(year - 1);
+  };
+
+  // Confirm marking as paid externally
+  const handleConfirmExternal = () => {
+    if (externalPaymentId && onMarkPaidExternally) {
+      onMarkPaidExternally(externalPaymentId, externalYear);
+      setExternalPaymentId(null);
+    }
+  };
+
+  // Get the payment being marked as external (for display)
+  const externalPayment = externalPaymentId
+    ? pendingPayments.find(p => p.id === externalPaymentId)
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -235,16 +271,28 @@ export function ConsolidateFeePaymentsDialog({
                           {formatAmount(payment.amount)}
                         </div>
                       </label>
-                      {onDelete && (
-                        <button
-                          type="button"
-                          onClick={() => onDelete(payment.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                          title="Slet betaling"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {onMarkPaidExternally && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenExternalDialog(payment.id)}
+                            className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                            title="Marker som betalt i andet år"
+                          >
+                            <Calendar className="w-4 h-4" />
+                          </button>
+                        )}
+                        {onDelete && (
+                          <button
+                            type="button"
+                            onClick={() => onDelete(payment.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            title="Slet betaling"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -293,6 +341,62 @@ export function ConsolidateFeePaymentsDialog({
           </form>
         </div>
       </div>
+
+      {/* Mini-dialog for marking payment as paid in different year */}
+      {externalPaymentId && externalPayment && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div
+            className="fixed inset-0 bg-black/30"
+            onClick={() => setExternalPaymentId(null)}
+          />
+          <div className="relative bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Marker som betalt i andet år
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              <span className="font-medium">{externalPayment.memberName}</span>
+              {' - '}
+              {formatAmount(externalPayment.amount)}
+            </p>
+            <p className="text-sm text-gray-500 mb-4">
+              Betalingen vil blive markeret som betalt, men vil ikke oprette en transaktion i {year}.
+              Brug dette når betalingen allerede er bogført i et tidligere år.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Betalt i år
+              </label>
+              <select
+                value={externalYear}
+                onChange={(e) => setExternalYear(Number(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setExternalPaymentId(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Annuller
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmExternal}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700"
+              >
+                Bekræft
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

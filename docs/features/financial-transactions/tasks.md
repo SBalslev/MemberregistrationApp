@@ -4,7 +4,7 @@
 **PRD:** [prd.md](prd.md)
 **Created:** 2026-01-19
 **Completed:** 2026-01-20
-**Updated:** 2026-01-23
+**Updated:** 2026-01-28
 **Status:** ✅ COMPLETE
 
 ---
@@ -283,6 +283,37 @@
 - [x] Create `src/components/finance/ConsolidateFeePaymentsDialog.tsx`
 - [x] Consolidate multiple pending payments into one transaction
 - [x] Repository functions: `createPendingFeePayment()`, `consolidatePendingFeePayments()`
+
+### Import Pending Payments in Transaction Dialog
+
+- [x] Add collapsible "Importer fra afventende betalinger" section to `TransactionDialog`
+- [x] Allow selecting unconsolidated pending payments
+- [x] Convert selected payments to transaction lines with pre-filled data:
+  - Category: `cat-kontingent` (member fee)
+  - Amount, source, memberId from payment
+  - Line description: member name + notes
+- [x] Update header totals (cashIn/bankIn) based on imported amounts
+- [x] Track imported payment IDs for consolidation on save
+- [x] Add `markPaymentsAsConsolidated()` repository function
+- [x] Mark payments as consolidated when transaction is saved
+- [x] Unit tests for `markPaymentsAsConsolidated()`
+
+### Mark Payment as Paid in Different Year
+
+- [x] Add `markPaymentAsPaidExternally(paymentId, paidInYear, notes?)` repository function
+- [x] Add calendar button action in `ConsolidateFeePaymentsDialog` for each payment
+- [x] Add mini-dialog to select the year when payment was actually paid
+- [x] Mark payment as consolidated without creating transaction (for cross-year reconciliation)
+- [x] Store the paid year in notes field for audit trail
+- [x] Unit tests for `markPaymentAsPaidExternally()`
+- [x] Add `getExternallyPaidFeePayments(year)` repository function
+- [x] Update `MemberFeeStatusTable` to include externally paid amounts in fee calculation
+- [x] Show externally paid amounts in paid column with "(ext)" indicator
+- [x] Show "Betalt (ext)" status badge for members paid only via external payments
+- [x] Add "Betalt i andet år" summary in collection totals
+- [x] Unit tests for `getExternallyPaidFeePayments()`
+- [x] Add `onlineSyncService.pushPendingFeePaymentUpdate()` for immediate sync
+- [x] Call sync push after marking payment as paid externally
 
 ### Finance Charts
 

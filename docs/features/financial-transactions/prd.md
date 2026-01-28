@@ -1,8 +1,8 @@
 # Financial Transactions (Kassebog) - Product Requirements Document
 
 **Feature:** Club Financial Transaction Recording and Reporting
-**Version:** 1.0
-**Last Updated:** 2026-01-23
+**Version:** 1.1
+**Last Updated:** 2026-01-28
 **Updated By:** sbalslev
 
 ---
@@ -518,6 +518,180 @@ Match the existing "Kassebog 2025.xlsx" format:
 - Import from bank CSV
 - Multi-currency support
 - Budget tracking
+
+---
+
+## 11. Import Pending Payments Feature
+
+### 11.1 Overview
+
+The Transaction Dialog now supports importing pending fee payments directly as transaction lines. This streamlines reconciliation by allowing the treasurer to select registered pending payments when creating a new transaction, converting them to transaction lines with pre-filled data.
+
+### 11.2 User Flow
+
+1. User opens "Ny transaktion" dialog
+2. If there are unconsolidated pending payments, a collapsible section appears:
+   - Header: "Importer fra afventende betalinger (N)" where N is the count
+   - Clicking expands to show a checkbox list of payments
+3. Each payment row shows:
+   - Member name
+   - Payment date (dd-mm-yyyy format)
+   - Payment method (Kontant/Bank)
+   - Amount (color-coded by payment method)
+   - Optional notes
+4. User can select individual payments or use "Vælg alle"
+5. Clicking "Importer valgte" converts selected payments to transaction lines:
+   - Category: `cat-kontingent` (member fee category)
+   - Amount: from payment
+   - Type: Income
+   - Source: CASH or BANK based on payment method
+   - Member: linked to payment member
+   - Line description: member name + notes
+6. Header totals (Kasse ind/Bank ind) are automatically updated
+7. Imported payments are hidden from the available list
+8. On save, imported payments are marked as consolidated with the new transaction ID
+
+### 11.3 Technical Details
+
+#### New Repository Function
+
+```typescript
+/**
+ * Mark pending fee payments as consolidated with a given transaction ID.
+ * Used when importing payments into a transaction via the TransactionDialog.
+ */
+export function markPaymentsAsConsolidated(paymentIds: string[], transactionId: string): void
+```
+
+#### TransactionDialog Props Changes
+
+```typescript
+interface TransactionDialogProps {
+  // ... existing props
+  pendingPayments?: PendingFeePaymentWithMember[];
+  onSave: (data: TransactionFormData, consolidatePaymentIds?: string[]) => void;
+}
+```
+
+#### State Management
+
+- `importSectionExpanded`: Controls visibility of the import section
+- `selectedPaymentIds`: Set of payment IDs selected for import
+- `importedPaymentIds`: Set of payment IDs that have been imported (for consolidation on save)
+- `availablePayments`: Memo filtering out already-imported payments
+
+### 11.4 UI Considerations
+
+- Only shown when creating new transactions (not editing)
+- Only shown if there are unconsolidated pending payments
+- Imported payments are removed from the available list (can't import twice)
+- Empty lines in the transaction are replaced when importing
+- Visual feedback shows count of imported payments
+
+---
+
+## 12. Mark Payment as Paid in Different Year
+
+### 12.1 Overview
+
+Handles the edge case where a pending payment is registered in the current year but was actually paid in a previous fiscal year. This allows proper reconciliation without creating duplicate entries.
+
+### 12.2 Use Case
+
+1. Member pays their fee in December 2025
+2. The transaction is recorded in the 2025 books
+3. In January 2026, someone registers a pending payment for this member
+4. The pending payment needs to be cleared without affecting 2026 totals
+
+### 12.3 User Flow
+
+1. User opens "Konsolider betalinger" dialog
+2. Each payment row has a calendar icon button (alongside delete)
+3. Clicking the calendar opens a mini-dialog:
+   - Shows member name and amount
+   - Explains that this marks the payment as paid without creating a transaction
+   - Year selector (defaults to previous year)
+4. Clicking "Bekræft" marks the payment as consolidated
+5. The payment is removed from the pending list
+6. Notes field is updated with "Betalt i {year}" for audit trail
+
+### 12.4 Technical Details
+
+#### New Repository Function
+
+```typescript
+/**
+ * Mark a pending fee payment as paid in a different year.
+ * The payment is marked as consolidated without linking to a transaction.
+ */
+export function markPaymentAsPaidExternally(
+  paymentId: string,
+  paidInYear: number,
+  notes?: string
+): void
+```
+
+#### Database Changes
+
+- Sets `isConsolidated = 1`
+- Sets `consolidatedTransactionId = NULL` (no transaction link)
+- Updates `notes` with year information for audit trail
+- Updates `updatedAtUtc` timestamp
+
+### 12.5 UI Components
+
+Added to `ConsolidateFeePaymentsDialog`:
+- `onMarkPaidExternally` callback prop
+- Calendar button on each payment row
+- Mini-dialog overlay for year selection
+- Year dropdown (current year and 5 years back)
+
+### 12.6 Fee Status Integration
+
+Externally paid amounts are fully integrated into the member fee status:
+
+#### MemberFeeStatusTable Changes
+- New prop: `externallyPaidPayments?: PendingFeePaymentWithMember[]`
+- Externally paid amounts count toward member's fee status
+- "Betalt" column shows externally paid amounts with purple "(ext)" indicator
+- Status badge shows "Betalt (ext)" when paid only via external payments
+- Collection summary shows "Betalt i andet år" total in purple
+- Filter logic includes externally paid in "partial" and excludes from "unpaid"
+
+#### New Repository Function
+
+```typescript
+/**
+ * Get fee payments that were marked as "paid externally" (in a different year).
+ * These are consolidated payments without a transaction ID.
+ */
+export function getExternallyPaidFeePayments(year: number): PendingFeePaymentWithMember[]
+```
+
+#### Visual Indicators
+- Purple color scheme for externally paid amounts (consistent differentiation)
+- "(ext)" suffix on amounts and status badges
+- Tooltip explaining "Betalt i andet år" on hover
+
+### 12.7 Online Database Sync
+
+The `PendingFeePayment` table is synced to the online database. When a payment is marked as "paid externally":
+
+1. Local database is updated (`isConsolidated=1`, `consolidatedTransactionId=NULL`, updated notes)
+2. `onlineSyncService.pushPendingFeePaymentUpdate(paymentId)` is called immediately
+3. The update is pushed to the online database for consistency across devices
+
+#### New Sync Function
+
+```typescript
+/**
+ * Push a pending fee payment update to the online database.
+ * Call this after updating a pending fee payment locally.
+ */
+async pushPendingFeePaymentUpdate(paymentId: string): Promise<boolean>
+```
+
+This mirrors the existing `pushPendingFeePaymentDelete()` function for immediate consistency.
 
 ---
 

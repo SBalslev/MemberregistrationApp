@@ -5,14 +5,16 @@
  * @see [prd.md] - Financial Transactions Management
  */
 
-import { useState, useRef } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { useState, useRef, useMemo } from 'react';
+import { X, Plus, Trash2, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import type { Member } from '../../types/entities';
 import type {
   PostingCategory,
   TransactionFormData,
   TransactionLineFormData,
+  PendingFeePaymentWithMember,
 } from '../../types/finance';
+import { PAYMENT_METHOD_LABELS } from '../../types/finance';
 import { useDialogKeyboard } from '../../hooks';
 
 // ===== Props Interface =====
@@ -20,11 +22,12 @@ import { useDialogKeyboard } from '../../hooks';
 export interface TransactionDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: TransactionFormData) => void;
+  onSave: (data: TransactionFormData, consolidatePaymentIds?: string[]) => void;
   categories: PostingCategory[];
   members: Member[];
   initialData?: TransactionFormData;
   fiscalYear: number;
+  pendingPayments?: PendingFeePaymentWithMember[];
 }
 
 // ===== Validation Errors Interface =====
@@ -169,6 +172,24 @@ function validateForm(data: TransactionFormData): ValidationErrors {
   return errors;
 }
 
+/**
+ * Format amount as Danish currency.
+ */
+function formatAmount(amount: number): string {
+  return amount.toLocaleString('da-DK', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }) + ' kr';
+}
+
+/**
+ * Format date as Danish format (dd-mm-yyyy).
+ */
+function formatDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-');
+  return `${day}-${month}-${year}`;
+}
+
 // ===== Component =====
 
 export function TransactionDialog({
@@ -179,6 +200,7 @@ export function TransactionDialog({
   members,
   initialData,
   fiscalYear,
+  pendingPayments = [],
 }: TransactionDialogProps) {
   // Form state
   const [formData, setFormData] = useState<TransactionFormData>(
@@ -192,6 +214,11 @@ export function TransactionDialog({
   // Track previous isOpen to detect dialog opening
   const [wasOpen, setWasOpen] = useState(false);
 
+  // Pending payments import state
+  const [importSectionExpanded, setImportSectionExpanded] = useState(false);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState<Set<string>>(new Set());
+  const [importedPaymentIds, setImportedPaymentIds] = useState<Set<string>>(new Set());
+
   // Ref to form for programmatic submit
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -200,6 +227,12 @@ export function TransactionDialog({
     formRef.current?.requestSubmit();
   });
 
+  // Filter out already imported payments from the available list
+  const availablePayments = useMemo(() =>
+    pendingPayments.filter(p => !importedPaymentIds.has(p.id)),
+    [pendingPayments, importedPaymentIds]
+  );
+
   // Reset form when dialog opens
   if (isOpen && !wasOpen) {
     setWasOpen(true);
@@ -207,6 +240,9 @@ export function TransactionDialog({
     setErrors({});
     setTouched(false);
     setTouchedFields(new Set());
+    setImportSectionExpanded(false);
+    setSelectedPaymentIds(new Set());
+    setImportedPaymentIds(new Set());
   } else if (!isOpen && wasOpen) {
     setWasOpen(false);
   }
@@ -321,6 +357,81 @@ export function TransactionDialog({
     }));
   }
 
+  // Toggle selection of a pending payment
+  function handleTogglePayment(id: string) {
+    setSelectedPaymentIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  }
+
+  // Select/deselect all available payments
+  function handleSelectAllPayments() {
+    if (selectedPaymentIds.size === availablePayments.length) {
+      setSelectedPaymentIds(new Set());
+    } else {
+      setSelectedPaymentIds(new Set(availablePayments.map(p => p.id)));
+    }
+  }
+
+  // Import selected payments as transaction lines
+  function handleImportPayments() {
+    const paymentsToImport = availablePayments.filter(p => selectedPaymentIds.has(p.id));
+    if (paymentsToImport.length === 0) return;
+
+    // Create new lines from selected payments
+    const newLines: TransactionLineFormData[] = paymentsToImport.map(payment => ({
+      id: crypto.randomUUID(),
+      categoryId: 'cat-kontingent',
+      amount: payment.amount,
+      isIncome: true,
+      source: payment.paymentMethod,
+      memberId: payment.memberId,
+      lineDescription: payment.memberName + (payment.notes ? ` - ${payment.notes}` : ''),
+    }));
+
+    // Calculate new header totals from imported payments
+    let addCashIn = 0;
+    let addBankIn = 0;
+    paymentsToImport.forEach(p => {
+      if (p.paymentMethod === 'CASH') {
+        addCashIn += p.amount;
+      } else {
+        addBankIn += p.amount;
+      }
+    });
+
+    // Filter out empty lines (default empty line) if we're importing
+    const existingLines = formData.lines.filter(
+      line => line.categoryId || line.amount > 0 || line.memberId || line.lineDescription
+    );
+
+    // Update form data
+    const newFormData: TransactionFormData = {
+      ...formData,
+      cashIn: (formData.cashIn ?? 0) + addCashIn || null,
+      bankIn: (formData.bankIn ?? 0) + addBankIn || null,
+      lines: existingLines.length > 0 ? [...existingLines, ...newLines] : newLines,
+    };
+    setFormData(newFormData);
+    setErrors(validateForm(newFormData));
+
+    // Track imported payment IDs for consolidation on save
+    setImportedPaymentIds(prev => {
+      const newSet = new Set(prev);
+      paymentsToImport.forEach(p => newSet.add(p.id));
+      return newSet;
+    });
+
+    // Clear selection
+    setSelectedPaymentIds(new Set());
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setTouched(true);
@@ -329,7 +440,9 @@ export function TransactionDialog({
     setErrors(validationErrors);
 
     if (Object.keys(validationErrors).length === 0) {
-      onSave(formData);
+      // Pass imported payment IDs for consolidation
+      const consolidateIds = importedPaymentIds.size > 0 ? Array.from(importedPaymentIds) : undefined;
+      onSave(formData, consolidateIds);
     }
   }
 
@@ -771,6 +884,108 @@ export function TransactionDialog({
                 <p className="text-sm text-red-500 mt-3">{errors.lineBalance}</p>
               )}
             </div>
+
+            {/* Import from Pending Payments - Only show when creating new transactions */}
+            {!isEditMode && availablePayments.length > 0 && (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                {/* Collapsible Header */}
+                <button
+                  type="button"
+                  onClick={() => setImportSectionExpanded(!importSectionExpanded)}
+                  className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    {importSectionExpanded ? (
+                      <ChevronUp className="w-4 h-4 text-gray-500" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-gray-500" />
+                    )}
+                    <span className="text-sm font-medium text-gray-700">
+                      Importer fra afventende betalinger
+                    </span>
+                    <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
+                      {availablePayments.length}
+                    </span>
+                  </div>
+                  {importedPaymentIds.size > 0 && (
+                    <span className="text-xs text-green-600">
+                      {importedPaymentIds.size} importeret
+                    </span>
+                  )}
+                </button>
+
+                {/* Expanded Content */}
+                {importSectionExpanded && (
+                  <div className="p-3 border-t border-gray-200 space-y-3">
+                    {/* Select All */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">
+                        {selectedPaymentIds.size} valgt
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleSelectAllPayments}
+                        className="text-sm text-blue-600 hover:text-blue-700"
+                      >
+                        {selectedPaymentIds.size === availablePayments.length ? 'Fravælg alle' : 'Vælg alle'}
+                      </button>
+                    </div>
+
+                    {/* Payment List */}
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {availablePayments.map((payment) => (
+                        <label
+                          key={payment.id}
+                          className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
+                            selectedPaymentIds.has(payment.id)
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${
+                            selectedPaymentIds.has(payment.id)
+                              ? 'bg-blue-600 border-blue-600 text-white'
+                              : 'border-gray-300'
+                          }`}>
+                            {selectedPaymentIds.has(payment.id) && <Check className="w-3 h-3" />}
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={selectedPaymentIds.has(payment.id)}
+                            onChange={() => handleTogglePayment(payment.id)}
+                            className="sr-only"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {payment.memberName}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {formatDate(payment.paymentDate)} · {PAYMENT_METHOD_LABELS[payment.paymentMethod]}
+                              {payment.notes && ` · ${payment.notes}`}
+                            </p>
+                          </div>
+                          <div className={`text-sm font-medium flex-shrink-0 ${
+                            payment.paymentMethod === 'CASH' ? 'text-green-600' : 'text-blue-600'
+                          }`}>
+                            {formatAmount(payment.amount)}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+
+                    {/* Import Button */}
+                    <button
+                      type="button"
+                      onClick={handleImportPayments}
+                      disabled={selectedPaymentIds.size === 0}
+                      className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Importer valgte ({selectedPaymentIds.size})
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </form>
 

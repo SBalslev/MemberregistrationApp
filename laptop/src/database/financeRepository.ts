@@ -747,9 +747,94 @@ export function consolidatePendingFeePayments(
  */
 export function getPendingFeeTotal(memberId: string, year: number): number {
   const result = query<{ total: number | null }>(
-    `SELECT SUM(amount) as total FROM PendingFeePayment 
+    `SELECT SUM(amount) as total FROM PendingFeePayment
      WHERE memberId = ? AND fiscalYear = ? AND isConsolidated = 0`,
     [memberId, year]
   );
   return result[0]?.total ?? 0;
+}
+
+/**
+ * Mark pending fee payments as consolidated with a given transaction ID.
+ * Used when importing payments into a transaction via the TransactionDialog.
+ */
+export function markPaymentsAsConsolidated(paymentIds: string[], transactionId: string): void {
+  if (paymentIds.length === 0) return;
+
+  const now = new Date().toISOString();
+  execute(
+    `UPDATE PendingFeePayment
+     SET isConsolidated = 1, consolidatedTransactionId = ?, updatedAtUtc = ?
+     WHERE id IN (${paymentIds.map(() => '?').join(',')}) AND isConsolidated = 0`,
+    [transactionId, now, ...paymentIds]
+  );
+}
+
+/**
+ * Mark a pending fee payment as paid in a different year.
+ * Used when a payment was registered in the current year but actually paid in a previous year.
+ * The payment is marked as consolidated without linking to a transaction in the current year.
+ * The payment still counts toward the member's fee status for the fiscal year it was registered.
+ */
+export function markPaymentAsPaidExternally(paymentId: string, paidInYear: number, notes?: string): void {
+  const now = new Date().toISOString();
+  const noteText = notes ? `${notes} - Betalt i ${paidInYear}` : `Betalt i ${paidInYear}`;
+
+  execute(
+    `UPDATE PendingFeePayment
+     SET isConsolidated = 1, consolidatedTransactionId = NULL, notes = ?, updatedAtUtc = ?
+     WHERE id = ? AND isConsolidated = 0`,
+    [noteText, now, paymentId]
+  );
+}
+
+/**
+ * Get fee payments that were marked as "paid externally" (in a different year).
+ * These are consolidated payments without a transaction ID - they still count toward
+ * the member's fee status for the year they were registered.
+ */
+export function getExternallyPaidFeePayments(year: number): PendingFeePaymentWithMember[] {
+  interface RawRow {
+    id: string;
+    fiscalYear: number;
+    memberId: string;
+    amount: number;
+    paymentDate: string;
+    paymentMethod: string | null;
+    notes: string | null;
+    isConsolidated: number;
+    consolidatedTransactionId: string | null;
+    createdAtUtc: string | null;
+    updatedAtUtc: string | null;
+    memberName: string;
+    memberType: string;
+  }
+  const now = new Date().toISOString();
+  return query<RawRow>(
+    `SELECT
+       p.id, p.fiscalYear, p.memberId, p.amount, p.paymentDate,
+       p.paymentMethod, p.notes, p.isConsolidated,
+       p.consolidatedTransactionId, p.createdAtUtc, p.updatedAtUtc,
+       m.firstName || ' ' || m.lastName as memberName,
+       COALESCE(m.memberType, 'ADULT') as memberType
+     FROM PendingFeePayment p
+     JOIN Member m ON p.memberId = m.internalId
+     WHERE p.fiscalYear = ? AND p.isConsolidated = 1 AND p.consolidatedTransactionId IS NULL
+     ORDER BY p.paymentDate DESC`,
+    [year]
+  ).map(row => ({
+    id: row.id,
+    fiscalYear: row.fiscalYear,
+    memberId: row.memberId,
+    amount: row.amount,
+    paymentDate: row.paymentDate,
+    paymentMethod: (row.paymentMethod ?? 'CASH') as PaymentMethod,
+    notes: row.notes,
+    isConsolidated: Boolean(row.isConsolidated),
+    consolidatedTransactionId: row.consolidatedTransactionId,
+    createdAtUtc: row.createdAtUtc ?? now,
+    updatedAtUtc: row.updatedAtUtc ?? now,
+    memberName: row.memberName,
+    memberType: row.memberType as MemberType,
+  }));
 }

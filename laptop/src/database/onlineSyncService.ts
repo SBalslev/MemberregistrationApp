@@ -2922,6 +2922,46 @@ class OnlineSyncService {
   }
 
   /**
+   * Push a pending fee payment update to the online database.
+   * Call this after updating a pending fee payment locally (e.g., marking as paid externally).
+   */
+  async pushPendingFeePaymentUpdate(paymentId: string): Promise<boolean> {
+    try {
+      const deviceId = await this.getDeviceId();
+      if (!deviceId) {
+        return false; // Online sync not enabled
+      }
+
+      // Get the updated payment from local database
+      const payments = query<PendingFeePayment>(
+        `SELECT * FROM PendingFeePayment WHERE id = ?`,
+        [paymentId]
+      );
+
+      if (payments.length === 0) {
+        console.warn(`[OnlineSync] Pending fee payment ${paymentId} not found locally`);
+        return false;
+      }
+
+      const payload: SyncPushPayload = {
+        deviceId,
+        batchId: `update-payment-${paymentId}-${Date.now()}`,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        entities: {
+          pendingFeePayments: [pendingFeePaymentToOnline(payments[0])],
+        },
+      };
+
+      await onlineApiService.push(payload);
+      console.log(`[OnlineSync] Updated pending fee payment ${paymentId} in online database`);
+      return true;
+    } catch (error) {
+      console.error(`[OnlineSync] Failed to update pending fee payment ${paymentId}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Push a pending fee payment delete to the online database.
    * Call this after deleting a pending fee payment locally.
    */

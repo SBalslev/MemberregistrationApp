@@ -26,9 +26,12 @@ import {
   setFeeRate,
   getClosingBalances,
   getPendingFeePayments,
+  getExternallyPaidFeePayments,
   createPendingFeePayment,
   consolidatePendingFeePayments,
   deletePendingFeePayment,
+  markPaymentsAsConsolidated,
+  markPaymentAsPaidExternally,
 } from '../database';
 import { onlineSyncService } from '../database/onlineSyncService';
 import { getAllMembers } from '../database/memberRepository';
@@ -65,8 +68,11 @@ export function FinancePage() {
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>(getFiscalYears);
   const [balances, setBalances] = useState(() => getRunningBalances(currentYear));
   const [feeRates, setFeeRates] = useState<FeeRate[]>(() => getFeeRatesForYear(currentYear));
-  const [pendingPayments, setPendingPayments] = useState<PendingFeePaymentWithMember[]>(() => 
+  const [pendingPayments, setPendingPayments] = useState<PendingFeePaymentWithMember[]>(() =>
     getPendingFeePayments(currentYear)
+  );
+  const [externallyPaidPayments, setExternallyPaidPayments] = useState<PendingFeePaymentWithMember[]>(() =>
+    getExternallyPaidFeePayments(currentYear)
   );
   const [feeRateDrafts, setFeeRateDrafts] = useState<Record<MemberType, string>>(() => {
     const initialRates = getFeeRatesForYear(currentYear);
@@ -116,7 +122,8 @@ export function FinancePage() {
     setFiscalYears(getFiscalYears());
     setFeeRates(getFeeRatesForYear(selectedYear));
     setPendingPayments(getPendingFeePayments(selectedYear));
-    
+    setExternallyPaidPayments(getExternallyPaidFeePayments(selectedYear));
+
     // Ensure fiscal year exists
     const fy = getFiscalYear(selectedYear);
     if (!fy) {
@@ -147,6 +154,7 @@ export function FinancePage() {
     setFiscalYears(getFiscalYears());
     setFeeRates(getFeeRatesForYear(selectedYear));
     setPendingPayments(getPendingFeePayments(selectedYear));
+    setExternallyPaidPayments(getExternallyPaidFeePayments(selectedYear));
   }, [selectedYear]);
 
   const selectedFiscalYear = useMemo(() => getFiscalYear(selectedYear), [selectedYear, fiscalYears]);
@@ -219,11 +227,13 @@ export function FinancePage() {
   }, [fiscalYears, currentYear]);
 
   // Handle save transaction
-  const handleSaveTransaction = (formData: TransactionFormData) => {
+  const handleSaveTransaction = (formData: TransactionFormData, consolidatePaymentIds?: string[]) => {
     const now = new Date().toISOString();
-    
+    let transactionId: string;
+
     if (formData.id && editingTransaction?.id) {
       // Update existing
+      transactionId = formData.id;
       updateTransaction(
         {
           id: formData.id,
@@ -253,10 +263,10 @@ export function FinancePage() {
       );
     } else {
       // Create new
-      const id = crypto.randomUUID();
+      transactionId = crypto.randomUUID();
       createTransaction(
         {
-          id,
+          id: transactionId,
           fiscalYear: selectedYear,
           date: formData.date,
           description: formData.description,
@@ -279,6 +289,11 @@ export function FinancePage() {
           lineDescription: line.lineDescription,
         }))
       );
+
+      // Mark imported pending payments as consolidated
+      if (consolidatePaymentIds && consolidatePaymentIds.length > 0) {
+        markPaymentsAsConsolidated(consolidatePaymentIds, transactionId);
+      }
     }
 
     setIsDialogOpen(false);
@@ -391,6 +406,15 @@ export function FinancePage() {
     await onlineSyncService.pushPendingFeePaymentDelete(paymentId);
     loadData();
     showSuccess('Afventende betaling slettet');
+  };
+
+  // Handle marking payment as paid in a different year
+  const handleMarkPaidExternally = async (paymentId: string, paidInYear: number) => {
+    markPaymentAsPaidExternally(paymentId, paidInYear);
+    // Push update to online database
+    await onlineSyncService.pushPendingFeePaymentUpdate(paymentId);
+    loadData();
+    showSuccess(`Betaling markeret som betalt i ${paidInYear}`);
   };
 
   // Open quick payment with optional preselected member
@@ -773,6 +797,7 @@ export function FinancePage() {
               feeRates={feeRates}
               year={selectedYear}
               pendingPayments={pendingPayments}
+              externallyPaidPayments={externallyPaidPayments}
               onMemberClick={(memberId) => setSelectedMemberId(memberId)}
               onQuickPayment={openQuickPayment}
               onBatchPayment={handleBatchPayment}
@@ -811,6 +836,7 @@ export function FinancePage() {
         members={members}
         fiscalYear={selectedYear}
         initialData={editingTransaction}
+        pendingPayments={pendingPayments}
       />
 
       {/* Delete Confirmation Dialog */}
@@ -866,6 +892,7 @@ export function FinancePage() {
         onClose={() => setIsConsolidateOpen(false)}
         onConsolidate={handleConsolidate}
         onDelete={handleDeletePendingPayment}
+        onMarkPaidExternally={handleMarkPaidExternally}
         pendingPayments={pendingPayments}
         categories={categories}
         year={selectedYear}
