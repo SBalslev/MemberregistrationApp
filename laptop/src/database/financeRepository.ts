@@ -838,3 +838,64 @@ export function getExternallyPaidFeePayments(year: number): PendingFeePaymentWit
     memberType: row.memberType as MemberType,
   }));
 }
+
+// ===== Member Transaction Checks =====
+
+/**
+ * Check if a member has any transactions in the current fiscal year.
+ * Used to prevent deletion of members with recent financial activity.
+ */
+export function hasMemberTransactionsInCurrentYear(memberId: string): boolean {
+  const currentYear = new Date().getFullYear();
+  const result = query<{ count: number }>(
+    `SELECT COUNT(*) as count
+     FROM TransactionLine tl
+     JOIN FinancialTransaction ft ON tl.transactionId = ft.id
+     WHERE tl.memberId = ? AND ft.fiscalYear = ? AND ft.isDeleted = 0`,
+    [memberId, currentYear]
+  );
+  return (result[0]?.count ?? 0) > 0;
+}
+
+/**
+ * Get count of transaction lines for a member in the current year.
+ */
+export function getMemberTransactionCountInCurrentYear(memberId: string): number {
+  const currentYear = new Date().getFullYear();
+  const result = query<{ count: number }>(
+    `SELECT COUNT(*) as count
+     FROM TransactionLine tl
+     JOIN FinancialTransaction ft ON tl.transactionId = ft.id
+     WHERE tl.memberId = ? AND ft.fiscalYear = ? AND ft.isDeleted = 0`,
+    [memberId, currentYear]
+  );
+  return result[0]?.count ?? 0;
+}
+
+/**
+ * Get total count of all transaction lines for a member (across all years).
+ * These will be orphaned (memberId set to NULL) when the member is deleted.
+ */
+export function getMemberTotalTransactionCount(memberId: string): number {
+  const result = query<{ count: number }>(
+    `SELECT COUNT(*) as count
+     FROM TransactionLine tl
+     JOIN FinancialTransaction ft ON tl.transactionId = ft.id
+     WHERE tl.memberId = ? AND ft.isDeleted = 0`,
+    [memberId]
+  );
+  return result[0]?.count ?? 0;
+}
+
+/**
+ * Orphan all transaction lines for a member by setting memberId to NULL.
+ * This preserves the financial records while removing the member reference.
+ */
+export function orphanMemberTransactionLines(memberId: string): number {
+  execute(
+    `UPDATE TransactionLine SET memberId = NULL WHERE memberId = ?`,
+    [memberId]
+  );
+  const result = query<{ changes: number }>('SELECT changes() as changes');
+  return result[0]?.changes ?? 0;
+}

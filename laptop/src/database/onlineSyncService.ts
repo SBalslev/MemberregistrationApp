@@ -2992,6 +2992,113 @@ class OnlineSyncService {
       return false;
     }
   }
+
+  /**
+   * Push a member deletion to the online database.
+   * This includes deleting all related entities (check-ins, sessions, etc.).
+   * Call this after permanently deleting a member locally.
+   *
+   * @param internalId The member's internalId
+   * @param relatedIds Optional IDs of related entities to delete
+   */
+  async pushMemberDeletion(
+    internalId: string,
+    relatedIds?: {
+      checkInIds?: string[];
+      practiceSessionIds?: string[];
+      scanEventIds?: string[];
+      equipmentCheckoutIds?: string[];
+      pendingFeePaymentIds?: string[];
+      skvRegistrationIds?: string[];
+      skvWeaponIds?: string[];
+      trainerDisciplineIds?: string[];
+    }
+  ): Promise<boolean> {
+    try {
+      const deviceId = await this.getDeviceId();
+      if (!deviceId) {
+        return false; // Online sync not enabled
+      }
+
+      // Build payload with member deletion and all related entity deletions
+      const payload: SyncPushPayload = {
+        deviceId,
+        batchId: `delete-member-${internalId}-${Date.now()}`,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        entities: {
+          // Delete the member
+          members: [{
+            internal_id: internalId,
+            _action: 'delete',
+          } as OnlineMember],
+        },
+      };
+
+      // Add related entity deletions if provided
+      if (relatedIds?.checkInIds?.length) {
+        payload.entities.checkIns = relatedIds.checkInIds.map(id => ({
+          id,
+          _action: 'delete',
+        } as OnlineCheckIn));
+      }
+
+      if (relatedIds?.practiceSessionIds?.length) {
+        payload.entities.practiceSessions = relatedIds.practiceSessionIds.map(id => ({
+          id,
+          _action: 'delete',
+        } as OnlinePracticeSession));
+      }
+
+      if (relatedIds?.scanEventIds?.length) {
+        payload.entities.scanEvents = relatedIds.scanEventIds.map(id => ({
+          id,
+          _action: 'delete',
+        } as OnlineScanEvent));
+      }
+
+      if (relatedIds?.equipmentCheckoutIds?.length) {
+        payload.entities.equipmentCheckouts = relatedIds.equipmentCheckoutIds.map(id => ({
+          id,
+          _action: 'delete',
+        } as OnlineEquipmentCheckout));
+      }
+
+      if (relatedIds?.pendingFeePaymentIds?.length) {
+        payload.entities.pendingFeePayments = relatedIds.pendingFeePaymentIds.map(id => ({
+          id,
+          _action: 'delete',
+        } as OnlinePendingFeePayment));
+      }
+
+      if (relatedIds?.skvRegistrationIds?.length) {
+        payload.entities.skvRegistrations = relatedIds.skvRegistrationIds.map(id => ({
+          id,
+          _action: 'delete',
+        } as OnlineSkvRegistration));
+      }
+
+      if (relatedIds?.skvWeaponIds?.length) {
+        payload.entities.skvWeapons = relatedIds.skvWeaponIds.map(id => ({
+          id,
+          _action: 'delete',
+        } as OnlineSkvWeapon));
+      }
+
+      if (relatedIds?.trainerDisciplineIds?.length) {
+        payload.entities.trainerDisciplines = relatedIds.trainerDisciplineIds.map(id => ({
+          id,
+          _action: 'delete',
+        } as OnlineTrainerDiscipline));
+      }
+
+      await onlineApiService.push(payload);
+      console.log(`[OnlineSync] Deleted member ${internalId} and related entities from online database`);
+      return true;
+    } catch (error) {
+      console.error(`[OnlineSync] Failed to delete member ${internalId}:`, error);
+      return false;
+    }
+  }
 }
 
 // ===== Singleton Export =====

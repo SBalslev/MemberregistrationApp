@@ -3,13 +3,14 @@
  */
 
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock } from 'lucide-react';
-import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, getDefaultSkvRegistration, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, type ActivityType } from '../database';
+import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, getDefaultSkvRegistration, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, getMemberDeletePreview, deleteMemberPermanently, type ActivityType } from '../database';
+import { onlineSyncService } from '../database/onlineSyncService';
 import type { Member, Gender } from '../types';
 import { getIdPhotoStatus } from '../types/entities';
 import { onMembershipIdAssigned } from '../services/idPhotoLifecycleService';
 import type { SkvRegistration, SkvWeapon, SkvStatus } from '../database/skvRepository';
-import type { MergeResult } from '../database/memberRepository';
+import type { MergeResult, MemberDeletePreview } from '../database/memberRepository';
 import { useAppStore } from '../store';
 import { showSuccess, showError } from '../store/toastStore';
 import { getPhotoSrc } from '../utils/photoStorage';
@@ -495,6 +496,7 @@ export function MembersPage() {
 function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }: { member: Member; onMemberUpdated: () => void; onEnlargePhoto: (photo: { src: string; title: string }) => void; onClose: () => void }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAssignIdModal, setShowAssignIdModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [skvRegistration, setSkvRegistration] = useState<SkvRegistration | null>(null);
   const [skvWeapons, setSkvWeapons] = useState<SkvWeapon[]>([]);
   const [showSkvModal, setShowSkvModal] = useState(false);
@@ -810,19 +812,29 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
       <div className="mt-8 space-y-3">
         {/* Assign Member ID button for trial members */}
         {member.memberLifecycleStage === 'TRIAL' && (
-          <button 
+          <button
             onClick={() => setShowAssignIdModal(true)}
             className="w-full px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
           >
             Tildel medlemsnummer
           </button>
         )}
-        <button 
+        <button
           onClick={() => setShowEditModal(true)}
           className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
         >
           Rediger medlem
         </button>
+        {/* Delete button - only for INACTIVE members */}
+        {member.status === 'INACTIVE' && (
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium inline-flex items-center justify-center gap-2"
+          >
+            <Trash2 className="w-4 h-4" />
+            Slet medlem permanent
+          </button>
+        )}
       </div>
 
       {/* Activity timeline */}
@@ -981,6 +993,19 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
           }}
         />
       )}
+
+      {/* Delete Member Modal */}
+      {showDeleteModal && (
+        <DeleteMemberDialog
+          member={member}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => {
+            setShowDeleteModal(false);
+            setSelectedMember(null);
+            onMemberUpdated();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -990,6 +1015,264 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-sm text-gray-500">{label}</dt>
       <dd className="text-gray-900 mt-0.5">{value}</dd>
+    </div>
+  );
+}
+
+// ===== Delete Member Dialog =====
+
+interface DeleteMemberDialogProps {
+  member: Member;
+  onClose: () => void;
+  onDeleted: () => void;
+}
+
+function DeleteMemberDialog({ member, onClose, onDeleted }: DeleteMemberDialogProps) {
+  const [preview, setPreview] = useState<MemberDeletePreview | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadPreview = () => {
+      try {
+        const result = getMemberDeletePreview(member.internalId);
+        setPreview(result);
+      } catch (err) {
+        setError('Kunne ikke indlæse sletningsoplysninger');
+        console.error('[DeleteMemberDialog] Failed to load preview:', err);
+      }
+    };
+    loadPreview();
+  }, [member.internalId]);
+
+  async function handleDelete() {
+    if (!preview?.canDelete) return;
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      const result = await deleteMemberPermanently(member.internalId);
+
+      if (result.success) {
+        // Sync deletion to cloud (fire-and-forget)
+        onlineSyncService.pushMemberDeletion(member.internalId).catch(err => {
+          console.warn('[DeleteMemberDialog] Cloud sync failed:', err);
+        });
+
+        showSuccess(`${member.firstName} ${member.lastName} er blevet slettet`);
+        onDeleted();
+      } else {
+        setError(result.error || 'Kunne ikke slette medlem');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ukendt fejl ved sletning');
+      console.error('[DeleteMemberDialog] Delete failed:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  const hasRelatedData = preview && (
+    preview.counts.checkIns > 0 ||
+    preview.counts.practiceSessions > 0 ||
+    preview.counts.scanEvents > 0 ||
+    preview.counts.equipmentCheckouts > 0 ||
+    preview.counts.pendingFeePayments > 0 ||
+    preview.counts.skvRegistrations > 0 ||
+    preview.counts.skvWeapons > 0 ||
+    preview.counts.trainerInfo ||
+    preview.counts.trainerDisciplines > 0 ||
+    preview.counts.memberPreferences
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-red-50 rounded-t-xl">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 rounded-full">
+              <AlertCircle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Slet medlem permanent</h2>
+              <p className="text-sm text-gray-600">{member.firstName} {member.lastName}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isDeleting}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-4">
+          {/* Warning */}
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-sm text-red-800 font-medium">
+              Denne handling kan ikke fortrydes!
+            </p>
+            <p className="text-sm text-red-700 mt-1">
+              Medlemmet og al relateret data vil blive permanent slettet fra systemet.
+            </p>
+          </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+
+          {/* Loading state */}
+          {!preview && !error && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
+              <span className="ml-2 text-gray-500">Indlæser...</span>
+            </div>
+          )}
+
+          {/* Cannot delete message */}
+          {preview && !preview.canDelete && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-yellow-800">Kan ikke slettes</p>
+                  <p className="text-sm text-yellow-700 mt-1">{preview.blockingReason}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Deletion preview */}
+          {preview?.canDelete && (
+            <>
+              {/* Data to be deleted */}
+              {hasRelatedData && (
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Følgende data vil blive slettet:</h3>
+                  <ul className="space-y-2 text-sm text-gray-600">
+                    {preview.counts.checkIns > 0 && (
+                      <li className="flex justify-between">
+                        <span>Check-ins</span>
+                        <span className="font-medium text-gray-900">{preview.counts.checkIns}</span>
+                      </li>
+                    )}
+                    {preview.counts.practiceSessions > 0 && (
+                      <li className="flex justify-between">
+                        <span>Træningssessioner</span>
+                        <span className="font-medium text-gray-900">{preview.counts.practiceSessions}</span>
+                      </li>
+                    )}
+                    {preview.counts.scanEvents > 0 && (
+                      <li className="flex justify-between">
+                        <span>Scan events</span>
+                        <span className="font-medium text-gray-900">{preview.counts.scanEvents}</span>
+                      </li>
+                    )}
+                    {preview.counts.equipmentCheckouts > 0 && (
+                      <li className="flex justify-between">
+                        <span>Udstyrsudlån</span>
+                        <span className="font-medium text-gray-900">{preview.counts.equipmentCheckouts}</span>
+                      </li>
+                    )}
+                    {preview.counts.pendingFeePayments > 0 && (
+                      <li className="flex justify-between">
+                        <span>Afventende betalinger</span>
+                        <span className="font-medium text-gray-900">{preview.counts.pendingFeePayments}</span>
+                      </li>
+                    )}
+                    {preview.counts.skvRegistrations > 0 && (
+                      <li className="flex justify-between">
+                        <span>SKV registreringer</span>
+                        <span className="font-medium text-gray-900">{preview.counts.skvRegistrations}</span>
+                      </li>
+                    )}
+                    {preview.counts.skvWeapons > 0 && (
+                      <li className="flex justify-between">
+                        <span>SKV våben</span>
+                        <span className="font-medium text-gray-900">{preview.counts.skvWeapons}</span>
+                      </li>
+                    )}
+                    {preview.counts.trainerInfo && (
+                      <li className="flex justify-between">
+                        <span>Trænerinfo</span>
+                        <span className="font-medium text-gray-900">Ja</span>
+                      </li>
+                    )}
+                    {preview.counts.trainerDisciplines > 0 && (
+                      <li className="flex justify-between">
+                        <span>Trænerdiscipliner</span>
+                        <span className="font-medium text-gray-900">{preview.counts.trainerDisciplines}</span>
+                      </li>
+                    )}
+                    {preview.counts.memberPreferences && (
+                      <li className="flex justify-between">
+                        <span>Præferencer</span>
+                        <span className="font-medium text-gray-900">Ja</span>
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              {/* Transaction lines info */}
+              {preview.counts.transactionLines > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>{preview.counts.transactionLines} transaktionslinjer</strong> vil blive bevaret (medlemsreferencen fjernes).
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Finansielle transaktioner slettes ikke, men kan ikke længere tilknyttes dette medlem.
+                  </p>
+                </div>
+              )}
+
+              {/* No related data */}
+              {!hasRelatedData && preview.counts.transactionLines === 0 && (
+                <div className="text-sm text-gray-500">
+                  Ingen relateret data vil blive slettet.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 p-6 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isDeleting}
+            className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 disabled:opacity-50 font-medium"
+          >
+            Annuller
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={!preview?.canDelete || isDeleting}
+            className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium inline-flex items-center justify-center gap-2"
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Sletter...
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4" />
+                Slet permanent
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

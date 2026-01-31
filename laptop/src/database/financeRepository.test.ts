@@ -11,7 +11,7 @@ vi.mock('./db', () => ({
 }));
 
 import { execute, query } from './db';
-import { getFeeRate, getFeeRatesForYear, getMemberFeeStatus, setFeeRate, markPaymentsAsConsolidated, markPaymentAsPaidExternally, getExternallyPaidFeePayments } from './financeRepository';
+import { getFeeRate, getFeeRatesForYear, getMemberFeeStatus, setFeeRate, markPaymentsAsConsolidated, markPaymentAsPaidExternally, getExternallyPaidFeePayments, hasMemberTransactionsInCurrentYear, getMemberTransactionCountInCurrentYear, getMemberTotalTransactionCount, orphanMemberTransactionLines } from './financeRepository';
 
 beforeEach(() => {
   vi.mocked(execute).mockClear();
@@ -296,5 +296,109 @@ describe('Get externally paid fee payments', () => {
     const result = getExternallyPaidFeePayments(2026);
 
     expect(result).toEqual([]);
+  });
+});
+
+describe('Member transaction checks for deletion', () => {
+  describe('hasMemberTransactionsInCurrentYear', () => {
+    it('returns true when member has transactions in current year', () => {
+      vi.mocked(query).mockReturnValueOnce([{ count: 3 }]);
+
+      const result = hasMemberTransactionsInCurrentYear('member-123');
+
+      expect(result).toBe(true);
+      const [sql, params] = vi.mocked(query).mock.calls[0];
+      expect(sql).toContain('FROM TransactionLine tl');
+      expect(sql).toContain('JOIN FinancialTransaction ft');
+      expect(sql).toContain('tl.memberId = ?');
+      expect(sql).toContain('ft.fiscalYear = ?');
+      expect(sql).toContain('ft.isDeleted = 0');
+      expect(params?.[0]).toBe('member-123');
+      expect(params?.[1]).toBe(new Date().getFullYear());
+    });
+
+    it('returns false when member has no transactions in current year', () => {
+      vi.mocked(query).mockReturnValueOnce([{ count: 0 }]);
+
+      const result = hasMemberTransactionsInCurrentYear('member-456');
+
+      expect(result).toBe(false);
+    });
+
+    it('returns false when query returns empty result', () => {
+      vi.mocked(query).mockReturnValueOnce([]);
+
+      const result = hasMemberTransactionsInCurrentYear('member-789');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('getMemberTransactionCountInCurrentYear', () => {
+    it('returns count of transactions in current year', () => {
+      vi.mocked(query).mockReturnValueOnce([{ count: 5 }]);
+
+      const result = getMemberTransactionCountInCurrentYear('member-123');
+
+      expect(result).toBe(5);
+    });
+
+    it('returns 0 when no transactions exist', () => {
+      vi.mocked(query).mockReturnValueOnce([{ count: 0 }]);
+
+      const result = getMemberTransactionCountInCurrentYear('member-456');
+
+      expect(result).toBe(0);
+    });
+  });
+
+  describe('getMemberTotalTransactionCount', () => {
+    it('returns total count of all transactions across all years', () => {
+      vi.mocked(query).mockReturnValueOnce([{ count: 15 }]);
+
+      const result = getMemberTotalTransactionCount('member-123');
+
+      expect(result).toBe(15);
+      const [sql, params] = vi.mocked(query).mock.calls[0];
+      expect(sql).toContain('FROM TransactionLine tl');
+      expect(sql).toContain('JOIN FinancialTransaction ft');
+      expect(sql).toContain('tl.memberId = ?');
+      expect(sql).toContain('ft.isDeleted = 0');
+      // Should NOT filter by fiscalYear
+      expect(sql).not.toContain('ft.fiscalYear = ?');
+      expect(params).toEqual(['member-123']);
+    });
+
+    it('returns 0 when no transactions exist', () => {
+      vi.mocked(query).mockReturnValueOnce([]);
+
+      const result = getMemberTotalTransactionCount('member-456');
+
+      expect(result).toBe(0);
+    });
+  });
+
+  describe('orphanMemberTransactionLines', () => {
+    it('sets memberId to NULL for all transaction lines', () => {
+      vi.mocked(query).mockReturnValueOnce([{ changes: 3 }]);
+
+      const result = orphanMemberTransactionLines('member-123');
+
+      expect(vi.mocked(execute)).toHaveBeenCalledTimes(1);
+      const [sql, params] = vi.mocked(execute).mock.calls[0];
+      expect(sql).toContain('UPDATE TransactionLine');
+      expect(sql).toContain('SET memberId = NULL');
+      expect(sql).toContain('WHERE memberId = ?');
+      expect(params).toEqual(['member-123']);
+      expect(result).toBe(3);
+    });
+
+    it('returns 0 when no transaction lines exist for member', () => {
+      vi.mocked(query).mockReturnValueOnce([{ changes: 0 }]);
+
+      const result = orphanMemberTransactionLines('member-456');
+
+      expect(result).toBe(0);
+    });
   });
 });

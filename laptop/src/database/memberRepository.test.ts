@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTrialMemberCount, getRecentTrialMembers } from './memberRepository';
+import { getTrialMemberCount, getRecentTrialMembers, getMemberDeletePreview, deleteMemberPermanently } from './memberRepository';
 
 // Mock the database module
 const mockData: {
@@ -34,13 +34,31 @@ const mockData: {
   practiceSessions: Array<{ id: string; internalMemberId: string }>;
   scanEvents: Array<{ id: string; internalMemberId: string }>;
   equipmentCheckouts: Array<{ id: string; internalMemberId: string }>;
+  pendingFeePayments: Array<{ id: string; memberId: string }>;
+  skvRegistrations: Array<{ id: string; memberId: string }>;
+  skvWeapons: Array<{ id: string; registrationId: string }>;
+  trainerInfos: Array<{ memberId: string }>;
+  trainerDisciplines: Array<{ id: string; memberId: string }>;
+  memberPreferences: Array<{ memberId: string }>;
+  transactionLines: Array<{ id: string; memberId: string; fiscalYear: number }>;
 } = {
   members: [],
   checkIns: [],
   practiceSessions: [],
   scanEvents: [],
   equipmentCheckouts: [],
+  pendingFeePayments: [],
+  skvRegistrations: [],
+  skvWeapons: [],
+  trainerInfos: [],
+  trainerDisciplines: [],
+  memberPreferences: [],
+  transactionLines: [],
 };
+
+vi.mock('./syncOutboxRepository', () => ({
+  queueMember: vi.fn(),
+}));
 
 vi.mock('./db', () => ({
   execute: vi.fn((_sql: string, _params?: unknown[]) => {
@@ -101,15 +119,15 @@ vi.mock('./db', () => ({
     if (sql.includes('FROM Member') && !sql.includes('WHERE')) {
       return mockData.members as T[];
     }
-    // CheckIn queries
-    if (sql.includes('FROM CheckIn') && sql.includes('internalMemberId =')) {
-      const id = params?.[0];
-      return mockData.checkIns.filter((c) => c.internalMemberId === id) as T[];
-    }
+    // CheckIn queries - COUNT(*) should come first since it's more specific
     if (sql.includes('FROM CheckIn') && sql.includes('COUNT(*)')) {
       const id = params?.[0];
       const count = mockData.checkIns.filter((c) => c.internalMemberId === id).length;
       return [{ count }] as T[];
+    }
+    if (sql.includes('FROM CheckIn') && sql.includes('internalMemberId =')) {
+      const id = params?.[0];
+      return mockData.checkIns.filter((c) => c.internalMemberId === id) as T[];
     }
     // PracticeSession queries
     if (sql.includes('FROM PracticeSession') && sql.includes('COUNT(*)')) {
@@ -129,11 +147,70 @@ vi.mock('./db', () => ({
       const count = mockData.equipmentCheckouts.filter((e) => e.internalMemberId === id).length;
       return [{ count }] as T[];
     }
+    // PendingFeePayment queries
+    if (sql.includes('FROM PendingFeePayment') && sql.includes('COUNT(*)')) {
+      const id = params?.[0];
+      const count = mockData.pendingFeePayments.filter((p) => p.memberId === id).length;
+      return [{ count }] as T[];
+    }
+    // SKVWeapon queries (counts weapons via registrations) - must come before SKVRegistration check
+    // because the SKVWeapon query contains "FROM SKVRegistration" in subquery
+    if (sql.includes('FROM SKVWeapon') && sql.includes('COUNT(*)')) {
+      const memberId = params?.[0];
+      const registrationIds = mockData.skvRegistrations.filter((r) => r.memberId === memberId).map((r) => r.id);
+      const count = mockData.skvWeapons.filter((w) => registrationIds.includes(w.registrationId)).length;
+      return [{ count }] as T[];
+    }
+    // SKVRegistration queries
+    if (sql.includes('FROM SKVRegistration') && sql.includes('COUNT(*)')) {
+      const id = params?.[0];
+      const count = mockData.skvRegistrations.filter((r) => r.memberId === id).length;
+      return [{ count }] as T[];
+    }
+    // TrainerInfo queries
+    if (sql.includes('FROM TrainerInfo') && sql.includes('COUNT(*)')) {
+      const id = params?.[0];
+      const count = mockData.trainerInfos.filter((t) => t.memberId === id).length;
+      return [{ count }] as T[];
+    }
+    // TrainerDiscipline queries
+    if (sql.includes('FROM TrainerDiscipline') && sql.includes('COUNT(*)')) {
+      const id = params?.[0];
+      const count = mockData.trainerDisciplines.filter((d) => d.memberId === id).length;
+      return [{ count }] as T[];
+    }
+    // MemberPreference queries
+    if (sql.includes('FROM MemberPreference') && sql.includes('COUNT(*)')) {
+      const id = params?.[0];
+      const count = mockData.memberPreferences.filter((p) => p.memberId === id).length;
+      return [{ count }] as T[];
+    }
+    // TransactionLine queries (for member deletion preview)
+    if (sql.includes('FROM TransactionLine') && sql.includes('COUNT(*)') && sql.includes('fiscalYear')) {
+      const memberId = params?.[0];
+      const year = params?.[1] as number;
+      const count = mockData.transactionLines.filter((t) => t.memberId === memberId && t.fiscalYear === year).length;
+      return [{ count }] as T[];
+    }
+    if (sql.includes('FROM TransactionLine') && sql.includes('COUNT(*)') && !sql.includes('fiscalYear')) {
+      const memberId = params?.[0];
+      const count = mockData.transactionLines.filter((t) => t.memberId === memberId).length;
+      return [{ count }] as T[];
+    }
+    // changes() query for execute results
+    if (sql.includes('SELECT changes()')) {
+      return [{ changes: 0 }] as T[];
+    }
     return [] as T[];
   }),
   transaction: vi.fn((fn: () => void) => {
     fn();
   }),
+}));
+
+// Mock the photoStorage module
+vi.mock('../utils/photoStorage', () => ({
+  deletePhotoFile: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Reset mock data before each test
@@ -143,6 +220,13 @@ beforeEach(() => {
   mockData.practiceSessions = [];
   mockData.scanEvents = [];
   mockData.equipmentCheckouts = [];
+  mockData.pendingFeePayments = [];
+  mockData.skvRegistrations = [];
+  mockData.skvWeapons = [];
+  mockData.trainerInfos = [];
+  mockData.trainerDisciplines = [];
+  mockData.memberPreferences = [];
+  mockData.transactionLines = [];
   vi.clearAllMocks();
 });
 
@@ -708,6 +792,192 @@ describe('Recent Trial Members (Dashboard)', () => {
 
       expect(recentMembers).toHaveLength(1);
       expect(recentMembers[0].member.firstName).toBe('Active');
+    });
+  });
+});
+
+describe('Permanent Member Deletion', () => {
+  describe('getMemberDeletePreview', () => {
+    it('should return canDelete: false when member not found', () => {
+      mockData.members = [];
+
+      const preview = getMemberDeletePreview('non-existent');
+
+      expect(preview.canDelete).toBe(false);
+      expect(preview.blockingReason).toBe('Medlem ikke fundet');
+    });
+
+    it('should return canDelete: false when member is ACTIVE', () => {
+      mockData.members = [
+        { internalId: 'uuid-active', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Active', lastName: 'Member', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+
+      const preview = getMemberDeletePreview('uuid-active');
+
+      expect(preview.canDelete).toBe(false);
+      expect(preview.blockingReason).toBe('Kun inaktive medlemmer kan slettes');
+    });
+
+    it('should return canDelete: false when member has transactions in current year', () => {
+      const currentYear = new Date().getFullYear();
+      mockData.members = [
+        { internalId: 'uuid-inactive', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Inactive', lastName: 'Member', email: null, phone: null, birthday: null, status: 'INACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+      mockData.transactionLines = [
+        { id: 'tl-1', memberId: 'uuid-inactive', fiscalYear: currentYear },
+        { id: 'tl-2', memberId: 'uuid-inactive', fiscalYear: currentYear },
+      ];
+
+      const preview = getMemberDeletePreview('uuid-inactive');
+
+      expect(preview.canDelete).toBe(false);
+      expect(preview.blockingReason).toContain('transaktioner i indeværende år');
+    });
+
+    it('should return canDelete: true for inactive member with no current year transactions', () => {
+      mockData.members = [
+        { internalId: 'uuid-inactive', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Inactive', lastName: 'Member', email: null, phone: null, birthday: null, status: 'INACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+
+      const preview = getMemberDeletePreview('uuid-inactive');
+
+      expect(preview.canDelete).toBe(true);
+      expect(preview.blockingReason).toBeUndefined();
+    });
+
+    it('should count all related records correctly', () => {
+      mockData.members = [
+        { internalId: 'uuid-inactive', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Inactive', lastName: 'Member', email: null, phone: null, birthday: null, status: 'INACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+      mockData.checkIns = [
+        { id: 'ci-1', internalMemberId: 'uuid-inactive', localDate: '2025-01-10' },
+        { id: 'ci-2', internalMemberId: 'uuid-inactive', localDate: '2025-01-11' },
+      ];
+      mockData.practiceSessions = [
+        { id: 'ps-1', internalMemberId: 'uuid-inactive' },
+      ];
+      mockData.scanEvents = [
+        { id: 'se-1', internalMemberId: 'uuid-inactive' },
+        { id: 'se-2', internalMemberId: 'uuid-inactive' },
+        { id: 'se-3', internalMemberId: 'uuid-inactive' },
+      ];
+      mockData.equipmentCheckouts = [
+        { id: 'ec-1', internalMemberId: 'uuid-inactive' },
+      ];
+      mockData.pendingFeePayments = [
+        { id: 'pfp-1', memberId: 'uuid-inactive' },
+      ];
+      mockData.skvRegistrations = [
+        { id: 'skv-1', memberId: 'uuid-inactive' },
+      ];
+      mockData.skvWeapons = [
+        { id: 'sw-1', registrationId: 'skv-1' },
+        { id: 'sw-2', registrationId: 'skv-1' },
+      ];
+      mockData.trainerInfos = [
+        { memberId: 'uuid-inactive' },
+      ];
+      mockData.trainerDisciplines = [
+        { id: 'td-1', memberId: 'uuid-inactive' },
+        { id: 'td-2', memberId: 'uuid-inactive' },
+      ];
+      mockData.memberPreferences = [
+        { memberId: 'uuid-inactive' },
+      ];
+      // Transaction lines from previous years (will be orphaned)
+      mockData.transactionLines = [
+        { id: 'tl-1', memberId: 'uuid-inactive', fiscalYear: 2024 },
+        { id: 'tl-2', memberId: 'uuid-inactive', fiscalYear: 2023 },
+      ];
+
+      const preview = getMemberDeletePreview('uuid-inactive');
+
+      expect(preview.canDelete).toBe(true);
+      expect(preview.counts.checkIns).toBe(2);
+      expect(preview.counts.practiceSessions).toBe(1);
+      expect(preview.counts.scanEvents).toBe(3);
+      expect(preview.counts.equipmentCheckouts).toBe(1);
+      expect(preview.counts.pendingFeePayments).toBe(1);
+      expect(preview.counts.skvRegistrations).toBe(1);
+      expect(preview.counts.skvWeapons).toBe(2);
+      expect(preview.counts.trainerInfo).toBe(true);
+      expect(preview.counts.trainerDisciplines).toBe(2);
+      expect(preview.counts.memberPreferences).toBe(true);
+      expect(preview.counts.transactionLines).toBe(2);
+    });
+  });
+
+  describe('deleteMemberPermanently', () => {
+    it('should return error when member cannot be deleted', async () => {
+      mockData.members = [
+        { internalId: 'uuid-active', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Active', lastName: 'Member', email: null, phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+
+      const result = await deleteMemberPermanently('uuid-active');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Kun inaktive medlemmer kan slettes');
+    });
+
+    it('should return error when member not found', async () => {
+      mockData.members = [];
+
+      const result = await deleteMemberPermanently('non-existent');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Medlem ikke fundet');
+    });
+
+    it('should successfully delete inactive member with no related data', async () => {
+      mockData.members = [
+        { internalId: 'uuid-inactive', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Inactive', lastName: 'Member', email: null, phone: null, birthday: null, status: 'INACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+
+      const result = await deleteMemberPermanently('uuid-inactive');
+
+      expect(result.success).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should successfully delete inactive member with related data', async () => {
+      mockData.members = [
+        { internalId: 'uuid-inactive', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Inactive', lastName: 'Member', email: null, phone: null, birthday: null, status: 'INACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+      mockData.checkIns = [
+        { id: 'ci-1', internalMemberId: 'uuid-inactive', localDate: '2025-01-10' },
+      ];
+      mockData.practiceSessions = [
+        { id: 'ps-1', internalMemberId: 'uuid-inactive' },
+      ];
+      mockData.skvRegistrations = [
+        { id: 'skv-1', memberId: 'uuid-inactive' },
+      ];
+      mockData.skvWeapons = [
+        { id: 'sw-1', registrationId: 'skv-1' },
+      ];
+
+      const result = await deleteMemberPermanently('uuid-inactive');
+
+      expect(result.success).toBe(true);
+      expect(result.deletedCounts.checkIns).toBe(1);
+      expect(result.deletedCounts.practiceSessions).toBe(1);
+      expect(result.deletedCounts.skvRegistrations).toBe(1);
+      expect(result.deletedCounts.skvWeapons).toBe(1);
+    });
+
+    it('should block deletion when member has current year transactions', async () => {
+      const currentYear = new Date().getFullYear();
+      mockData.members = [
+        { internalId: 'uuid-inactive', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Inactive', lastName: 'Member', email: null, phone: null, birthday: null, status: 'INACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+      mockData.transactionLines = [
+        { id: 'tl-1', memberId: 'uuid-inactive', fiscalYear: currentYear },
+      ];
+
+      const result = await deleteMemberPermanently('uuid-inactive');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('transaktioner i indeværende år');
     });
   });
 });

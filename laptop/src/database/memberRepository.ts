@@ -667,3 +667,318 @@ export function mergeMembers(keepMemberId: string, mergeMemberId: string): Merge
     };
   }
 }
+
+// ===== Permanent Member Deletion =====
+
+/**
+ * Preview of what will be deleted when a member is permanently deleted.
+ */
+export interface MemberDeletePreview {
+  canDelete: boolean;
+  blockingReason?: string;
+  counts: {
+    checkIns: number;
+    practiceSessions: number;
+    scanEvents: number;
+    equipmentCheckouts: number;
+    pendingFeePayments: number;
+    skvRegistrations: number;
+    skvWeapons: number;
+    trainerInfo: boolean;
+    trainerDisciplines: number;
+    memberPreferences: boolean;
+    transactionLines: number; // Will be orphaned, not deleted
+  };
+}
+
+/**
+ * Result of a permanent member deletion.
+ */
+export interface MemberDeleteResult {
+  success: boolean;
+  deletedCounts: MemberDeletePreview['counts'];
+  error?: string;
+}
+
+/**
+ * Get a preview of what will be deleted if a member is permanently deleted.
+ * Only INACTIVE members can be deleted.
+ * Members with transactions in the current year cannot be deleted.
+ *
+ * @param internalId The member's internalId
+ * @returns Preview with counts and whether deletion is allowed
+ */
+export function getMemberDeletePreview(internalId: string): MemberDeletePreview {
+  const member = getMemberByInternalId(internalId);
+
+  if (!member) {
+    return {
+      canDelete: false,
+      blockingReason: 'Medlem ikke fundet',
+      counts: {
+        checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0,
+        pendingFeePayments: 0, skvRegistrations: 0, skvWeapons: 0,
+        trainerInfo: false, trainerDisciplines: 0, memberPreferences: false, transactionLines: 0
+      }
+    };
+  }
+
+  if (member.status !== 'INACTIVE') {
+    return {
+      canDelete: false,
+      blockingReason: 'Kun inaktive medlemmer kan slettes',
+      counts: {
+        checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0,
+        pendingFeePayments: 0, skvRegistrations: 0, skvWeapons: 0,
+        trainerInfo: false, trainerDisciplines: 0, memberPreferences: false, transactionLines: 0
+      }
+    };
+  }
+
+  // Check for current year transactions
+  const currentYear = new Date().getFullYear();
+  const currentYearTxns = query<{ count: number }>(
+    `SELECT COUNT(*) as count
+     FROM TransactionLine tl
+     JOIN FinancialTransaction ft ON tl.transactionId = ft.id
+     WHERE tl.memberId = ? AND ft.fiscalYear = ? AND ft.isDeleted = 0`,
+    [internalId, currentYear]
+  )[0]?.count ?? 0;
+
+  if (currentYearTxns > 0) {
+    return {
+      canDelete: false,
+      blockingReason: `Medlemmet har ${currentYearTxns} transaktioner i indeværende år (${currentYear})`,
+      counts: {
+        checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0,
+        pendingFeePayments: 0, skvRegistrations: 0, skvWeapons: 0,
+        trainerInfo: false, trainerDisciplines: 0, memberPreferences: false, transactionLines: currentYearTxns
+      }
+    };
+  }
+
+  // Count all related records
+  const checkIns = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM CheckIn WHERE internalMemberId = ?',
+    [internalId]
+  )[0]?.count ?? 0;
+
+  const practiceSessions = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM PracticeSession WHERE internalMemberId = ?',
+    [internalId]
+  )[0]?.count ?? 0;
+
+  const scanEvents = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM ScanEvent WHERE internalMemberId = ?',
+    [internalId]
+  )[0]?.count ?? 0;
+
+  const equipmentCheckouts = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM EquipmentCheckout WHERE internalMemberId = ?',
+    [internalId]
+  )[0]?.count ?? 0;
+
+  const pendingFeePayments = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM PendingFeePayment WHERE memberId = ?',
+    [internalId]
+  )[0]?.count ?? 0;
+
+  const skvRegistrations = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM SKVRegistration WHERE memberId = ?',
+    [internalId]
+  )[0]?.count ?? 0;
+
+  // Count SKV weapons across all registrations for this member
+  const skvWeapons = query<{ count: number }>(
+    `SELECT COUNT(*) as count FROM SKVWeapon
+     WHERE registrationId IN (SELECT id FROM SKVRegistration WHERE memberId = ?)`,
+    [internalId]
+  )[0]?.count ?? 0;
+
+  const trainerInfoResult = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM TrainerInfo WHERE memberId = ?',
+    [internalId]
+  );
+  const trainerInfo = (trainerInfoResult[0]?.count ?? 0) > 0;
+
+  const trainerDisciplines = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM TrainerDiscipline WHERE memberId = ?',
+    [internalId]
+  )[0]?.count ?? 0;
+
+  const memberPreferencesResult = query<{ count: number }>(
+    'SELECT COUNT(*) as count FROM MemberPreference WHERE memberId = ?',
+    [internalId]
+  );
+  const memberPreferences = (memberPreferencesResult[0]?.count ?? 0) > 0;
+
+  // Count all transaction lines (these will be orphaned, not deleted)
+  const transactionLines = query<{ count: number }>(
+    `SELECT COUNT(*) as count
+     FROM TransactionLine tl
+     JOIN FinancialTransaction ft ON tl.transactionId = ft.id
+     WHERE tl.memberId = ? AND ft.isDeleted = 0`,
+    [internalId]
+  )[0]?.count ?? 0;
+
+  return {
+    canDelete: true,
+    counts: {
+      checkIns,
+      practiceSessions,
+      scanEvents,
+      equipmentCheckouts,
+      pendingFeePayments,
+      skvRegistrations,
+      skvWeapons,
+      trainerInfo,
+      trainerDisciplines,
+      memberPreferences,
+      transactionLines
+    }
+  };
+}
+
+/**
+ * Permanently delete a member and all related records.
+ * This operation cannot be undone.
+ *
+ * Requirements:
+ * - Member must be INACTIVE
+ * - Member must not have transactions in the current year
+ *
+ * Deletion order (respecting FK constraints):
+ * 1. Set TransactionLine.memberId = NULL (orphan transactions)
+ * 2. Delete PendingFeePayment
+ * 3. Delete SKVWeapon (via SKVRegistration)
+ * 4. Delete SKVRegistration
+ * 5. Delete TrainerDiscipline
+ * 6. Delete TrainerInfo
+ * 7. Delete MemberPreference
+ * 8. Delete EquipmentCheckout
+ * 9. Delete ScanEvent
+ * 10. Delete PracticeSession
+ * 11. Delete CheckIn
+ * 12. Delete photo files
+ * 13. Delete Member
+ *
+ * @param internalId The member's internalId
+ * @returns Result with success status and deletion counts
+ */
+export async function deleteMemberPermanently(internalId: string): Promise<MemberDeleteResult> {
+  const preview = getMemberDeletePreview(internalId);
+
+  if (!preview.canDelete) {
+    return {
+      success: false,
+      deletedCounts: preview.counts,
+      error: preview.blockingReason
+    };
+  }
+
+  const member = getMemberByInternalId(internalId);
+  if (!member) {
+    return {
+      success: false,
+      deletedCounts: preview.counts,
+      error: 'Medlem ikke fundet'
+    };
+  }
+
+  try {
+    // Perform all database deletions in a transaction
+    transaction(() => {
+      // 1. Orphan transaction lines (set memberId to NULL)
+      execute(
+        'UPDATE TransactionLine SET memberId = NULL WHERE memberId = ?',
+        [internalId]
+      );
+
+      // 2. Delete pending fee payments
+      execute(
+        'DELETE FROM PendingFeePayment WHERE memberId = ?',
+        [internalId]
+      );
+
+      // 3. Delete SKV weapons (need to get registration IDs first)
+      execute(
+        `DELETE FROM SKVWeapon
+         WHERE registrationId IN (SELECT id FROM SKVRegistration WHERE memberId = ?)`,
+        [internalId]
+      );
+
+      // 4. Delete SKV registrations
+      execute(
+        'DELETE FROM SKVRegistration WHERE memberId = ?',
+        [internalId]
+      );
+
+      // 5. Delete trainer disciplines
+      execute(
+        'DELETE FROM TrainerDiscipline WHERE memberId = ?',
+        [internalId]
+      );
+
+      // 6. Delete trainer info
+      execute(
+        'DELETE FROM TrainerInfo WHERE memberId = ?',
+        [internalId]
+      );
+
+      // 7. Delete member preferences
+      execute(
+        'DELETE FROM MemberPreference WHERE memberId = ?',
+        [internalId]
+      );
+
+      // 8. Delete equipment checkouts
+      execute(
+        'DELETE FROM EquipmentCheckout WHERE internalMemberId = ?',
+        [internalId]
+      );
+
+      // 9. Delete scan events
+      execute(
+        'DELETE FROM ScanEvent WHERE internalMemberId = ?',
+        [internalId]
+      );
+
+      // 10. Delete practice sessions
+      execute(
+        'DELETE FROM PracticeSession WHERE internalMemberId = ?',
+        [internalId]
+      );
+
+      // 11. Delete check-ins
+      execute(
+        'DELETE FROM CheckIn WHERE internalMemberId = ?',
+        [internalId]
+      );
+
+      // 12. Delete member record
+      execute(
+        'DELETE FROM Member WHERE internalId = ?',
+        [internalId]
+      );
+    });
+
+    // 13. Delete photo files from disk (outside transaction)
+    try {
+      await deletePhotoFile(internalId);
+    } catch (photoError) {
+      // Log but don't fail - DB deletion was successful
+      console.warn('[MemberRepository] Failed to delete photo file:', photoError);
+    }
+
+    return {
+      success: true,
+      deletedCounts: preview.counts
+    };
+  } catch (error) {
+    return {
+      success: false,
+      deletedCounts: preview.counts,
+      error: error instanceof Error ? error.message : 'Ukendt fejl ved sletning'
+    };
+  }
+}
