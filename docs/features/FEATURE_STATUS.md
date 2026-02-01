@@ -1,7 +1,7 @@
 # Feature Status Overview
 
 **Project:** Medlemscheckin (Club Member Check-in System)
-**Last Updated:** January 27, 2026
+**Last Updated:** February 1, 2026
 **Updated By:** Claude
 
 ---
@@ -62,6 +62,7 @@
 | **Financial Transactions** | ✅ Complete | 2026-01-20 | [tasks.md](financial-transactions/tasks.md) |
 | **Tablet UX Improvements** | ✅ Complete | 2026-01-20 | [tasks.md](tablet-ux-improvements/tasks.md) |
 | **Member Preference Sync** | ✅ Complete | 2026-01-21 | [tasks.md](member-preference-sync/tasks.md) |
+| **Member Deletion** | ✅ Complete | 2026-02-01 | [design.md](member-deletion/design.md) |
 
 ## Completed Feature Details
 
@@ -189,6 +190,28 @@
 - Android: Database version 12 with migration
 - Laptop: `MemberPreference` table in SQLite schema
 - Sync: `memberPreferences` field in `SyncEntities`
+
+### 8. Member Deletion
+
+**Summary:** Permanent deletion of inactive members with cascade delete, transaction protection, and cloud sync.
+
+**Key Capabilities:**
+
+- Delete button only visible for INACTIVE members
+- Confirmation dialog showing all data that will be deleted
+- Cascade delete of related records (check-ins, sessions, SKV registrations, etc.)
+- Transaction protection: cannot delete members with current year transactions
+- Transaction preservation: TransactionLine.memberId set to NULL (orphaned, not deleted)
+- Cloud sync with outbox-based retry mechanism
+- Exponential backoff for failed sync attempts (up to 10 retries)
+
+**Implementation:**
+
+- `getMemberDeletePreview()` - returns counts and deletion eligibility
+- `deleteMemberPermanently()` - performs cascade delete and queues cloud sync
+- `DeleteMemberDialog` component in MembersPage
+- `processPendingMemberDeletions()` in onlineSyncService for outbox processing
+- `queueMemberDeletion()` in syncOutboxRepository for reliable delivery
 
 ---
 
