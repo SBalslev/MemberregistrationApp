@@ -92,6 +92,12 @@ import type {
   PendingFeePayment,
 } from '../types/finance';
 import type { SqlValue } from 'sql.js';
+import {
+  getPendingEntries,
+  markCompleted,
+  recordFailedAttempt,
+  type MemberDeletionPayload,
+} from './syncOutboxRepository';
 
 // Helper to convert undefined to null for SQL parameters
 function toSqlValue(value: unknown): SqlValue {
@@ -1186,7 +1192,128 @@ class OnlineSyncService {
       }
     }
 
+    // Process pending member deletions from outbox
+    await this.processPendingMemberDeletions(onProgress);
+
     return { pushed, conflicts };
+  }
+
+  /**
+   * Process pending member deletions from the sync outbox.
+   */
+  private async processPendingMemberDeletions(
+    onProgress?: OnlineSyncProgressCallback
+  ): Promise<void> {
+    const deviceId = await this.getDeviceId();
+    if (!deviceId) return;
+
+    // Get all pending DELETE operations for Member entity type
+    const pendingEntries = getPendingEntries().filter(
+      entry => entry.entityType === 'Member' && entry.operation === 'DELETE'
+    );
+
+    if (pendingEntries.length === 0) return;
+
+    console.log(`[OnlineSyncService] Processing ${pendingEntries.length} pending member deletions`);
+
+    for (const entry of pendingEntries) {
+      if (this.abortController?.signal.aborted) {
+        throw new Error('Sync cancelled');
+      }
+
+      try {
+        const payload: MemberDeletionPayload = JSON.parse(entry.payload);
+
+        onProgress?.({
+          phase: 'deletes',
+          message: `Sletter medlem ${payload.internalId}...`,
+          current: 0,
+          total: 1,
+        });
+
+        // Build the sync push payload
+        const syncPayload: SyncPushPayload = {
+          deviceId,
+          batchId: crypto.randomUUID(),
+          schemaVersion: SYNC_SCHEMA_VERSION,
+          entities: {
+            members: [{
+              internal_id: payload.internalId,
+              _action: 'delete',
+            } as OnlineMember],
+          },
+        };
+
+        // Add related entity deletions
+        if (payload.checkInIds?.length) {
+          syncPayload.entities.checkIns = payload.checkInIds.map(id => ({
+            id,
+            _action: 'delete',
+          } as OnlineCheckIn));
+        }
+
+        if (payload.practiceSessionIds?.length) {
+          syncPayload.entities.practiceSessions = payload.practiceSessionIds.map(id => ({
+            id,
+            _action: 'delete',
+          } as OnlinePracticeSession));
+        }
+
+        if (payload.scanEventIds?.length) {
+          syncPayload.entities.scanEvents = payload.scanEventIds.map(id => ({
+            id,
+            _action: 'delete',
+          } as OnlineScanEvent));
+        }
+
+        if (payload.equipmentCheckoutIds?.length) {
+          syncPayload.entities.equipmentCheckouts = payload.equipmentCheckoutIds.map(id => ({
+            id,
+            _action: 'delete',
+          } as OnlineEquipmentCheckout));
+        }
+
+        if (payload.pendingFeePaymentIds?.length) {
+          syncPayload.entities.pendingFeePayments = payload.pendingFeePaymentIds.map(id => ({
+            id,
+            _action: 'delete',
+          } as OnlinePendingFeePayment));
+        }
+
+        if (payload.skvRegistrationIds?.length) {
+          syncPayload.entities.skvRegistrations = payload.skvRegistrationIds.map(id => ({
+            id,
+            _action: 'delete',
+          } as OnlineSkvRegistration));
+        }
+
+        if (payload.skvWeaponIds?.length) {
+          syncPayload.entities.skvWeapons = payload.skvWeaponIds.map(id => ({
+            id,
+            _action: 'delete',
+          } as OnlineSkvWeapon));
+        }
+
+        if (payload.trainerDisciplineIds?.length) {
+          syncPayload.entities.trainerDisciplines = payload.trainerDisciplineIds.map(id => ({
+            id,
+            _action: 'delete',
+          } as OnlineTrainerDiscipline));
+        }
+
+        // Push the deletion
+        await onlineApiService.push(syncPayload);
+
+        // Mark outbox entry as completed
+        markCompleted(entry.id);
+        console.log(`[OnlineSyncService] Successfully deleted member ${payload.internalId} from online database`);
+      } catch (error) {
+        // Record the failure for retry
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        recordFailedAttempt(entry.id, deviceId, errorMessage);
+        console.error(`[OnlineSyncService] Failed to delete member from outbox entry ${entry.id}:`, error);
+      }
+    }
   }
 
   /**
@@ -1419,7 +1546,15 @@ class OnlineSyncService {
 
       if (deletedEntities['members']) {
         for (const id of deletedEntities['members']) {
-          this.addPendingDelete('member', id);
+          // Only add to pending deletes if the member still exists locally
+          // (avoids asking for confirmation on deletions we initiated)
+          const memberExists = query<{ count: number }>(
+            'SELECT COUNT(*) as count FROM Member WHERE internalId = ?',
+            [id]
+          )[0]?.count > 0;
+          if (memberExists) {
+            this.addPendingDelete('member', id);
+          }
         }
       }
       if (deletedEntities['check_ins']) {
@@ -2945,7 +3080,7 @@ class OnlineSyncService {
 
       const payload: SyncPushPayload = {
         deviceId,
-        batchId: `update-payment-${paymentId}-${Date.now()}`,
+        batchId: crypto.randomUUID(),
         schemaVersion: SYNC_SCHEMA_VERSION,
         entities: {
           pendingFeePayments: [pendingFeePaymentToOnline(payments[0])],
@@ -2974,7 +3109,7 @@ class OnlineSyncService {
 
       const payload: SyncPushPayload = {
         deviceId,
-        batchId: `delete-${paymentId}-${Date.now()}`,
+        batchId: crypto.randomUUID(),
         schemaVersion: SYNC_SCHEMA_VERSION,
         entities: {
           pendingFeePayments: [{
@@ -3023,7 +3158,7 @@ class OnlineSyncService {
       // Build payload with member deletion and all related entity deletions
       const payload: SyncPushPayload = {
         deviceId,
-        batchId: `delete-member-${internalId}-${Date.now()}`,
+        batchId: crypto.randomUUID(),
         schemaVersion: SYNC_SCHEMA_VERSION,
         entities: {
           // Delete the member

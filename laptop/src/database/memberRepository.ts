@@ -5,7 +5,7 @@
 import { query, execute, transaction } from './db';
 import type { Member, MemberStatus, MemberListItem } from '../types';
 import { deletePhotoFile } from '../utils/photoStorage';
-import { queueMember } from './syncOutboxRepository';
+import { queueMember, queueMemberDeletion } from './syncOutboxRepository';
 
 /**
  * Get all members.
@@ -791,7 +791,7 @@ export function getMemberDeletePreview(internalId: string): MemberDeletePreview 
   // Count SKV weapons across all registrations for this member
   const skvWeapons = query<{ count: number }>(
     `SELECT COUNT(*) as count FROM SKVWeapon
-     WHERE registrationId IN (SELECT id FROM SKVRegistration WHERE memberId = ?)`,
+     WHERE skvRegistrationId IN (SELECT id FROM SKVRegistration WHERE memberId = ?)`,
     [internalId]
   )[0]?.count ?? 0;
 
@@ -885,6 +885,47 @@ export async function deleteMemberPermanently(internalId: string): Promise<Membe
     };
   }
 
+  // Collect related entity IDs BEFORE deletion (for cloud sync)
+  const checkInIds = query<{ id: string }>(
+    'SELECT id FROM CheckIn WHERE internalMemberId = ?',
+    [internalId]
+  ).map(r => r.id);
+
+  const practiceSessionIds = query<{ id: string }>(
+    'SELECT id FROM PracticeSession WHERE internalMemberId = ?',
+    [internalId]
+  ).map(r => r.id);
+
+  const scanEventIds = query<{ id: string }>(
+    'SELECT id FROM ScanEvent WHERE internalMemberId = ?',
+    [internalId]
+  ).map(r => r.id);
+
+  const equipmentCheckoutIds = query<{ id: string }>(
+    'SELECT id FROM EquipmentCheckout WHERE internalMemberId = ?',
+    [internalId]
+  ).map(r => r.id);
+
+  const pendingFeePaymentIds = query<{ id: string }>(
+    'SELECT id FROM PendingFeePayment WHERE memberId = ?',
+    [internalId]
+  ).map(r => r.id);
+
+  const skvRegistrationIds = query<{ id: string }>(
+    'SELECT id FROM SKVRegistration WHERE memberId = ?',
+    [internalId]
+  ).map(r => r.id);
+
+  const skvWeaponIds = query<{ id: string }>(
+    `SELECT id FROM SKVWeapon WHERE skvRegistrationId IN (SELECT id FROM SKVRegistration WHERE memberId = ?)`,
+    [internalId]
+  ).map(r => r.id);
+
+  const trainerDisciplineIds = query<{ id: string }>(
+    'SELECT id FROM TrainerDiscipline WHERE memberId = ?',
+    [internalId]
+  ).map(r => r.id);
+
   try {
     // Perform all database deletions in a transaction
     transaction(() => {
@@ -903,7 +944,7 @@ export async function deleteMemberPermanently(internalId: string): Promise<Membe
       // 3. Delete SKV weapons (need to get registration IDs first)
       execute(
         `DELETE FROM SKVWeapon
-         WHERE registrationId IN (SELECT id FROM SKVRegistration WHERE memberId = ?)`,
+         WHERE skvRegistrationId IN (SELECT id FROM SKVRegistration WHERE memberId = ?)`,
         [internalId]
       );
 
@@ -969,6 +1010,20 @@ export async function deleteMemberPermanently(internalId: string): Promise<Membe
       // Log but don't fail - DB deletion was successful
       console.warn('[MemberRepository] Failed to delete photo file:', photoError);
     }
+
+    // 14. Queue deletion for cloud sync (with retry support)
+    queueMemberDeletion({
+      internalId,
+      checkInIds: checkInIds.length > 0 ? checkInIds : undefined,
+      practiceSessionIds: practiceSessionIds.length > 0 ? practiceSessionIds : undefined,
+      scanEventIds: scanEventIds.length > 0 ? scanEventIds : undefined,
+      equipmentCheckoutIds: equipmentCheckoutIds.length > 0 ? equipmentCheckoutIds : undefined,
+      pendingFeePaymentIds: pendingFeePaymentIds.length > 0 ? pendingFeePaymentIds : undefined,
+      skvRegistrationIds: skvRegistrationIds.length > 0 ? skvRegistrationIds : undefined,
+      skvWeaponIds: skvWeaponIds.length > 0 ? skvWeaponIds : undefined,
+      trainerDisciplineIds: trainerDisciplineIds.length > 0 ? trainerDisciplineIds : undefined,
+    });
+    console.log(`[MemberRepository] Member deletion queued for sync: ${internalId}`);
 
     return {
       success: true,

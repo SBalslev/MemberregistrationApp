@@ -5,7 +5,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, getDefaultSkvRegistration, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, getMemberDeletePreview, deleteMemberPermanently, type ActivityType } from '../database';
-import { onlineSyncService } from '../database/onlineSyncService';
 import type { Member, Gender } from '../types';
 import { getIdPhotoStatus } from '../types/entities';
 import { onMembershipIdAssigned } from '../services/idPhotoLifecycleService';
@@ -1055,11 +1054,7 @@ function DeleteMemberDialog({ member, onClose, onDeleted }: DeleteMemberDialogPr
       const result = await deleteMemberPermanently(member.internalId);
 
       if (result.success) {
-        // Sync deletion to cloud (fire-and-forget)
-        onlineSyncService.pushMemberDeletion(member.internalId).catch(err => {
-          console.warn('[DeleteMemberDialog] Cloud sync failed:', err);
-        });
-
+        // Deletion is automatically queued for cloud sync with retry support
         showSuccess(`${member.firstName} ${member.lastName} er blevet slettet`);
         onDeleted();
       } else {

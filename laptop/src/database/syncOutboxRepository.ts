@@ -141,6 +141,29 @@ export function queueEquipmentCheckout(checkout: object, operation: 'INSERT' | '
   return queueForSync('EquipmentCheckout', id, operation, checkout);
 }
 
+/**
+ * Payload for member deletion sync.
+ */
+export interface MemberDeletionPayload {
+  internalId: string;
+  checkInIds?: string[];
+  practiceSessionIds?: string[];
+  scanEventIds?: string[];
+  equipmentCheckoutIds?: string[];
+  pendingFeePaymentIds?: string[];
+  skvRegistrationIds?: string[];
+  skvWeaponIds?: string[];
+  trainerDisciplineIds?: string[];
+}
+
+/**
+ * Queues a member deletion for sync.
+ * Includes all related entity IDs so they can be deleted from cloud.
+ */
+export function queueMemberDeletion(payload: MemberDeletionPayload): string {
+  return queueForSync('Member', payload.internalId, 'DELETE', payload);
+}
+
 // ===== Retrieval Operations =====
 
 /**
@@ -360,6 +383,7 @@ export function cleanup(retentionHours: number = 24): { entriesDeleted: number; 
 export function collectEntitiesForDevice(deviceId: string): {
   outboxIds: string[];
   members: object[];
+  memberDeletions: MemberDeletionPayload[];
   checkIns: object[];
   practiceSessions: object[];
   equipmentCheckouts: object[];
@@ -369,6 +393,7 @@ export function collectEntitiesForDevice(deviceId: string): {
   const result = {
     outboxIds: [] as string[],
     members: [] as object[],
+    memberDeletions: [] as MemberDeletionPayload[],
     checkIns: [] as object[],
     practiceSessions: [] as object[],
     equipmentCheckouts: [] as object[],
@@ -382,7 +407,9 @@ export function collectEntitiesForDevice(deviceId: string): {
 
       switch (entry.entityType) {
         case 'Member':
-          if (isSyncableMember(entity)) {
+          if (entry.operation === 'DELETE') {
+            result.memberDeletions.push(entity as MemberDeletionPayload);
+          } else if (isSyncableMember(entity)) {
             result.members.push(entity);
           } else {
             result.members.push(toSyncableMember(entity as Member));

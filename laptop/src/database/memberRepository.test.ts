@@ -36,7 +36,7 @@ const mockData: {
   equipmentCheckouts: Array<{ id: string; internalMemberId: string }>;
   pendingFeePayments: Array<{ id: string; memberId: string }>;
   skvRegistrations: Array<{ id: string; memberId: string }>;
-  skvWeapons: Array<{ id: string; registrationId: string }>;
+  skvWeapons: Array<{ id: string; skvRegistrationId: string }>;
   trainerInfos: Array<{ memberId: string }>;
   trainerDisciplines: Array<{ id: string; memberId: string }>;
   memberPreferences: Array<{ memberId: string }>;
@@ -58,6 +58,7 @@ const mockData: {
 
 vi.mock('./syncOutboxRepository', () => ({
   queueMember: vi.fn(),
+  queueMemberDeletion: vi.fn(),
 }));
 
 vi.mock('./db', () => ({
@@ -125,6 +126,11 @@ vi.mock('./db', () => ({
       const count = mockData.checkIns.filter((c) => c.internalMemberId === id).length;
       return [{ count }] as T[];
     }
+    // CheckIn SELECT id query (for deletion)
+    if (sql.includes('SELECT id FROM CheckIn') && sql.includes('internalMemberId =')) {
+      const id = params?.[0];
+      return mockData.checkIns.filter((c) => c.internalMemberId === id).map(c => ({ id: c.id })) as T[];
+    }
     if (sql.includes('FROM CheckIn') && sql.includes('internalMemberId =')) {
       const id = params?.[0];
       return mockData.checkIns.filter((c) => c.internalMemberId === id) as T[];
@@ -135,11 +141,21 @@ vi.mock('./db', () => ({
       const count = mockData.practiceSessions.filter((s) => s.internalMemberId === id).length;
       return [{ count }] as T[];
     }
+    // PracticeSession SELECT id query (for deletion)
+    if (sql.includes('SELECT id FROM PracticeSession') && sql.includes('internalMemberId =')) {
+      const id = params?.[0];
+      return mockData.practiceSessions.filter((s) => s.internalMemberId === id).map(s => ({ id: s.id })) as T[];
+    }
     // ScanEvent queries
     if (sql.includes('FROM ScanEvent') && sql.includes('COUNT(*)')) {
       const id = params?.[0];
       const count = mockData.scanEvents.filter((s) => s.internalMemberId === id).length;
       return [{ count }] as T[];
+    }
+    // ScanEvent SELECT id query (for deletion)
+    if (sql.includes('SELECT id FROM ScanEvent') && sql.includes('internalMemberId =')) {
+      const id = params?.[0];
+      return mockData.scanEvents.filter((s) => s.internalMemberId === id).map(s => ({ id: s.id })) as T[];
     }
     // EquipmentCheckout queries
     if (sql.includes('FROM EquipmentCheckout') && sql.includes('COUNT(*)')) {
@@ -147,25 +163,46 @@ vi.mock('./db', () => ({
       const count = mockData.equipmentCheckouts.filter((e) => e.internalMemberId === id).length;
       return [{ count }] as T[];
     }
+    // EquipmentCheckout SELECT id query (for deletion)
+    if (sql.includes('SELECT id FROM EquipmentCheckout') && sql.includes('internalMemberId =')) {
+      const id = params?.[0];
+      return mockData.equipmentCheckouts.filter((e) => e.internalMemberId === id).map(e => ({ id: e.id })) as T[];
+    }
     // PendingFeePayment queries
     if (sql.includes('FROM PendingFeePayment') && sql.includes('COUNT(*)')) {
       const id = params?.[0];
       const count = mockData.pendingFeePayments.filter((p) => p.memberId === id).length;
       return [{ count }] as T[];
     }
+    // PendingFeePayment SELECT id query (for deletion)
+    if (sql.includes('SELECT id FROM PendingFeePayment') && sql.includes('memberId =')) {
+      const id = params?.[0];
+      return mockData.pendingFeePayments.filter((p) => p.memberId === id).map(p => ({ id: p.id })) as T[];
+    }
     // SKVWeapon queries (counts weapons via registrations) - must come before SKVRegistration check
     // because the SKVWeapon query contains "FROM SKVRegistration" in subquery
     if (sql.includes('FROM SKVWeapon') && sql.includes('COUNT(*)')) {
       const memberId = params?.[0];
       const registrationIds = mockData.skvRegistrations.filter((r) => r.memberId === memberId).map((r) => r.id);
-      const count = mockData.skvWeapons.filter((w) => registrationIds.includes(w.registrationId)).length;
+      const count = mockData.skvWeapons.filter((w) => registrationIds.includes(w.skvRegistrationId)).length;
       return [{ count }] as T[];
+    }
+    // SKVWeapon SELECT id query (for deletion)
+    if (sql.includes('SELECT id FROM SKVWeapon') && sql.includes('skvRegistrationId IN')) {
+      const memberId = params?.[0];
+      const registrationIds = mockData.skvRegistrations.filter((r) => r.memberId === memberId).map((r) => r.id);
+      return mockData.skvWeapons.filter((w) => registrationIds.includes(w.skvRegistrationId)).map(w => ({ id: w.id })) as T[];
     }
     // SKVRegistration queries
     if (sql.includes('FROM SKVRegistration') && sql.includes('COUNT(*)')) {
       const id = params?.[0];
       const count = mockData.skvRegistrations.filter((r) => r.memberId === id).length;
       return [{ count }] as T[];
+    }
+    // SKVRegistration SELECT id query (for deletion)
+    if (sql.includes('SELECT id FROM SKVRegistration') && sql.includes('memberId =')) {
+      const id = params?.[0];
+      return mockData.skvRegistrations.filter((r) => r.memberId === id).map(r => ({ id: r.id })) as T[];
     }
     // TrainerInfo queries
     if (sql.includes('FROM TrainerInfo') && sql.includes('COUNT(*)')) {
@@ -178,6 +215,11 @@ vi.mock('./db', () => ({
       const id = params?.[0];
       const count = mockData.trainerDisciplines.filter((d) => d.memberId === id).length;
       return [{ count }] as T[];
+    }
+    // TrainerDiscipline SELECT id query (for deletion)
+    if (sql.includes('SELECT id FROM TrainerDiscipline') && sql.includes('memberId =')) {
+      const id = params?.[0];
+      return mockData.trainerDisciplines.filter((d) => d.memberId === id).map(d => ({ id: d.id })) as T[];
     }
     // MemberPreference queries
     if (sql.includes('FROM MemberPreference') && sql.includes('COUNT(*)')) {
@@ -871,8 +913,8 @@ describe('Permanent Member Deletion', () => {
         { id: 'skv-1', memberId: 'uuid-inactive' },
       ];
       mockData.skvWeapons = [
-        { id: 'sw-1', registrationId: 'skv-1' },
-        { id: 'sw-2', registrationId: 'skv-1' },
+        { id: 'sw-1', skvRegistrationId: 'skv-1' },
+        { id: 'sw-2', skvRegistrationId: 'skv-1' },
       ];
       mockData.trainerInfos = [
         { memberId: 'uuid-inactive' },
@@ -953,7 +995,7 @@ describe('Permanent Member Deletion', () => {
         { id: 'skv-1', memberId: 'uuid-inactive' },
       ];
       mockData.skvWeapons = [
-        { id: 'sw-1', registrationId: 'skv-1' },
+        { id: 'sw-1', skvRegistrationId: 'skv-1' },
       ];
 
       const result = await deleteMemberPermanently('uuid-inactive');
@@ -978,6 +1020,30 @@ describe('Permanent Member Deletion', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('transaktioner i indeværende år');
+    });
+
+    it('should queue deletion for cloud sync with related entity IDs', async () => {
+      const { queueMemberDeletion } = await import('./syncOutboxRepository');
+
+      mockData.members = [
+        { internalId: 'uuid-inactive', membershipId: 'M001', memberType: 'FULL', memberLifecycleStage: 'FULL', firstName: 'Inactive', lastName: 'Member', email: null, phone: null, birthday: null, status: 'INACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+      ];
+      mockData.checkIns = [{ id: 'checkin-1', internalMemberId: 'uuid-inactive', localDate: '2026-01-15' }];
+      mockData.practiceSessions = [{ id: 'session-1', internalMemberId: 'uuid-inactive' }];
+      mockData.pendingFeePayments = [{ id: 'payment-1', memberId: 'uuid-inactive' }];
+      mockData.transactionLines = [];
+
+      const result = await deleteMemberPermanently('uuid-inactive');
+
+      expect(result.success).toBe(true);
+      expect(vi.mocked(queueMemberDeletion)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          internalId: 'uuid-inactive',
+          checkInIds: ['checkin-1'],
+          practiceSessionIds: ['session-1'],
+          pendingFeePaymentIds: ['payment-1'],
+        })
+      );
     });
   });
 });
