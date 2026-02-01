@@ -10,6 +10,8 @@ import { isElectron, getElectronAPI } from '../types/electron';
 import { exportDatabase, importDatabase, clearDatabase } from '../database';
 import { buildSkvExportWorkbook } from '../utils/skvExport';
 import { OnlineSyncSettings } from '../components/settings';
+import { ConfirmDialog } from '../components';
+import { showError } from '../store/toastStore';
 
 interface AppSettings {
   autoSync: boolean;
@@ -55,6 +57,8 @@ export function SettingsPage() {
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
   const [importStatus, setImportStatus] = useState<'idle' | 'importing' | 'success' | 'error'>('idle');
   const [skvExportStatus, setSkvExportStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
+  const [showClearDbConfirm, setShowClearDbConfirm] = useState(false);
+  const [showFinalClearConfirm, setShowFinalClearConfirm] = useState(false);
 
   useEffect(() => {
     // Load device info if running in Electron (async operation)
@@ -201,20 +205,19 @@ export function SettingsPage() {
     }
   }
 
-  async function handleClearDatabase() {
-    if (!confirm('Er du sikker på at du vil slette alle data? Dette kan ikke fortrydes.')) {
-      return;
-    }
-    if (!confirm('SIDSTE ADVARSEL: Alle medlemmer, check-ins og udstyr vil blive slettet permanent.')) {
-      return;
-    }
+  function handleClearDatabaseFirstConfirm() {
+    setShowClearDbConfirm(false);
+    setShowFinalClearConfirm(true);
+  }
 
+  async function handleClearDatabaseFinal() {
+    setShowFinalClearConfirm(false);
     try {
       await clearDatabase();
       window.location.reload();
     } catch (error) {
       console.error('Failed to clear database:', error);
-      alert('Kunne ikke slette databasen');
+      showError('Kunne ikke slette databasen');
     }
   }
 
@@ -456,7 +459,7 @@ export function SettingsPage() {
                 </div>
               </div>
               <button
-                onClick={handleClearDatabase}
+                onClick={() => setShowClearDbConfirm(true)}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 whitespace-nowrap"
               >
                 <Trash2 className="w-4 h-4" />
@@ -472,6 +475,30 @@ export function SettingsPage() {
           <p className="mt-1">© 2026 ISS Skydning</p>
         </section>
       </div>
+
+      {/* First Clear Database Confirmation */}
+      <ConfirmDialog
+        isOpen={showClearDbConfirm}
+        onClose={() => setShowClearDbConfirm(false)}
+        onConfirm={handleClearDatabaseFirstConfirm}
+        title="Slet alle data?"
+        message="Er du sikker på at du vil slette alle data? Dette kan ikke fortrydes."
+        confirmText="Fortsæt"
+        cancelText="Annuller"
+        variant="danger"
+      />
+
+      {/* Final Clear Database Confirmation */}
+      <ConfirmDialog
+        isOpen={showFinalClearConfirm}
+        onClose={() => setShowFinalClearConfirm(false)}
+        onConfirm={handleClearDatabaseFinal}
+        title="SIDSTE ADVARSEL"
+        message="Alle medlemmer, check-ins og udstyr vil blive slettet permanent. Denne handling kan IKKE fortrydes."
+        confirmText="Slet alt permanent"
+        cancelText="Annuller"
+        variant="danger"
+      />
     </div>
   );
 }

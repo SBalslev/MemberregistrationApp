@@ -17,7 +17,9 @@ import {
   ConflictsPage,
   SettingsPage,
   ImportPage,
-  TrainersPage
+  TrainersPage,
+  StatisticsPage,
+  MinIdraetSearchPage
 } from './pages';
 import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, getMemberPreferencesForSync, getTrainerDataForSync, runPhotoMigration, isMigrationNeeded, type SyncPayload } from './database';
 import { processAllEligibleIdPhotoDeletions } from './services/idPhotoLifecycleService';
@@ -301,6 +303,8 @@ function PageRouter({ currentPage }: { currentPage: string }) {
       return <DashboardPage />;
     case 'members':
       return <MembersPage />;
+    case 'statistics':
+      return <StatisticsPage />;
     case 'member-activity':
       return <MemberActivityOverviewPage />;
     // NOTE: 'registrations' page removed - approval workflow deprecated per FR-7.2
@@ -321,6 +325,8 @@ function PageRouter({ currentPage }: { currentPage: string }) {
       return <SettingsPage />;
     case 'import':
       return <ImportPage />;
+    case 'minidraet-search':
+      return <MinIdraetSearchPage />;
     default:
       return <DashboardPage />;
   }

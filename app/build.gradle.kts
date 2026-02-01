@@ -25,6 +25,8 @@ android {
     versionCode = (System.currentTimeMillis() / 1000L).toInt()
         versionName = "1.3.30"
 
+        buildConfigField("String", "MINIDRAET_API_BASE_URL", "\"https://iss-skydning.dk/api/v1\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         setProperty("archivesBaseName", "ISS-Skydning-Registrering-v${versionName}")

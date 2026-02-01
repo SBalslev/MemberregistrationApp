@@ -81,6 +81,10 @@ $routes = [
     'POST /photos' => 'handlers/photos.php:handlePhotoUpload',
     'GET /photos/{id}' => 'handlers/photos.php:handlePhotoDownload',
 
+    // MinIdraet search
+    'GET /minidraet/search' => 'handlers/minidraet_search.php:handleMinIdraetSearch',
+    'POST /minidraet/search' => 'handlers/minidraet_search.php:handleMinIdraetSearch',
+
     // Health check
     'GET /health' => 'handleHealthCheck',
     'GET /' => 'handleHealthCheck',
@@ -131,7 +135,12 @@ if (!$matchedRoute) {
 }
 
 // Check authentication for protected routes
-$publicRoutes = ['handleHealthCheck', 'handlers/auth.php:handleAuthToken', 'handlers/diagnostic.php:handleDiagnostic'];
+$publicRoutes = [
+    'handleHealthCheck',
+    'handlers/auth.php:handleAuthToken',
+    'handlers/diagnostic.php:handleDiagnostic',
+    'handlers/minidraet_search.php:handleMinIdraetSearch',
+];
 $isPublicRoute = in_array($matchedRoute, $publicRoutes, true);
 
 if (!$isPublicRoute) {

@@ -63,6 +63,7 @@
 | **Tablet UX Improvements** | ✅ Complete | 2026-01-20 | [tasks.md](tablet-ux-improvements/tasks.md) |
 | **Member Preference Sync** | ✅ Complete | 2026-01-21 | [tasks.md](member-preference-sync/tasks.md) |
 | **Member Deletion** | ✅ Complete | 2026-02-01 | [design.md](member-deletion/design.md) |
+| **UI/UX Improvements (Feb 2026)** | ✅ Complete | 2026-02-01 | See below |
 
 ## Completed Feature Details
 
@@ -212,6 +213,94 @@
 - `DeleteMemberDialog` component in MembersPage
 - `processPendingMemberDeletions()` in onlineSyncService for outbox processing
 - `queueMemberDeletion()` in syncOutboxRepository for reliable delivery
+
+### 9. UI/UX Improvements (February 2026)
+
+**Summary:** Various UI improvements to the laptop admin application for better usability.
+
+**Key Changes:**
+
+**Dashboard - Member Overview:**
+- Added member demographics section showing adult/child counts
+- Two age calculation modes: today's age and age as of January 1 (for sports season eligibility)
+- Gender breakdown (male, female, other, unspecified)
+- Counts only active full members (excludes trial and inactive)
+- Link to new Statistics page for detailed breakdown
+
+**Statistics Page (New):**
+- Dedicated statistics page accessible from sidebar and dashboard
+- Detailed age breakdown tables by gender (today and Jan 1)
+- Gender summary cards with percentages
+- Print-friendly layout with print button
+- Responsive two-column layout
+
+**Members Page:**
+- Default sorting: active members first, then alphabetically by first name, last name
+- Flexible 50/50 split layout (list and detail panel)
+- Member list constrained to reasonable width (min 320px, max 600px)
+- Detail panel takes remaining space and adapts to width
+- Responsive two-column layout in detail panel for larger screens
+- SKV details in three-column grid layout
+
+**Edit Member Modal:**
+- Wider modal (max-w-3xl instead of max-w-lg)
+- Two-column form layout on medium+ screens
+- Guardian fields in three-column layout
+- Better use of screen real estate
+
+**Finance Page - Transaction List:**
+- Transactions now sorted newest first (# descending)
+- Running balances still calculated correctly in chronological order
+- Better UX for viewing recent transactions without scrolling
+
+**Implementation:**
+- `DashboardPage.tsx` - Added member demographics calculation and display
+- `StatisticsPage.tsx` - New page with detailed statistics and print support
+- `MembersPage.tsx` - Updated sorting, layout, and EditMemberModal
+- `FinancePage.tsx` - Reversed transaction display order after balance calculation
+- `Sidebar.tsx` - Added Statistics navigation item
+- `App.tsx` - Added Statistics route
+- `pages/index.ts` - Exported StatisticsPage
+
+### 10. UX Review Fixes (February 2026)
+
+**Summary:** Comprehensive UX review and fixes addressing accessibility, consistency, and usability issues.
+
+**Critical Fixes:**
+
+- **Browser Dialogs Replaced:** All `alert()` and `confirm()` calls replaced with `ConfirmDialog` component and toast notifications
+  - `SettingsPage.tsx` - Database clear now uses two-step confirmation dialog
+  - `DevicesPage.tsx` - Device removal uses ConfirmDialog
+  - `MembersPage.tsx` - Weapon deletion uses ConfirmDialog
+  - `DisciplineEditor.tsx` - Error alerts replaced with showError() toast
+  - `ImportPage.tsx` - Validation alerts replaced with showWarning()/showError() toasts
+
+**Accessibility Improvements:**
+
+- **ARIA Attributes Added:**
+  - `Sidebar.tsx` - Navigation with `aria-label`, `aria-current` for active page, `aria-hidden` for decorative icons
+  - `MembersPage.tsx` - Search inputs with `role="search"`, `aria-label` for filters
+  - `StatisticsPage.tsx` - Tables with `aria-label`, headers with `scope="col"`
+
+- **Color Contrast Fixed:**
+  - Updated `text-gray-500` to `text-gray-600` for important information text
+  - Fixed in Sidebar (Master Laptop label), Dashboard (member counts), MembersPage (DetailRow labels)
+
+**Dashboard Fixes:**
+
+- **Equipment Count:** Now loads actual count of active equipment checkouts from EquipmentCheckout table
+- **Conflict Count:** Now loads actual count of pending sync conflicts from SyncConflict table
+- **Removed TODO placeholders** for equipment and conflicts stats
+
+**Files Modified:**
+- `DisciplineEditor.tsx` - showError() for discipline operations
+- `ImportPage.tsx` - showWarning()/showError() for CSV validation
+- `SettingsPage.tsx` - Two-step ConfirmDialog for database clear
+- `DevicesPage.tsx` - ConfirmDialog for device removal
+- `MembersPage.tsx` - ConfirmDialog for weapon deletion, accessibility labels
+- `Sidebar.tsx` - ARIA navigation attributes
+- `StatisticsPage.tsx` - Table accessibility attributes
+- `DashboardPage.tsx` - Live equipment and conflict counts
 
 ---
 

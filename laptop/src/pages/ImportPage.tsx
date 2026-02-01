@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { bulkInsertMembers, getMemberById } from '../database';
 import { getFeeCategoryFromBirthDate } from '../utils/feeCategory';
+import { showWarning, showError } from '../store/toastStore';
 import type { Member, MemberStatus, Gender } from '../types';
 
 // ===== Types =====
@@ -280,7 +281,7 @@ export function ImportPage() {
   // Handle file selection
   const handleFile = useCallback((file: File) => {
     if (!file.name.endsWith('.csv')) {
-      alert('Vælg venligst en CSV fil');
+      showWarning('Vælg venligst en CSV fil');
       return;
     }
 
@@ -288,9 +289,9 @@ export function ImportPage() {
     reader.onload = (e) => {
       const text = e.target?.result as string;
       const parsed = parseCsv(text);
-      
+
       if (parsed.rowCount === 0) {
-        alert('CSV filen er tom eller har et ugyldigt format');
+        showError('CSV filen er tom eller har et ugyldigt format');
         return;
       }
 

@@ -13,6 +13,7 @@ import type { MergeResult, MemberDeletePreview } from '../database/memberReposit
 import { useAppStore } from '../store';
 import { showSuccess, showError } from '../store/toastStore';
 import { getPhotoSrc } from '../utils/photoStorage';
+import { ConfirmDialog } from '../components';
 
 export function MembersPage() {
   const [members, setMembers] = useState<Member[]>(() => getAllMembers());
@@ -68,6 +69,19 @@ export function MembersPage() {
         }
       });
     }
+
+    // Sort: active first, then by first name, then last name
+    result = [...result].sort((a, b) => {
+      // Active members first
+      if (a.status !== b.status) {
+        return a.status === 'ACTIVE' ? -1 : 1;
+      }
+      // Then by first name
+      const firstNameCompare = (a.firstName || '').localeCompare(b.firstName || '', 'da');
+      if (firstNameCompare !== 0) return firstNameCompare;
+      // Then by last name
+      return (a.lastName || '').localeCompare(b.lastName || '', 'da');
+    });
 
     return result;
   }, [members, searchQuery, statusFilter, memberTypeFilter, idPhotoFilter]);
@@ -138,7 +152,7 @@ export function MembersPage() {
 
     <div className="flex h-full">
       {/* Member List */}
-      <div className="flex-1 flex flex-col border-r border-gray-200">
+      <div className="w-1/2 min-w-[320px] max-w-[600px] flex flex-col border-r border-gray-200">
         {/* Header */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
@@ -192,53 +206,61 @@ export function MembersPage() {
 
           {/* Search and Filter - only show in members view */}
           {viewMode === 'members' && (
-          <div className="flex gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <div className="space-y-3" role="search">
+            {/* Search bar - full width */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true" />
               <input
-                type="text"
+                type="search"
                 placeholder="Søg efter navn eller medlemsnummer..."
+                aria-label="Søg efter medlemmer"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               />
             </div>
-            <div className="relative">
-              <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <select
-                value={memberTypeFilter}
-                onChange={(e) => setMemberTypeFilter(e.target.value as 'all' | 'TRIAL' | 'FULL')}
-                className="pl-9 pr-8 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
-              >
-                <option value="all">Alle typer ({members.length})</option>
-                <option value="TRIAL">Prøvemedlemmer ({trialMemberCount})</option>
-                <option value="FULL">Fuldgyldige ({fullMemberCount})</option>
-              </select>
-            </div>
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as 'all' | 'ACTIVE' | 'INACTIVE')}
-                className="pl-9 pr-8 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
-              >
-                <option value="all">Alle status ({members.length})</option>
-                <option value="ACTIVE">Aktive ({statusCounts.active})</option>
-                <option value="INACTIVE">Inaktive ({statusCounts.inactive})</option>
-              </select>
-            </div>
-            <div className="relative">
-              <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <select
-                value={idPhotoFilter}
-                onChange={(e) => setIdPhotoFilter(e.target.value as 'all' | 'has_id' | 'needs_id' | 'not_required')}
-                className="pl-9 pr-8 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
-              >
-                <option value="all">Alle ID-status ({members.length})</option>
-                <option value="has_id">Har ID-billede ({idPhotoStatusCounts.has_id})</option>
-                <option value="needs_id">Mangler ID-billede ({idPhotoStatusCounts.needs_id})</option>
-                <option value="not_required">ID ikke påkrævet ({idPhotoStatusCounts.not_required})</option>
-              </select>
+            {/* Filter dropdowns - wrap on smaller widths */}
+            <div className="flex flex-wrap gap-2">
+              <div className="relative">
+                <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true" />
+                <select
+                  value={memberTypeFilter}
+                  onChange={(e) => setMemberTypeFilter(e.target.value as 'all' | 'TRIAL' | 'FULL')}
+                  aria-label="Filtrer efter medlemstype"
+                  className="pl-9 pr-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
+                >
+                  <option value="all">Alle typer ({members.length})</option>
+                  <option value="TRIAL">Prøve ({trialMemberCount})</option>
+                  <option value="FULL">Fuld ({fullMemberCount})</option>
+                </select>
+              </div>
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true" />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as 'all' | 'ACTIVE' | 'INACTIVE')}
+                  aria-label="Filtrer efter status"
+                  className="pl-9 pr-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
+                >
+                  <option value="all">Alle status ({members.length})</option>
+                  <option value="ACTIVE">Aktive ({statusCounts.active})</option>
+                  <option value="INACTIVE">Inaktive ({statusCounts.inactive})</option>
+                </select>
+              </div>
+              <div className="relative">
+                <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true" />
+                <select
+                  value={idPhotoFilter}
+                  onChange={(e) => setIdPhotoFilter(e.target.value as 'all' | 'has_id' | 'needs_id' | 'not_required')}
+                  aria-label="Filtrer efter ID-billede status"
+                  className="pl-9 pr-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
+                >
+                  <option value="all">Alle ID ({members.length})</option>
+                  <option value="has_id">Har ID ({idPhotoStatusCounts.has_id})</option>
+                  <option value="needs_id">Mangler ({idPhotoStatusCounts.needs_id})</option>
+                  <option value="not_required">Ikke krævet ({idPhotoStatusCounts.not_required})</option>
+                </select>
+              </div>
             </div>
           </div>
           )}
@@ -441,7 +463,7 @@ export function MembersPage() {
       </div>
 
       {/* Member Detail Panel */}
-      <div className="w-96 bg-gray-50 overflow-y-auto">
+      <div className="flex-1 min-w-[400px] bg-gray-50 overflow-y-auto">
         {selectedMember ? (
           <MemberDetailPanel member={selectedMember} onMemberUpdated={loadMembers} onEnlargePhoto={setEnlargedPhoto} onClose={() => setSelectedMember(null)} />
         ) : (
@@ -501,6 +523,7 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
   const [showSkvModal, setShowSkvModal] = useState(false);
   const [showWeaponModal, setShowWeaponModal] = useState(false);
   const [editingWeapon, setEditingWeapon] = useState<SkvWeapon | null>(null);
+  const [weaponToDelete, setWeaponToDelete] = useState<SkvWeapon | null>(null);
   const season = getSeasonDateRange();
   const [activityStartDate, setActivityStartDate] = useState(season.startDate);
   const [activityEndDate, setActivityEndDate] = useState(season.endDate);
@@ -642,8 +665,8 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
         </div>
       </div>
 
-      {/* Details */}
-      <div className="space-y-4">
+      {/* Details - responsive two-column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
         <DetailRow label="Fødselsdag" value={member.birthDate ? `${member.birthDate} (${calculateAge(member.birthDate)} år)` : '-'} />
         <DetailRow label="Køn" value={formatGender(member.gender)} />
         <DetailRow label="Email" value={member.email || '-'} />
@@ -658,7 +681,7 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
       {member.birthDate && calculateAge(member.birthDate) < 18 && (member.guardianName || member.guardianPhone || member.guardianEmail) && (
         <div className="mt-6 pt-4 border-t border-gray-200">
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Forælder/værge</h3>
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
             {member.guardianName && <DetailRow label="Navn" value={member.guardianName} />}
             {member.guardianPhone && <DetailRow label="Telefon" value={member.guardianPhone} />}
             {member.guardianEmail && <DetailRow label="Email" value={member.guardianEmail} />}
@@ -725,7 +748,7 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
             Rediger SKV
           </button>
         </div>
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-4">
           <DetailRow
             label="Status"
             value={formatSkvStatus(skvRegistration?.status ?? 'not_started')}
@@ -787,12 +810,7 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm('Vil du slette dette våben?')) {
-                              deleteSkvWeapon(weapon.id);
-                              refreshSkv();
-                            }
-                          }}
+                          onClick={() => setWeaponToDelete(weapon)}
                           className="p-1 text-gray-500 hover:text-red-600"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1005,6 +1023,24 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
           }}
         />
       )}
+
+      {/* Delete Weapon Confirmation */}
+      <ConfirmDialog
+        isOpen={!!weaponToDelete}
+        title="Slet våben"
+        message={`Vil du slette dette våben (${weaponToDelete?.type || ''} ${weaponToDelete?.caliber || ''})?`}
+        confirmText="Slet"
+        cancelText="Annuller"
+        variant="danger"
+        onConfirm={() => {
+          if (weaponToDelete) {
+            deleteSkvWeapon(weaponToDelete.id);
+            refreshSkv();
+          }
+          setWeaponToDelete(null);
+        }}
+        onClose={() => setWeaponToDelete(null)}
+      />
     </div>
   );
 }
@@ -1012,7 +1048,7 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-sm text-gray-500">{label}</dt>
+      <dt className="text-sm text-gray-600">{label}</dt>
       <dd className="text-gray-900 mt-0.5">{value}</dd>
     </div>
   );
@@ -2394,7 +2430,7 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white">
           <h2 className="text-xl font-bold text-gray-900">Rediger medlem</h2>
@@ -2407,9 +2443,9 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6">
           {/* Photo Upload */}
-          <div className="flex justify-center mb-4">
+          <div className="flex justify-center mb-6">
             <div className="relative">
               <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border-4 border-white shadow-lg">
                 {photoPath ? (
@@ -2443,156 +2479,177 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Fornavn <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                required
-              />
+          {/* Two-column layout for form fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            {/* Left column */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Fornavn <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Efternavn <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Telefon
+                </label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Fødselsdag
+                </label>
+                <input
+                  type="date"
+                  value={birthday}
+                  onChange={(e) => setBirthday(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Køn
+                </label>
+                <select
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value as Gender | '')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  <option value="">Vælg køn</option>
+                  <option value="MALE">Mand</option>
+                  <option value="FEMALE">Kvinde</option>
+                  <option value="OTHER">Andet</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Efternavn <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                required
-              />
+
+            {/* Right column */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Medlemsnummer
+                </label>
+                <input
+                  type="text"
+                  value={member.membershipId || ''}
+                  disabled
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                />
+                {member.memberLifecycleStage === 'TRIAL' && (
+                  <p className="mt-1 text-xs text-amber-600">Prøvemedlem - medlemsnummer ikke tildelt endnu</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  <option value="ACTIVE">Aktiv</option>
+                  <option value="INACTIVE">Inaktiv</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Kontingenttype
+                </label>
+                <select
+                  value={feeCategory}
+                  onChange={(e) => setFeeCategory(e.target.value as Member['memberType'])}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  <option value="ADULT">Voksen</option>
+                  <option value="CHILD" disabled={!isUnder18}>Barn</option>
+                  <option value="CHILD_PLUS" disabled={!isUnder18}>Barn+</option>
+                  <option value="HONORARY">Æresmedlem</option>
+                </select>
+                {!isUnder18 && feeCategory !== 'HONORARY' && (
+                  <p className="mt-1 text-xs text-gray-500">Kun børn under 18 kan være Barn eller Barn+</p>
+                )}
+                {feeCategory === 'HONORARY' && (
+                  <p className="mt-1 text-xs text-amber-600">Æresmedlemmer betaler ikke kontingent</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Adresse
+                </label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Postnummer
+                  </label>
+                  <input
+                    type="text"
+                    value={zipCode}
+                    onChange={(e) => setZipCode(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    By
+                  </label>
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Medlemsnummer
-            </label>
-            <input
-              type="text"
-              value={member.membershipId || ''}
-              disabled
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
-            />
-            {member.memberLifecycleStage === 'TRIAL' && (
-              <p className="mt-1 text-xs text-amber-600">Prøvemedlem - medlemsnummer ikke tildelt endnu</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Status
-            </label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            >
-              <option value="ACTIVE">Aktiv</option>
-              <option value="INACTIVE">Inaktiv</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Telefon
-            </label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Fødselsdag
-            </label>
-            <input
-              type="date"
-              value={birthday}
-              onChange={(e) => setBirthday(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Køn
-            </label>
-            <select
-              value={gender}
-              onChange={(e) => setGender(e.target.value as Gender | '')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            >
-              <option value="">Vælg køn</option>
-              <option value="MALE">Mand</option>
-              <option value="FEMALE">Kvinde</option>
-              <option value="OTHER">Andet</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Adresse
-            </label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Postnummer
-              </label>
-              <input
-                type="text"
-                value={zipCode}
-                onChange={(e) => setZipCode(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                By
-              </label>
-              <input
-                type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Guardian section for under-18 members */}
+          {/* Guardian section for under-18 members - full width */}
           {isUnder18 && (
-            <div className="border-t border-gray-200 pt-4 mt-4">
+            <div className="border-t border-gray-200 pt-4 mt-6">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Forælder/værge (medlem under 18)</h3>
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Navn på forælder/værge
@@ -2630,30 +2687,8 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Kontingenttype
-            </label>
-            <select
-              value={feeCategory}
-              onChange={(e) => setFeeCategory(e.target.value as Member['memberType'])}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            >
-              <option value="ADULT">Voksen</option>
-              <option value="CHILD" disabled={!isUnder18}>Barn</option>
-              <option value="CHILD_PLUS" disabled={!isUnder18}>Barn+</option>
-              <option value="HONORARY">Æresmedlem</option>
-            </select>
-            {!isUnder18 && feeCategory !== 'HONORARY' && (
-              <p className="mt-1 text-xs text-gray-500">Kun børn under 18 kan være Barn eller Barn+</p>
-            )}
-            {feeCategory === 'HONORARY' && (
-              <p className="mt-1 text-xs text-amber-600">Æresmedlemmer betaler ikke kontingent</p>
-            )}
-          </div>
-
           {/* Actions */}
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 pt-6 mt-6 border-t border-gray-200">
             <button
               type="button"
               onClick={onClose}

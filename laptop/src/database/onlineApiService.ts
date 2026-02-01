@@ -28,7 +28,7 @@ const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
 
 // Expected API version - update this when deploying new API versions
-const EXPECTED_API_VERSION = '1.5.0';
+const EXPECTED_API_VERSION = '1.6.0';
 
 // ===== Types =====
 
@@ -189,6 +189,28 @@ export interface EntityCounts {
   financial_transactions: number;
   transaction_lines: number;
   pending_fee_payments: number;
+}
+
+export type MinIdraetSearchType = 'forening' | 'spillested' | 'udover';
+
+export interface MinIdraetSearchRequest {
+  type: MinIdraetSearchType;
+  query: string;
+  maxRows?: number;
+}
+
+export interface MinIdraetSearchResult {
+  text: string;
+  url: string;
+  idraet?: string;
+}
+
+export interface MinIdraetSearchResponse {
+  query: string;
+  type: MinIdraetSearchType;
+  results: MinIdraetSearchResult[];
+  fetched_at: string;
+  base_url?: string;
 }
 
 export interface PhotoUploadResult {
@@ -1148,7 +1170,50 @@ class OnlineApiService {
     }
   }
 
+  // ===== MinIdraet Search =====
+
+  /**
+   * Search MinIdraet for foreninger, spillesteder, or udøvere.
+   */
+  async searchMinIdraet(request: MinIdraetSearchRequest): Promise<MinIdraetSearchResponse> {
+    const payload = {
+      type: request.type,
+      query: request.query,
+      max_rows: request.maxRows,
+    };
+
+    return this.publicRequest<MinIdraetSearchResponse>('POST', '/minidraet/search', payload);
+  }
+
   // ===== Internal Request Helper =====
+
+  private async publicRequest<T>(
+    method: string,
+    path: string,
+    body?: unknown
+  ): Promise<T> {
+    const url = `${API_BASE_URL}${path}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new OnlineApiError(
+        errorData.error || `Request failed: ${response.status}`,
+        response.status,
+        errorData.code
+      );
+    }
+
+    return await response.json() as T;
+  }
 
   private async request<T>(
     method: string,

@@ -54,3 +54,4 @@ members_import.csv
 # Ignore local import data folder but keep a placeholder
 imports/*
 !imports/.gitkeep
+nul

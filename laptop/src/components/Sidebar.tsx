@@ -18,6 +18,8 @@ import {
   Upload,
   GraduationCap,
   Activity,
+  BarChart3,
+  Search,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { PushConfirmationDialog } from './PushConfirmationDialog';
@@ -38,8 +40,10 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'members', label: 'Medlemmer', icon: Users },
+  { id: 'statistics', label: 'Statistik', icon: BarChart3 },
   { id: 'member-activity', label: 'Aktivitet', icon: Activity },
   { id: 'trainers', label: 'Trænere', icon: GraduationCap },
+  { id: 'minidraet-search', label: 'DGI søgning', icon: Search },
   { id: 'equipment', label: 'Udstyr', icon: Package },
   { id: 'finance', label: 'Økonomi', icon: Wallet },
   { id: 'devices', label: 'Enheder', icon: Laptop },
@@ -203,14 +207,14 @@ export function Sidebar() {
           </div>
           <div>
             <h1 className="font-semibold text-gray-900">Medlems Admin</h1>
-            <p className="text-xs text-gray-500">Master Laptop</p>
+            <p className="text-xs text-gray-600">Master Laptop</p>
           </div>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4">
-        <ul className="space-y-1 px-3">
+      <nav className="flex-1 overflow-y-auto py-4" aria-label="Hovednavigation">
+        <ul className="space-y-1 px-3" role="list">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
@@ -220,16 +224,17 @@ export function Sidebar() {
               <li key={item.id}>
                 <button
                   onClick={() => setCurrentPage(item.id)}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     isActive
                       ? 'bg-blue-50 text-blue-700'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} aria-hidden="true" />
                   <span className="flex-1 text-left">{item.label}</span>
                   {badgeCount > 0 && (
-                    <span className="bg-red-500 text-white text-xs font-medium px-2 py-0.5 rounded-full">
+                    <span className="bg-red-500 text-white text-xs font-medium px-2 py-0.5 rounded-full" aria-label={`${badgeCount} afventende`}>
                       {badgeCount}
                     </span>
                   )}
@@ -241,10 +246,11 @@ export function Sidebar() {
       </nav>
 
       {/* Sync Status */}
-      <div className="p-4 border-t border-gray-200">
+      <div className="p-4 border-t border-gray-200" role="status" aria-live="polite">
         <button
           disabled={isSyncing}
           onClick={handleSyncClick}
+          aria-label={isSyncing ? 'Synkroniserer data' : outboxFailed > 0 ? `${outboxFailed} synkroniseringer fejlet, klik for at prøve igen` : outboxPending > 0 ? `${outboxPending} ændringer afventer synkronisering` : 'Synkroniser data med enheder'}
           className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
             outboxFailed > 0
               ? 'bg-red-100 text-red-700 hover:bg-red-200'
@@ -253,7 +259,7 @@ export function Sidebar() {
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
           }`}
         >
-          <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} aria-hidden="true" />
           {isSyncing
             ? 'Synkroniserer...'
             : outboxFailed > 0

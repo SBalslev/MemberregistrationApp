@@ -52,6 +52,7 @@ fun TrainerDashboardScreen(
     onNavigateToEquipment: () -> Unit,
     onNavigateToCheckouts: () -> Unit,
     onNavigateToAdmin: () -> Unit,
+    onNavigateToMinIdraetSearch: () -> Unit = {},
     onNavigateToTrialMemberDetail: (String) -> Unit = {},
     viewModel: TrainerDashboardViewModel = hiltViewModel()
 ) {
@@ -212,6 +213,18 @@ fun TrainerDashboardScreen(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Admin")
+                    }
+                    FilledTonalButton(
+                        onClick = onNavigateToMinIdraetSearch,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("DGI søgning")
                     }
                 }
             }

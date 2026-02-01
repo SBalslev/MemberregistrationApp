@@ -3,7 +3,7 @@
  * Shows quick stats and recent activity.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Users,
   UserPlus,
@@ -12,9 +12,13 @@ import {
   CheckCircle,
   AlertTriangle,
   WifiOff,
+  Baby,
+  UserCheck,
 } from 'lucide-react';
-import { getMemberCountByStatus, getTrialMemberCount, getRecentTrialMembers, type TrialMemberWithActivity } from '../database';
+import { getMemberCountByStatus, getTrialMemberCount, getRecentTrialMembers, getAllMembers, query, type TrialMemberWithActivity } from '../database';
 import { useAppStore } from '../store';
+import { calculateAge } from '../utils/feeCategory';
+import type { Member } from '../types';
 
 interface Stats {
   activeMembers: number;
@@ -26,16 +30,110 @@ interface Stats {
   pendingConflicts: number;
 }
 
+interface MemberDemographics {
+  // Based on today's date
+  adultsToday: number;
+  childrenToday: number;
+  // Based on Jan 1 of current year
+  adultsJan1: number;
+  childrenJan1: number;
+  // Gender breakdown
+  male: number;
+  female: number;
+  other: number;
+  unspecified: number;
+  // Total
+  total: number;
+}
+
+function calculateMemberDemographics(members: Member[]): MemberDemographics {
+  const today = new Date();
+  const jan1 = new Date(today.getFullYear(), 0, 1);
+
+  // Only count active full members
+  const activeMembers = members.filter(m => m.status === 'ACTIVE' && m.memberLifecycleStage === 'FULL');
+
+  let adultsToday = 0;
+  let childrenToday = 0;
+  let adultsJan1 = 0;
+  let childrenJan1 = 0;
+  let male = 0;
+  let female = 0;
+  let other = 0;
+  let unspecified = 0;
+
+  for (const member of activeMembers) {
+    // Age calculations
+    if (member.birthDate) {
+      const ageToday = calculateAge(member.birthDate, today);
+      const ageJan1 = calculateAge(member.birthDate, jan1);
+
+      if (ageToday >= 18) adultsToday++;
+      else childrenToday++;
+
+      if (ageJan1 >= 18) adultsJan1++;
+      else childrenJan1++;
+    } else {
+      // No birthdate - count as adult
+      adultsToday++;
+      adultsJan1++;
+    }
+
+    // Gender
+    switch (member.gender) {
+      case 'MALE': male++; break;
+      case 'FEMALE': female++; break;
+      case 'OTHER': other++; break;
+      default: unspecified++; break;
+    }
+  }
+
+  return {
+    adultsToday,
+    childrenToday,
+    adultsJan1,
+    childrenJan1,
+    male,
+    female,
+    other,
+    unspecified,
+    total: activeMembers.length,
+  };
+}
+
 function getInitialStats(): Stats {
   const memberCounts = getMemberCountByStatus();
+
+  // Count active equipment checkouts (checked out but not checked in)
+  let equipmentOutCount = 0;
+  try {
+    const result = query<{ count: number }>(
+      'SELECT COUNT(*) as count FROM EquipmentCheckout WHERE checkedInAtUtc IS NULL'
+    );
+    equipmentOutCount = result[0]?.count ?? 0;
+  } catch {
+    // Table may not exist yet
+  }
+
+  // Count pending sync conflicts
+  let conflictCount = 0;
+  try {
+    const result = query<{ count: number }>(
+      'SELECT COUNT(*) as count FROM SyncConflict WHERE resolvedAtUtc IS NULL'
+    );
+    conflictCount = result[0]?.count ?? 0;
+  } catch {
+    // Table may not exist yet
+  }
+
   return {
     activeMembers: memberCounts.ACTIVE,
     inactiveMembers: memberCounts.INACTIVE,
     trialMemberCount: getTrialMemberCount(),
     recentTrialMembers: getRecentTrialMembers(),
-    equipmentOut: 0, // TODO: Load from equipment repo
-    onlineDevices: 0, // TODO: Load from device discovery
-    pendingConflicts: 0, // TODO: Load from conflicts
+    equipmentOut: equipmentOutCount,
+    onlineDevices: 0, // Set dynamically from pairedDevices in component
+    pendingConflicts: conflictCount,
   };
 }
 
@@ -46,6 +144,12 @@ export function DashboardPage() {
   const { setCurrentPage, pairedDevices } = useAppStore();
   const [stats] = useState<Stats>(getInitialStats);
   const [deviceSearchTimedOut, setDeviceSearchTimedOut] = useState(false);
+
+  // Calculate member demographics
+  const demographics = useMemo(() => {
+    const allMembers = getAllMembers();
+    return calculateMemberDemographics(allMembers);
+  }, []);
 
   // Track online devices from store
   const onlineDevices = pairedDevices.filter(d => d.isOnline);
@@ -100,6 +204,95 @@ export function DashboardPage() {
           value={onlineDevices.length}
           color="green"
         />
+      </div>
+
+      {/* Member Demographics */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Medlemsoversigt
+          </h2>
+          <span className="text-sm text-gray-600">
+            {demographics.total} aktive fuldgyldige medlemmer
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Age breakdown - Today */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-600 mb-3 flex items-center gap-2">
+              <UserCheck className="w-4 h-4" />
+              Alder i dag
+            </h3>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Voksne (18+)</span>
+                <span className="font-semibold text-gray-900">{demographics.adultsToday}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Børn (&lt;18)</span>
+                <span className="font-semibold text-gray-900">{demographics.childrenToday}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Age breakdown - Jan 1 */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-600 mb-3 flex items-center gap-2">
+              <Baby className="w-4 h-4" />
+              Alder pr. 1. januar {new Date().getFullYear()}
+            </h3>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Voksne (18+)</span>
+                <span className="font-semibold text-gray-900">{demographics.adultsJan1}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Børn (&lt;18)</span>
+                <span className="font-semibold text-gray-900">{demographics.childrenJan1}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Gender breakdown */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-600 mb-3 flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Køn
+            </h3>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Mænd</span>
+                <span className="font-semibold text-gray-900">{demographics.male}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Kvinder</span>
+                <span className="font-semibold text-gray-900">{demographics.female}</span>
+              </div>
+              {demographics.other > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Andet</span>
+                  <span className="font-semibold text-gray-900">{demographics.other}</span>
+                </div>
+              )}
+              {demographics.unspecified > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Ikke angivet</span>
+                  <span className="font-semibold text-gray-500">{demographics.unspecified}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <button
+            onClick={() => setCurrentPage('statistics')}
+            className="text-blue-600 hover:text-blue-700 font-medium text-sm"
+          >
+            Se detaljeret statistik →
+          </button>
+        </div>
       </div>
 
       {/* Quick Actions */}

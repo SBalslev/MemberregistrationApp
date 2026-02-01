@@ -9,14 +9,15 @@
 declare(strict_types=1);
 
 // API version - increment when making changes
-const API_VERSION = '1.5.0';
-const API_BUILD_DATE = '2026-01-28';
+const API_VERSION = '1.6.0';
+const API_BUILD_DATE = '2026-02-01';
 
 // Expected file versions - update these when releasing new versions
 const EXPECTED_FILE_VERSIONS = [
     'handlers/sync_push.php' => '1.5.0',
     'handlers/sync_pull.php' => '1.5.0',
     'handlers/auth.php' => '1.1.0',
+    'handlers/minidraet_search.php' => '1.0.0',
     'security.php' => '1.1.0',
 ];
 
@@ -54,6 +55,7 @@ function handleDiagnostic(): void {
         'handlers/sync_status.php',
         'handlers/photos.php',
         'handlers/schema.php',
+        'handlers/minidraet_search.php',
         'handlers/diagnostic.php',
     ];
 

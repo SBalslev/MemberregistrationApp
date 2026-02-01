@@ -8,6 +8,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Tablet, Laptop, Wifi, WifiOff, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, X, Shield, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from '../components';
+import { showError } from '../store/toastStore';
 import { isElectron, getElectronAPI } from '../types/electron';
 import { query, execute, saveTrustedDevice, getTrustedDevices, getMemberDataForFullSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
 import { getTrainerDataForSync } from '../database';
@@ -245,13 +247,10 @@ export function DevicesPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [deviceToRemove, setDeviceToRemove] = useState<DeviceInfo | null>(null);
 
-  // Remove/unpair a device
-  async function removeDevice(device: DeviceInfo) {
-    if (!confirm(`Er du sikker på at du vil fjerne "${device.name}"?\n\nEnheden skal parres igen for at kunne synkronisere.`)) {
-      return;
-    }
-
+  // Remove/unpair a device - called after user confirms
+  async function executeDeviceRemoval(device: DeviceInfo) {
     setIsRemoving(true);
     try {
       // Remove from database
@@ -270,9 +269,10 @@ export function DevicesPage() {
       console.log('[Devices] Removed device:', device.name);
     } catch (err) {
       console.error('[Devices] Failed to remove device:', err);
-      alert('Kunne ikke fjerne enheden. Prøv igen.');
+      showError('Kunne ikke fjerne enheden. Prøv igen.');
     } finally {
       setIsRemoving(false);
+      setDeviceToRemove(null);
     }
   }
 
@@ -723,7 +723,7 @@ export function DevicesPage() {
                       {/* Remove device button */}
                       <div className="pt-4 border-t border-gray-200">
                         <button
-                          onClick={() => removeDevice(selectedDevice)}
+                          onClick={() => setDeviceToRemove(selectedDevice)}
                           disabled={isRemoving}
                           className="w-full py-2 px-4 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                         >
@@ -804,6 +804,18 @@ export function DevicesPage() {
           </div>
         </div>
       )}
+
+      {/* Remove device confirmation dialog */}
+      <ConfirmDialog
+        isOpen={!!deviceToRemove}
+        title="Fjern enhed"
+        message={`Er du sikker på at du vil fjerne "${deviceToRemove?.name}"? Enheden skal parres igen for at kunne synkronisere.`}
+        confirmText="Fjern"
+        cancelText="Annuller"
+        variant="danger"
+        onConfirm={() => deviceToRemove && executeDeviceRemoval(deviceToRemove)}
+        onClose={() => setDeviceToRemove(null)}
+      />
     </div>
   );
 }

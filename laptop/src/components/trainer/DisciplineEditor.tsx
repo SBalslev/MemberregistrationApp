@@ -14,6 +14,7 @@ import {
   type PracticeType,
   type TrainerLevel,
 } from '../../database/trainerRepository';
+import { showError } from '../../store/toastStore';
 
 interface DisciplineEditorProps {
   memberId: string;
@@ -71,7 +72,7 @@ export function DisciplineEditor({
       onSave();
     } catch (error) {
       console.error('Failed to save discipline:', error);
-      alert('Kunne ikke gemme disciplin. Prøv igen.');
+      showError('Kunne ikke gemme disciplin. Prøv igen.');
     } finally {
       setIsSubmitting(false);
     }
@@ -85,7 +86,7 @@ export function DisciplineEditor({
       onDelete?.();
     } catch (error) {
       console.error('Failed to delete discipline:', error);
-      alert('Kunne ikke slette disciplin. Prøv igen.');
+      showError('Kunne ikke slette disciplin. Prøv igen.');
     } finally {
       setIsSubmitting(false);
       setShowDeleteConfirm(false);

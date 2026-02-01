@@ -190,16 +190,18 @@ export function FinancePage() {
   };
 
   // Calculate display rows with running balances
+  // Transactions are fetched in chronological order (date ASC, sequenceNumber ASC) for correct running balance calculation
+  // Then reversed to show newest transactions first
   const displayRows: TransactionDisplayRow[] = useMemo(() => {
     const fiscalYear = getFiscalYear(selectedYear);
     const openingCash = fiscalYear?.openingCashBalance ?? 0;
     const openingBank = fiscalYear?.openingBankBalance ?? 0;
 
-    // Use reduce to calculate running balances without mutation
+    // Calculate running balances in chronological order
     const result: TransactionDisplayRow[] = [];
     let runningCash = openingCash;
     let runningBank = openingBank;
-    
+
     for (const txn of transactions) {
       runningCash += (txn.cashIn ?? 0) - (txn.cashOut ?? 0);
       runningBank += (txn.bankIn ?? 0) - (txn.bankOut ?? 0);
@@ -209,8 +211,9 @@ export function FinancePage() {
         runningBankBalance: runningBank,
       });
     }
-    
-    return result;
+
+    // Reverse to show newest transactions first (# desc)
+    return result.reverse();
   }, [transactions, selectedYear]);
 
   // Apply filters to display rows

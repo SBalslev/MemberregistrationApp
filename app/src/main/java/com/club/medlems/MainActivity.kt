@@ -93,6 +93,9 @@ sealed class NavRoute(val route: String) {
     
     // Trainer tablet member lookup
     data object MemberLookup: NavRoute("trainer/members")
+
+    // MinIdraet search
+    data object MinIdraetSearch: NavRoute("minidraet/search")
     
     // Conflict resolution (Trainer Tablet)
     data object ConflictResolution: NavRoute("trainer/conflicts")
@@ -196,6 +199,7 @@ fun AppRoot(
                     openEquipmentList = { navController.navigate(NavRoute.EquipmentList.route) },
                     openCurrentCheckouts = { navController.navigate(NavRoute.CurrentCheckouts.route) },
                     openMemberLookup = { navController.navigate(NavRoute.MemberLookup.route) },
+                    openMinIdraetSearch = { navController.navigate(NavRoute.MinIdraetSearch.route) },
                     openConflictResolution = { navController.navigate(NavRoute.ConflictResolution.route) },
                     openDevicePairing = { navController.navigate(NavRoute.DevicePairing.route) },
                     onBack = { navController.popBackStack() }
@@ -242,6 +246,13 @@ fun AppRoot(
                     onNavigateToEquipmentCheckout = { memberId ->
                         navController.navigate(NavRoute.MemberEquipmentCheckout.build(memberId))
                     }
+                )
+            }
+
+            // MinIdraet search
+            composable(NavRoute.MinIdraetSearch.route) {
+                com.club.medlems.ui.admin.MinIdraetSearchScreen(
+                    onBack = { navController.popBackStack() }
                 )
             }
             
@@ -300,6 +311,9 @@ fun AppRoot(
                     },
                     onNavigateToAdmin = {
                         navController.navigate(NavRoute.AttendantMenu.route)
+                    },
+                    onNavigateToMinIdraetSearch = {
+                        navController.navigate(NavRoute.MinIdraetSearch.route)
                     }
                 )
             }

@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.PersonSearch
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
 import com.club.medlems.data.entity.MemberType
 import androidx.compose.material.icons.filled.Wifi
@@ -63,6 +64,7 @@ fun AttendantMenuScreen(
     openEquipmentList: () -> Unit = {},
     openCurrentCheckouts: () -> Unit = {},
     openMemberLookup: () -> Unit = {},
+    openMinIdraetSearch: () -> Unit = {},
     openConflictResolution: () -> Unit = {},
     openDevicePairing: () -> Unit = {},
     onBack: () -> Unit,
@@ -289,7 +291,11 @@ fun AttendantMenuScreen(
                                     Spacer(Modifier.width(8.dp))
                                     Text("Medlemssøgning")
                                 }
-                                Spacer(Modifier.weight(1f))
+                                Button(onClick = { attendant.registerInteraction(); openMinIdraetSearch() }, modifier = Modifier.weight(1f).height(btnHeight)) {
+                                    Icon(Icons.Default.Search, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("DGI søgning")
+                                }
                             }
                         }
                     }
