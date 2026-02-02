@@ -4,6 +4,7 @@
 **Version:** 1.0
 **Status:** Draft
 **Created:** 2026-01-27
+**Last Updated:** 2026-02-02 by sbalslev
 
 ---
 
@@ -16,6 +17,14 @@ This document provides the technical design for enhancing the trial member regis
 4. Trainer photo management
 5. Assisted check-in
 6. Automatic ID photo deletion
+
+### 1.1 Updates (2026-02-02)
+
+- Birth date entry uses a date picker for easier year selection
+- Front camera preview is not mirrored
+- Name fields use word capitalization in the keyboard
+- Child registration toggle is enforced for minors
+- Save flow shows a blocking progress overlay to avoid double taps
 
 ---
 

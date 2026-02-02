@@ -68,6 +68,11 @@ export function ConsolidateFeePaymentsDialog({
     return years;
   }, [year]);
 
+  const sortedPendingPayments = useMemo(
+    () => [...pendingPayments].sort((a, b) => a.memberName.localeCompare(b.memberName, 'da')),
+    [pendingPayments]
+  );
+
   // Reset form when dialog opens
   useState(() => {
     if (isOpen) {
@@ -233,7 +238,7 @@ export function ConsolidateFeePaymentsDialog({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {pendingPayments.map((payment) => (
+                  {sortedPendingPayments.map((payment) => (
                     <div
                       key={payment.id}
                       className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${

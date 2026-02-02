@@ -1087,8 +1087,9 @@ async function seedDefaultCategories(): Promise<void> {
     { id: 'MISC', name: 'Diverse/renter/gebyr', description: 'Miscellaneous, interest, fees', sortOrder: 7 },
     { id: 'SUBS', name: 'Tilskud/kontingent hovedafdeling', description: 'Subsidies and main association fees', sortOrder: 8 },
     { id: 'UTIL', name: 'Vand', description: 'Utilities (water)', sortOrder: 9 },
+    { id: 'XFER', name: 'Intern overførsel', description: 'Internal transfers between bank and cash', sortOrder: 10 },
   ];
-  
+
   for (const cat of categories) {
     db.run(
       `INSERT OR IGNORE INTO PostingCategory (id, name, description, sortOrder, isActive, createdAtUtc, updatedAtUtc)

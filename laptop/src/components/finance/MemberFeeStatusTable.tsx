@@ -133,8 +133,9 @@ export function MemberFeeStatusTable({
         result = feeStatuses.filter((s) => s.isPaidInFull);
         break;
       case 'unpaid':
-        // No payment activity at all (neither paid nor pending nor externally paid)
-        result = feeStatuses.filter((s) => s.paidAmount === 0 && s.pendingAmount === 0 && s.externallyPaidAmount === 0);
+        // No payment activity at all (neither paid nor pending nor externally paid) AND not already paid in full
+        // This excludes honorary members with 0 kr expected fee who are considered paid
+        result = feeStatuses.filter((s) => s.paidAmount === 0 && s.pendingAmount === 0 && s.externallyPaidAmount === 0 && !s.isPaidInFull);
         break;
       case 'partial':
         // Some payment activity (paid, pending, or externally paid) but not fully paid
@@ -161,7 +162,7 @@ export function MemberFeeStatusTable({
     const total = feeStatuses.length;
     const paid = feeStatuses.filter((s) => s.isPaidInFull).length;
     const partial = feeStatuses.filter((s) => (s.paidAmount > 0 || s.externallyPaidAmount > 0) && !s.isPaidInFull).length;
-    const unpaid = feeStatuses.filter((s) => s.paidAmount === 0 && s.pendingAmount === 0 && s.externallyPaidAmount === 0).length;
+    const unpaid = feeStatuses.filter((s) => s.paidAmount === 0 && s.pendingAmount === 0 && s.externallyPaidAmount === 0 && !s.isPaidInFull).length;
     const pending = feeStatuses.filter((s) => s.hasPending && !s.isPaidInFull).length;
     const totalExpected = feeStatuses.reduce((acc, s) => acc + s.expectedAmount, 0);
     const totalPaid = feeStatuses.reduce((acc, s) => acc + s.paidAmount, 0);

@@ -38,6 +38,7 @@ export const DEFAULT_CATEGORIES: Omit<PostingCategory, 'createdAtUtc' | 'updated
   { id: 'MISC', name: 'Diverse/renter/gebyr', description: 'Miscellaneous, interest, fees', sortOrder: 7, isActive: true },
   { id: 'SUBS', name: 'Tilskud/kontingent hovedafdeling', description: 'Subsidies and main association fees', sortOrder: 8, isActive: true },
   { id: 'UTIL', name: 'Vand', description: 'Utilities (water)', sortOrder: 9, isActive: true },
+  { id: 'XFER', name: 'Intern overførsel', description: 'Internal transfers between bank and cash', sortOrder: 10, isActive: true },
 ];
 
 // ===== Fiscal Year =====

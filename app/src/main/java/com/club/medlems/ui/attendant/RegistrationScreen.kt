@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
@@ -50,6 +51,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.todayIn
+import kotlinx.datetime.toLocalDateTime
 import java.io.File
 import com.club.medlems.util.BirthDateValidator
 import com.club.medlems.util.BirthDateValidationResult
@@ -58,6 +63,9 @@ import coil.request.ImageRequest
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 
 data class RegistrationState(
     val currentStep: Int = 1, // 1=details, 2=camera, 3=photo preview, 4=ID camera (adults), 5=ID preview (adults), 6=guardian/save
@@ -127,12 +135,19 @@ class RegistrationViewModel @Inject constructor(
             else -> Triple(false, null, false)
         }
 
+        val showGuardianFields = when {
+            isValid && !isAdult -> true
+            isValid && isAdult -> false
+            else -> _state.value.showGuardianFields
+        }
+
         _state.value = _state.value.copy(
             birthDate = date,
             birthDateError = errorMessage,
             birthDateValid = isValid,
             calculatedAge = age,
-            isAdult = isAdult
+            isAdult = isAdult,
+            showGuardianFields = showGuardianFields
         )
     }
     
@@ -675,7 +690,8 @@ fun MemberDetailsForm(
             onValueChange = onFirstNameChange,
             label = { Text("Fornavn *") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
         )
         
         OutlinedTextField(
@@ -683,7 +699,8 @@ fun MemberDetailsForm(
             onValueChange = onLastNameChange,
             label = { Text("Efternavn *") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
         )
         
         OutlinedTextField(
@@ -692,7 +709,7 @@ fun MemberDetailsForm(
             label = { Text("E-mail") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardOptions = KeyboardOptions(
                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Email
             )
         )
@@ -703,11 +720,26 @@ fun MemberDetailsForm(
             label = { Text("Telefon") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardOptions = KeyboardOptions(
                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
             )
         )
-        
+
+        var showBirthDatePicker by remember { mutableStateOf(false) }
+        val timeZone = TimeZone.currentSystemDefault()
+        val initialBirthDate = remember(state.birthDate) {
+            when (val result = BirthDateValidator.validate(state.birthDate)) {
+                is BirthDateValidationResult.Valid -> result.date
+                else -> Clock.System.todayIn(timeZone)
+            }
+        }
+        val initialBirthMillis = remember(initialBirthDate) {
+            initialBirthDate.atStartOfDayIn(timeZone).toEpochMilliseconds()
+        }
+        val birthDatePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = initialBirthMillis
+        )
+
         OutlinedTextField(
             value = state.birthDate,
             onValueChange = onBirthDateChange,
@@ -716,6 +748,12 @@ fun MemberDetailsForm(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             isError = state.birthDateError != null,
+            readOnly = true,
+            trailingIcon = {
+                IconButton(onClick = { showBirthDatePicker = true }) {
+                    Icon(Icons.Default.CalendarToday, contentDescription = "Vælg dato")
+                }
+            },
             supportingText = {
                 when {
                     state.birthDateError != null -> {
@@ -738,6 +776,43 @@ fun MemberDetailsForm(
                 }
             }
         )
+
+        if (showBirthDatePicker) {
+            DatePickerDialog(
+                onDismissRequest = { showBirthDatePicker = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            birthDatePickerState.selectedDateMillis?.let { millis ->
+                                val selectedDate = kotlinx.datetime.Instant.fromEpochMilliseconds(millis)
+                                    .toLocalDateTime(timeZone).date
+                                val formatted = String.format(
+                                    Locale.getDefault(),
+                                    "%02d-%02d-%04d",
+                                    selectedDate.dayOfMonth,
+                                    selectedDate.monthNumber,
+                                    selectedDate.year
+                                )
+                                onBirthDateChange(formatted)
+                            }
+                            showBirthDatePicker = false
+                        }
+                    ) {
+                        Text("OK")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBirthDatePicker = false }) {
+                        Text("Annuller")
+                    }
+                }
+            ) {
+                DatePicker(
+                    state = birthDatePickerState,
+                    title = { Text("Vælg fødselsdato", modifier = Modifier.padding(16.dp)) }
+                )
+            }
+        }
         
         // Gender dropdown
         var genderExpanded by remember { mutableStateOf(false) }
@@ -791,7 +866,7 @@ fun MemberDetailsForm(
                 label = { Text("Postnr.") },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                keyboardOptions = KeyboardOptions(
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
                 )
             )
@@ -899,6 +974,7 @@ fun CameraPreview(
         AndroidView(
             factory = { ctx ->
                 val previewView = PreviewView(ctx)
+                    previewView.scaleX = if (useFrontCamera) -1f else 1f
 
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
@@ -925,7 +1001,10 @@ fun CameraPreview(
 
                 previewView
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            update = { view ->
+                view.scaleX = if (useFrontCamera) -1f else 1f
+            }
         )
         
         // Taking photo indicator
@@ -1121,160 +1200,197 @@ fun RegistrationForm(
     onRetakePhoto: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Step label is now shown in the RegistrationStepIndicator
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Step label is now shown in the RegistrationStepIndicator
 
-        if (state.saveSuccess) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            if (state.saveSuccess) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.CheckCircle, "Succes")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.CheckCircle, "Succes")
+                            Text(
+                                "Prøvemedlem oprettet!",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                        if (state.createdMemberName != null) {
+                            Text(
+                                state.createdMemberName,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
                         Text(
-                            "Prøvemedlem oprettet!",
+                            "Kan tjekke ind nu",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
+            if (state.errorMessage != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Text(
+                        state.errorMessage,
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+
+            Text(
+                "Billede taget!",
+                style = MaterialTheme.typography.headlineSmall
+            )
+
+            Text(
+                "Foto gemt på SD-kort i mappen 'Nyt medlem'",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val guardianToggleEnabled = !state.birthDateValid || state.isAdult
+                Checkbox(
+                    checked = if (guardianToggleEnabled) state.showGuardianFields else true,
+                    onCheckedChange = onToggleGuardianFields,
+                    enabled = guardianToggleEnabled
+                )
+                Text("Dette er en barnetilmelding (tilføj værge)")
+            }
+
+            if (state.showGuardianFields) {
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            "Værge oplysninger (valgfrit)",
                             style = MaterialTheme.typography.titleMedium
                         )
-                    }
-                    if (state.createdMemberName != null) {
-                        Text(
-                            state.createdMemberName,
-                            style = MaterialTheme.typography.bodyLarge
+
+                        OutlinedTextField(
+                            value = state.guardianName,
+                            onValueChange = onGuardianNameChange,
+                            label = { Text("Værge navn") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+                        )
+
+                        OutlinedTextField(
+                            value = state.guardianPhone,
+                            onValueChange = onGuardianPhoneChange,
+                            label = { Text("Værge telefon") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
+                            )
+                        )
+
+                        OutlinedTextField(
+                            value = state.guardianEmail,
+                            onValueChange = onGuardianEmailChange,
+                            label = { Text("Værge e-mail") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Email
+                            )
                         )
                     }
-                    Text(
-                        "Kan tjekke ind nu",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
                 }
             }
-        }
-        
-        if (state.errorMessage != null) {
-            Card(
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    state.errorMessage,
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
-        }
-        
-        Text(
-            "Billede taget!",
-            style = MaterialTheme.typography.headlineSmall
-        )
-        
-        Text(
-            "Foto gemt på SD-kort i mappen 'Nyt medlem'",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Checkbox(
-                checked = state.showGuardianFields,
-                onCheckedChange = onToggleGuardianFields
-            )
-            Text("Dette er en barnetilmelding (tilføj værge)")
-        }
-        
-        if (state.showGuardianFields) {
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                OutlinedButton(
+                    onClick = onRetakePhoto,
+                    modifier = Modifier.weight(1f),
+                    enabled = !state.isSaving
                 ) {
-                    Text(
-                        "Værge oplysninger (valgfrit)",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    
-                    OutlinedTextField(
-                        value = state.guardianName,
-                        onValueChange = onGuardianNameChange,
-                        label = { Text("Værge navn") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    
-                    OutlinedTextField(
-                        value = state.guardianPhone,
-                        onValueChange = onGuardianPhoneChange,
-                        label = { Text("Værge telefon") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
+                    Text("Tag nyt billede")
+                }
+
+                Button(
+                    onClick = onSave,
+                    modifier = Modifier.weight(1f),
+                    enabled = !state.isSaving
+                ) {
+                    if (state.isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
                         )
-                    )
-                    
-                    OutlinedTextField(
-                        value = state.guardianEmail,
-                        onValueChange = onGuardianEmailChange,
-                        label = { Text("Værge e-mail") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Email
-                        )
-                    )
+                    } else {
+                        Text("Gem")
+                    }
                 }
             }
         }
-        
-        Spacer(modifier = Modifier.weight(1f))
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = onRetakePhoto,
-                modifier = Modifier.weight(1f),
-                enabled = !state.isSaving
+
+        if (state.isSaving) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                contentAlignment = Alignment.Center
             ) {
-                Text("Tag nyt billede")
-            }
-            
-            Button(
-                onClick = onSave,
-                modifier = Modifier.weight(1f),
-                enabled = !state.isSaving
-            ) {
-                if (state.isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
                     )
-                } else {
-                    Text("Gem")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = "Gemmer medlem...",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Vent venligst",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

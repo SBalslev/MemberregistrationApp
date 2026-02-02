@@ -542,6 +542,46 @@
 
 ---
 
+## Phase 9: Member app registration UX refinements
+
+### Task 9.1: Improve birth date, camera preview, and child flow
+**Status:** ✅ Complete
+
+**Subtasks:**
+
+- [x] 9.1.1 Add birth date picker with year selection
+- [x] 9.1.2 Unmirror front camera preview
+- [x] 9.1.3 Enable name keyboard capitalization for name fields
+- [x] 9.1.4 Force child registration toggle for minors
+
+**Started:** 2026-02-02 12:00:00 UTC+1
+**Completed:** 2026-02-02 12:45:00 UTC+1
+**Duration:** 45m
+
+**Files:**
+
+- `app/src/main/java/com/club/medlems/ui/attendant/RegistrationScreen.kt`
+
+---
+
+### Task 9.2: Improve save feedback to prevent double taps
+**Status:** ✅ Complete
+
+**Subtasks:**
+
+- [x] 9.2.1 Add a blocking save overlay with progress and status text
+- [x] 9.2.2 Keep save button disabled while saving
+
+**Started:** 2026-02-02 13:05:00 UTC+1
+**Completed:** 2026-02-02 13:25:00 UTC+1
+**Duration:** 20m
+
+**Files:**
+
+- `app/src/main/java/com/club/medlems/ui/attendant/RegistrationScreen.kt`
+
+---
+
 ## Testing Checklist
 
 ### Unit Tests

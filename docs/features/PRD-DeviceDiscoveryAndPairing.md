@@ -1,6 +1,6 @@
 # PRD: Enhanced Device Discovery and Pairing
 
-**Last Updated:** 2026-01-26
+**Last Updated:** 2026-02-02
 **Updated By:** sbalslev
 
 ## Executive Summary
@@ -381,6 +381,10 @@ Messages:
 3. **Manual IP Entry** (for troubleshooting)
    - Enter IP address directly if discovery fails
    - Test connection before saving
+
+4. **Pairing code input focus**
+    - Make the code boxes tappable to show the numeric keyboard
+    - Autofocus the code input when the dialog opens
 
 ## Success Metrics
 

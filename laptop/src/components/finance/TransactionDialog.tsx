@@ -229,7 +229,9 @@ export function TransactionDialog({
 
   // Filter out already imported payments from the available list
   const availablePayments = useMemo(() =>
-    pendingPayments.filter(p => !importedPaymentIds.has(p.id)),
+    pendingPayments
+      .filter(p => !importedPaymentIds.has(p.id))
+      .sort((a, b) => a.memberName.localeCompare(b.memberName, 'da')),
     [pendingPayments, importedPaymentIds]
   );
 
@@ -450,7 +452,17 @@ export function TransactionDialog({
 
   const isEditMode = !!initialData?.id;
   const activeCategories = categories.filter((c) => c.isActive);
-  const activeMembers = members.filter((m) => m.status === 'ACTIVE');
+  const activeMembers = useMemo(
+    () =>
+      members
+        .filter((m) => m.status === 'ACTIVE')
+        .sort((a, b) => {
+          const firstNameCompare = (a.firstName || '').localeCompare(b.firstName || '', 'da');
+          if (firstNameCompare !== 0) return firstNameCompare;
+          return (a.lastName || '').localeCompare(b.lastName || '', 'da');
+        }),
+    [members]
+  );
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
