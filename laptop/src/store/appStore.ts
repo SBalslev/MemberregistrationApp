@@ -8,6 +8,7 @@ import type { DeviceInfo, Member, NewMemberRegistration } from '../types';
 import { getMemberDataForFullSync, getTrainerDataForSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
 import {
   collectEntitiesForDevice,
+  hasDeliveredEntries,
   markDeliveredToDeviceBatch,
   recordFailedAttempt,
   cleanup as cleanupOutbox
@@ -213,12 +214,13 @@ export const useAppStore = create<AppState>((set) => ({
           // Step 2: Collect entities from outbox for this device
           const outboxData = collectEntitiesForDevice(device.id);
           const hasOutboxEntries = outboxData.outboxIds.length > 0;
+          const hasDelivered = hasDeliveredEntries(device.id);
 
           // If outbox has entries, push those; otherwise fall back to full sync
           let memberData: object[];
           let outboxIds: string[];
 
-          if (hasOutboxEntries) {
+          if (hasOutboxEntries && hasDelivered) {
             console.log(`[Sync] Pushing ${outboxData.outboxIds.length} outbox entries to`, device.name);
             memberData = outboxData.members;
             outboxIds = outboxData.outboxIds;
@@ -226,13 +228,16 @@ export const useAppStore = create<AppState>((set) => ({
             // Fall back to full sync for backward compatibility
             memberData = getMemberDataForFullSync();
             outboxIds = [];
-            console.log(`[Sync] Outbox empty, pushing all ${memberData.length} members to`, device.name);
+            console.log(`[Sync] Full sync for ${device.name}: pushing ${memberData.length} members`);
           }
 
           // Generate unique message ID for idempotency
           const messageId = crypto.randomUUID();
 
           const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
+          const memberDeletions = outboxData.memberDeletions.map(deletion => ({
+            internalId: deletion.internalId
+          }));
           const pushPayload = {
             schemaVersion: SYNC_SCHEMA_VERSION,
             deviceId: laptopDeviceId,
@@ -242,6 +247,7 @@ export const useAppStore = create<AppState>((set) => ({
             outboxIds,
             entities: {
               members: memberData,
+              memberDeletions,
               checkIns: outboxData.checkIns || [],
               practiceSessions: outboxData.practiceSessions || [],
               equipmentCheckouts: outboxData.equipmentCheckouts || [],

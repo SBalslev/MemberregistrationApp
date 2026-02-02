@@ -21,7 +21,7 @@ import {
   StatisticsPage,
   MinIdraetSearchPage
 } from './pages';
-import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, getMemberPreferencesForSync, getTrainerDataForSync, runPhotoMigration, isMigrationNeeded, type SyncPayload } from './database';
+import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, getMemberPreferencesForSync, getTrainerDataForSync, runPhotoMigration, isMigrationNeeded, getTrustedDevices, type SyncPayload } from './database';
 import { processAllEligibleIdPhotoDeletions } from './services/idPhotoLifecycleService';
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
@@ -78,6 +78,21 @@ function App() {
         // Set up sync listener if running in Electron
         if (isElectron()) {
           const api = getElectronAPI();
+
+          // Sync trusted devices to main process cache on startup
+          try {
+            const trustedDevices = getTrustedDevices();
+            await api?.syncTrustedDevices?.(trustedDevices.map(d => ({
+              id: d.id,
+              name: d.name,
+              type: d.type,
+              authToken: d.authToken,
+              tokenExpiresAt: d.tokenExpiresAt,
+              isTrusted: d.isTrusted
+            })));
+          } catch (syncError) {
+            console.error('[App] Failed to sync trusted devices to cache:', syncError);
+          }
           
           // Listen for incoming sync pushes from tablets
           api?.onIncomingPush(async (payload: unknown) => {

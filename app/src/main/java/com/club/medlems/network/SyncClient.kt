@@ -3,12 +3,13 @@ package com.club.medlems.network
 import android.util.Log
 import com.club.medlems.data.sync.SyncEntities
 import com.club.medlems.data.sync.SyncJson
-import com.club.medlems.data.sync.SyncPayload
 import com.club.medlems.data.sync.SyncPullRequest
 import com.club.medlems.data.sync.SyncResponse
 import com.club.medlems.data.sync.SyncResponseStatus
 import com.club.medlems.data.sync.SyncSchemaVersion
 import com.club.medlems.data.sync.SyncStatusResponse
+import com.club.medlems.data.sync.SyncConflict
+import com.club.medlems.data.sync.SyncPayload
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -30,6 +31,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.pow
 import kotlin.time.Duration.Companion.seconds
+
+/**
+ * Result of a pull operation. Contains either a payload or an error status.
+ */
+data class PullResult(
+    val status: SyncResponseStatus,
+    val payload: SyncPayload? = null,
+    val errorMessage: String? = null,
+    val conflicts: List<SyncConflict> = emptyList(),
+    val requiredSchemaVersion: String? = null
+)
 
 /**
  * HTTP client for making sync requests to peer devices.
@@ -105,15 +117,14 @@ class SyncClient @Inject constructor(
     suspend fun pullChanges(
         baseUrl: String,
         since: Instant
-    ): SyncResponse {
+    ): PullResult {
         // Use persistent token if available, otherwise generate a device token for local network sync
         val authToken = trustManager.getPersistentToken() 
             ?: trustManager.generateDeviceToken(trustManager.getThisDeviceInfo() 
-                ?: return SyncResponse(
-                    status = SyncResponseStatus.UNAUTHORIZED,
-                    timestamp = Clock.System.now(),
-                    errorMessage = "Device not configured"
-                ))
+            ?: return PullResult(
+                status = SyncResponseStatus.UNAUTHORIZED,
+                errorMessage = "Device not configured"
+            ))
         
         return withRetry(MAX_RETRIES) {
             val request = SyncPullRequest(
@@ -129,16 +140,66 @@ class SyncClient @Inject constructor(
             }
             
             if (response.status.isSuccess()) {
-                response.body<SyncResponse>()
+                val bodyText = response.bodyAsText()
+                try {
+                    val syncResponse = SyncJson.json.decodeFromString(SyncResponse.serializer(), bodyText)
+                    PullResult(
+                        status = syncResponse.status,
+                        errorMessage = syncResponse.errorMessage,
+                        conflicts = syncResponse.conflicts,
+                        requiredSchemaVersion = syncResponse.requiredSchemaVersion
+                    )
+                } catch (_: Exception) {
+                    val payload = SyncJson.json.decodeFromString(SyncPayload.serializer(), bodyText)
+                    PullResult(
+                        status = SyncResponseStatus.OK,
+                        payload = payload
+                    )
+                }
+            } else if (response.status.value == 404) {
+                val legacyResponse = client.get("$baseUrl/api/sync/pull") {
+                    header("Authorization", "Bearer $authToken")
+                    url {
+                        parameters.append("since", since.toString())
+                    }
+                }
+
+                if (legacyResponse.status.isSuccess()) {
+                    val bodyText = legacyResponse.bodyAsText()
+                    try {
+                        val syncResponse = SyncJson.json.decodeFromString(SyncResponse.serializer(), bodyText)
+                        PullResult(
+                            status = syncResponse.status,
+                            errorMessage = syncResponse.errorMessage,
+                            conflicts = syncResponse.conflicts,
+                            requiredSchemaVersion = syncResponse.requiredSchemaVersion
+                        )
+                    } catch (_: Exception) {
+                        val payload = SyncJson.json.decodeFromString(SyncPayload.serializer(), bodyText)
+                        PullResult(
+                            status = SyncResponseStatus.OK,
+                            payload = payload
+                        )
+                    }
+                } else {
+                    Log.w(TAG, "Pull failed: ${legacyResponse.status}")
+                    PullResult(
+                        status = when (legacyResponse.status.value) {
+                            401 -> SyncResponseStatus.UNAUTHORIZED
+                            409 -> SyncResponseStatus.UPGRADE_REQUIRED
+                            else -> SyncResponseStatus.ERROR
+                        },
+                        errorMessage = "HTTP ${legacyResponse.status.value}"
+                    )
+                }
             } else {
                 Log.w(TAG, "Pull failed: ${response.status}")
-                SyncResponse(
+                PullResult(
                     status = when (response.status.value) {
                         401 -> SyncResponseStatus.UNAUTHORIZED
                         409 -> SyncResponseStatus.UPGRADE_REQUIRED
                         else -> SyncResponseStatus.ERROR
                     },
-                    timestamp = Clock.System.now(),
                     errorMessage = "HTTP ${response.status.value}"
                 )
             }
@@ -211,12 +272,12 @@ class SyncClient @Inject constructor(
         baseUrl: String,
         localEntities: SyncEntities,
         since: Instant
-    ): Pair<SyncResponse, SyncResponse> {
+    ): Pair<SyncResponse, PullResult> {
         // First push our changes
         val pushResult = pushChanges(baseUrl, localEntities)
         
         // Then pull their changes
-        val pullResult = pullChanges(baseUrl, since)
+    val pullResult = pullChanges(baseUrl, since)
         
         return Pair(pushResult, pullResult)
     }

@@ -221,6 +221,32 @@ export function getFailedCount(): number {
   return result[0]?.count || 0;
 }
 
+/**
+ * Checks whether a device has received any delivered outbox entries.
+ */
+export function hasDeliveredEntries(deviceId: string): boolean {
+  const result = query<{ count: number }>(
+    `SELECT COUNT(*) as count FROM SyncOutboxDelivery WHERE deviceId = ? AND deliveredAtUtc IS NOT NULL`,
+    [deviceId]
+  );
+  return (result[0]?.count || 0) > 0;
+}
+
+/**
+ * Checks whether a member deletion is still pending in the outbox.
+ */
+export function hasPendingMemberDeletion(internalId: string): boolean {
+  const result = query<{ count: number }>(
+    `SELECT COUNT(*) as count FROM SyncOutbox
+     WHERE entityType = 'Member'
+       AND entityId = ?
+       AND operation = 'DELETE'
+       AND status != 'completed'`,
+    [internalId]
+  );
+  return (result[0]?.count || 0) > 0;
+}
+
 // ===== Delivery Tracking =====
 
 /**

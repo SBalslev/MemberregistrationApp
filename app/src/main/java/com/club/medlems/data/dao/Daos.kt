@@ -58,6 +58,9 @@ interface MemberDao {
 
     @Query("DELETE FROM Member")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM Member WHERE internalId = :internalId")
+    suspend fun deleteByInternalId(internalId: String)
     
     // Sync-related queries
     @Query("SELECT * FROM Member WHERE updatedAtUtc > :since ORDER BY updatedAtUtc ASC")
@@ -110,6 +113,9 @@ interface CheckInDao {
 
     @Query("DELETE FROM CheckIn")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM CheckIn WHERE internalMemberId = :internalMemberId")
+    suspend fun deleteByInternalMemberId(internalMemberId: String)
 
     @Query("SELECT * FROM CheckIn")
     suspend fun allCheckIns(): List<CheckIn>
@@ -202,6 +208,9 @@ interface PracticeSessionDao {
 
         @Query("DELETE FROM PracticeSession")
         suspend fun deleteAllSessions()
+
+    @Query("DELETE FROM PracticeSession WHERE internalMemberId = :internalMemberId")
+    suspend fun deleteByInternalMemberId(internalMemberId: String)
     
     // Sync-related queries
     @Query("UPDATE PracticeSession SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
@@ -231,6 +240,9 @@ interface ScanEventDao {
 
         @Query("DELETE FROM ScanEvent")
         suspend fun deleteAllEvents()
+
+    @Query("DELETE FROM ScanEvent WHERE internalMemberId = :internalMemberId")
+    suspend fun deleteByInternalMemberId(internalMemberId: String)
     
     // Sync-related queries
     @Query("UPDATE ScanEvent SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
@@ -408,6 +420,9 @@ interface EquipmentCheckoutDao {
     
     @Query("DELETE FROM EquipmentCheckout")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM EquipmentCheckout WHERE internalMemberId = :internalMemberId")
+    suspend fun deleteByInternalMemberId(internalMemberId: String)
     
     // Sync-related queries
     @Query("UPDATE EquipmentCheckout SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")

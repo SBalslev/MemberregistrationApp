@@ -384,8 +384,14 @@ class DeviceDiscoveryService @Inject constructor(
             syncLogManager.debug("NSD", "  TXT: $key = $strValue")
         }
 
-        val deviceId = txtRecords["deviceId"] ?: "nsd-${serviceName.hashCode()}"
-        val deviceTypeStr = txtRecords["deviceType"] ?: "LAPTOP"
+        val deviceId = txtRecords["deviceId"]
+        val deviceTypeStr = txtRecords["deviceType"]
+        if (deviceId.isNullOrBlank() || deviceTypeStr.isNullOrBlank()) {
+            Log.w(TAG, "NSD missing TXT records for $serviceName, skipping")
+            syncLogManager.warn("NSD", "Missing TXT records for $serviceName, skipping")
+            return
+        }
+
         val deviceName = txtRecords["deviceName"] ?: serviceName
         val schemaVersion = txtRecords["schemaVersion"] ?: "1.0.0"
         val networkId = txtRecords["networkId"] ?: ""

@@ -23,7 +23,7 @@ android {
         targetSdk = 34
     // Auto-incrementing versionCode: use epoch seconds so each build is higher
     versionCode = (System.currentTimeMillis() / 1000L).toInt()
-        versionName = "1.3.30"
+        versionName = "1.3.32"
 
         buildConfigField("String", "MINIDRAET_API_BASE_URL", "\"https://iss-skydning.dk/api/v1\"")
 

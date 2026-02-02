@@ -127,6 +127,24 @@ class SyncRepository @Inject constructor(
         var sessionsProcessed = 0
         var registrationsProcessed = 0
         val conflicts = mutableListOf<SyncConflict>()
+
+        // Process member deletions (laptop is master)
+        payload.entities.memberDeletions.forEach { deletion ->
+            try {
+                val memberId = deletion.internalId
+                trainerDisciplineDao.deleteAllForTrainer(memberId)
+                trainerInfoDao.delete(memberId)
+                memberPreferenceDao.delete(memberId)
+                equipmentCheckoutDao.deleteByInternalMemberId(memberId)
+                scanEventDao.deleteByInternalMemberId(memberId)
+                practiceSessionDao.deleteByInternalMemberId(memberId)
+                checkInDao.deleteByInternalMemberId(memberId)
+                memberDao.deleteByInternalId(memberId)
+                Log.d(TAG, "Deleted member $memberId from sync payload")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error deleting member ${deletion.internalId}", e)
+            }
+        }
         
         // Process members (laptop is master, tablets only receive)
         payload.entities.members.forEach { syncMember ->

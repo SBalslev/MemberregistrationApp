@@ -15,11 +15,11 @@ import type { NewMemberRegistration } from '../types/entities';
 import { getAllMembers } from './memberRepository';
 import { processPhoto } from '../utils/photoStorage';
 import { getFeeCategoryFromBirthDate } from '../utils/feeCategory';
-import { isMessageProcessed, recordProcessedMessage } from './syncOutboxRepository';
+import { hasPendingMemberDeletion, isMessageProcessed, recordProcessedMessage } from './syncOutboxRepository';
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
-export const SYNC_SCHEMA_VERSION = '1.5.0'; // 1.5.0: Added idPhotoPath, idPhotoThumbnail for adult ID verification
+export const SYNC_SCHEMA_VERSION = '1.6.0'; // 1.6.0: Added member deletions to sync payload
 export const SYNC_SCHEMA_MAJOR = 1;
 
 /**
@@ -48,6 +48,7 @@ export interface SyncPayload {
   outboxIds?: string[];
   entities: {
     members?: SyncableMember[];
+    memberDeletions?: SyncableMemberDeletion[];
     checkIns?: SyncableCheckIn[];
     practiceSessions?: SyncablePracticeSession[];
     newMemberRegistrations?: SyncableNewMemberRegistration[];
@@ -97,6 +98,10 @@ interface SyncableMember {
   syncVersion: number;
   createdAtUtc: string;
   modifiedAtUtc: string;
+}
+
+interface SyncableMemberDeletion {
+  internalId: string;
 }
 
 interface SyncableCheckIn {
@@ -290,6 +295,10 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     console.log(`[SyncService] Processing ${payload.entities.members.length} members`);
     for (const member of payload.entities.members) {
       try {
+        if (hasPendingMemberDeletion(member.internalId)) {
+          console.log(`[SyncService] Skipping member ${member.internalId} due to pending deletion`);
+          continue;
+        }
         const processed = await processMember(member);
         if (processed === 'added') {
           result.membersAdded++;

@@ -1,6 +1,6 @@
 # Distributed Membership Management System - Design Document
 
-**Last Updated:** 2026-01-26
+**Last Updated:** 2026-02-02
 **Updated By:** sbalslev
 
 ## Introduction/Overview
@@ -493,6 +493,8 @@ As a club member or admin, I want to see practice sessions recorded across all d
 **FR-22.11** Laptop SHALL maintain list of all paired devices with: device name, device type, last seen timestamp, pairing date.
 
 **FR-22.12** Laptop SHALL provide "Revoke Trust" action for each paired device, removing it from sync network.
+
+**FR-22.13** When a tablet generates a pairing code for another tablet, the default expected device type SHALL be the opposite tablet role.
 
 ### FR-23: Initial Data Migration Strategy
 

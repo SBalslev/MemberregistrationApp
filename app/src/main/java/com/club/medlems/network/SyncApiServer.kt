@@ -158,7 +158,7 @@ class SyncApiServer @Inject constructor(
     fun registerPendingPairing(
         token: String,
         expectedDeviceType: DeviceType,
-        deviceName: String,
+        deviceName: String?,
         expiresAtMillis: Long
     ) {
         pendingPairingTokens[token] = PendingPairing(
@@ -167,7 +167,7 @@ class SyncApiServer @Inject constructor(
             deviceName = deviceName,
             expiresAtMillis = expiresAtMillis
         )
-        Log.d(TAG, "Registered pending pairing for $deviceName")
+        Log.d(TAG, "Registered pending pairing for ${deviceName ?: "<unknown>"}")
     }
     
     /**
@@ -314,8 +314,12 @@ class SyncApiServer @Inject constructor(
                 val persistentJwt = trustManager.generateDeviceToken(request.device)
                 
                 // Add device to trusted list
+                val resolvedDeviceName = pendingPairing.deviceName
+                    ?.takeIf { it.isNotBlank() && it != "Device" }
+                    ?: request.device.name
+
                 val pairedDevice = request.device.copy(
-                    name = pendingPairing.deviceName, // Use name from QR code
+                    name = resolvedDeviceName,
                     pairedAtUtc = Clock.System.now(),
                     isTrusted = true
                 )
@@ -502,7 +506,7 @@ class SyncApiServer @Inject constructor(
 data class PendingPairing(
     val token: String,
     val expectedDeviceType: DeviceType,
-    val deviceName: String,
+    val deviceName: String?,
     val expiresAtMillis: Long
 )
 

@@ -2353,6 +2353,10 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
   const [guardianEmail, setGuardianEmail] = useState(member.guardianEmail || '');
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>(member.status);
   const [photoPath, setPhotoPath] = useState<string | null>(member.photoPath || null);
+  // Membership ID editing (advanced)
+  const [membershipId, setMembershipId] = useState(member.membershipId || '');
+  const [showMembershipIdEdit, setShowMembershipIdEdit] = useState(false);
+  const [membershipIdError, setMembershipIdError] = useState<string | null>(null);
   const [feeCategory, setFeeCategory] = useState<Member['memberType']>(() => {
     // Honorary members keep their status
     if (member.memberType === 'HONORARY') return 'HONORARY';
@@ -2398,13 +2402,29 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setMembershipIdError(null);
 
     if (!firstName.trim() || !lastName.trim()) {
       return;
     }
 
+    // Validate membershipId if changed
+    const newMembershipId = membershipId.trim() || null;
+    if (newMembershipId && newMembershipId !== member.membershipId) {
+      // Check if this membershipId is already used by another member
+      const existingMember = getMemberByMembershipId(newMembershipId);
+      if (existingMember && existingMember.internalId !== member.internalId) {
+        setMembershipIdError(`Medlemsnummer ${newMembershipId} er allerede i brug af ${existingMember.firstName} ${existingMember.lastName}`);
+        return;
+      }
+    }
+
     // Honorary members keep their status; otherwise apply age-based logic
     const effectiveFeeCategory: Member['memberType'] = feeCategory === 'HONORARY' ? 'HONORARY' : (isUnder18 ? feeCategory : 'ADULT');
+
+    // Determine lifecycle stage based on membershipId
+    const newLifecycleStage = newMembershipId ? 'FULL' : 'TRIAL';
+
     const updatedMember: Member = {
       ...member,
       firstName: firstName.trim(),
@@ -2420,6 +2440,8 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
       guardianPhone: isUnder18 ? guardianPhone.trim() || null : null,
       guardianEmail: isUnder18 ? guardianEmail.trim() || null : null,
       memberType: effectiveFeeCategory,
+      membershipId: newMembershipId,
+      memberLifecycleStage: newLifecycleStage,
       status,
       photoPath,
       updatedAtUtc: new Date().toISOString(),
@@ -2563,14 +2585,48 @@ function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Medlemsnummer
                 </label>
-                <input
-                  type="text"
-                  value={member.membershipId || ''}
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
-                />
-                {member.memberLifecycleStage === 'TRIAL' && (
-                  <p className="mt-1 text-xs text-amber-600">Prøvemedlem - medlemsnummer ikke tildelt endnu</p>
+                {!showMembershipIdEdit ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={membershipId || '(ikke tildelt)'}
+                      disabled
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowMembershipIdEdit(true)}
+                      className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    >
+                      Ændre
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      type="text"
+                      value={membershipId}
+                      onChange={(e) => {
+                        setMembershipId(e.target.value);
+                        setMembershipIdError(null);
+                      }}
+                      placeholder="Indtast medlemsnummer"
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
+                        membershipIdError ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {membershipIdError && (
+                      <p className="mt-1 text-xs text-red-600">{membershipIdError}</p>
+                    )}
+                    <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-xs text-amber-800">
+                        <strong>Advarsel:</strong> Ændring af medlemsnummer påvirker check-in og QR-koder. Brug kun i særlige tilfælde.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {member.memberLifecycleStage === 'TRIAL' && !showMembershipIdEdit && (
+                  <p className="mt-1 text-xs text-amber-600">Prøvemedlem - brug "Tildel medlemsnummer" knappen for at opgradere</p>
                 )}
               </div>
               <div>

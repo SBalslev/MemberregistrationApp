@@ -13,7 +13,7 @@ import { showError } from '../store/toastStore';
 import { isElectron, getElectronAPI } from '../types/electron';
 import { query, execute, saveTrustedDevice, getTrustedDevices, getMemberDataForFullSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
 import { getTrainerDataForSync } from '../database';
-import { collectEntitiesForDevice, markDeliveredToDeviceBatch, recordFailedAttempt } from '../database/syncOutboxRepository';
+import { collectEntitiesForDevice, hasDeliveredEntries, markDeliveredToDeviceBatch, recordFailedAttempt } from '../database/syncOutboxRepository';
 import type { DeviceInfo } from '../types/entities';
 
 export function DevicesPage() {
@@ -255,6 +255,7 @@ export function DevicesPage() {
     try {
       // Remove from database
       execute('DELETE FROM TrustedDevice WHERE id = ?', [device.id]);
+      execute('DELETE FROM SyncOutboxDelivery WHERE deviceId = ?', [device.id]);
 
       // Revoke from main process cache
       if (isElectron()) {
@@ -590,24 +591,28 @@ export function DevicesPage() {
                             // Step 2: Collect entities from outbox for this device
                             const outboxData = collectEntitiesForDevice(selectedDevice.id);
                             const hasOutboxEntries = outboxData.outboxIds.length > 0;
+                            const hasDelivered = hasDeliveredEntries(selectedDevice.id);
 
                             let memberData: object[];
                             let outboxIds: string[];
 
-                            if (hasOutboxEntries) {
+                            if (hasOutboxEntries && hasDelivered) {
                               console.log(`[Sync] Pushing ${outboxData.outboxIds.length} outbox entries`);
                               memberData = outboxData.members;
                               outboxIds = outboxData.outboxIds;
                             } else {
                               memberData = getMemberDataForFullSync();
                               outboxIds = [];
-                              console.log(`[Sync] Outbox empty, pushing all ${memberData.length} members`);
+                              console.log(`[Sync] Full sync for ${selectedDevice.name}: pushing ${memberData.length} members`);
                             }
 
                             // Generate unique message ID for idempotency
                             const messageId = crypto.randomUUID();
 
                             const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
+                            const memberDeletions = outboxData.memberDeletions.map(deletion => ({
+                              internalId: deletion.internalId
+                            }));
                             const pushPayload = {
                               schemaVersion: SYNC_SCHEMA_VERSION,
                               deviceId: laptopDeviceId,
@@ -617,6 +622,7 @@ export function DevicesPage() {
                               outboxIds,
                               entities: {
                                 members: memberData,
+                                memberDeletions,
                                 checkIns: outboxData.checkIns || [],
                                 practiceSessions: outboxData.practiceSessions || [],
                                 equipmentCheckouts: outboxData.equipmentCheckouts || [],

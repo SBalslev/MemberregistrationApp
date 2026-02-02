@@ -33,9 +33,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import kotlinx.coroutines.launch
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -78,24 +75,6 @@ fun AttendantMenuScreen(
     val state by attendant.state.collectAsState()
     // Equipment is available if enabled by build flavor OR if device is configured as admin
     val canManageEquipment = deviceConfig.equipmentEnabled || deviceConfig.canManageEquipment()
-    var pinInput by remember { mutableStateOf("") }
-    val pinFocus = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(state.unlocked) {
-        if (state.unlocked) {
-            pinInput = ""
-        } else {
-            // When locked view is visible, focus the PIN field and show keyboard
-            // Delay needed to ensure TextField is composed before requesting focus
-            kotlinx.coroutines.delay(100)
-            try {
-                pinFocus.requestFocus()
-                keyboard?.show()
-            } catch (e: IllegalStateException) {
-                // FocusRequester not yet attached - ignore
-            }
-        }
-    }
     var showManual by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -146,23 +125,11 @@ fun AttendantMenuScreen(
             Spacer(Modifier.height(16.dp))
             Text("Indtast PIN-kode", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = pinInput,
-                onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pinInput = it },
-                label = { Text("PIN") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                enabled = state.cooldownRemainingMs == 0L,
-                singleLine = true,
-                modifier = Modifier.focusRequester(pinFocus)
+            AdminPinEntry(
+                onPinEntered = { pin -> attendant.attemptUnlock(pin) },
+                errorMessage = state.error,
+                cooldownMs = state.cooldownRemainingMs
             )
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = { attendant.attemptUnlock(pinInput) }, enabled = pinInput.length == 4 && state.cooldownRemainingMs == 0L) {
-                Icon(Icons.Default.LockOpen, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Lås op")
-            }
             Spacer(Modifier.height(16.dp))
             OutlinedButton(onClick = {
                 // When locked, back just navigates away
@@ -614,6 +581,102 @@ fun AttendantMenuScreen(
             )
         }
     }
+    }
+}
+
+@Composable
+private fun AdminPinEntry(
+    onPinEntered: (String) -> Unit,
+    errorMessage: String?,
+    cooldownMs: Long
+) {
+    var pin by remember { mutableStateOf("") }
+    val isCoolingDown = cooldownMs > 0
+
+    LaunchedEffect(isCoolingDown) {
+        if (isCoolingDown) {
+            pin = ""
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            repeat(4) { index ->
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            MaterialTheme.shapes.medium
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (index < pin.length) {
+                        Text(
+                            text = "●",
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                listOf("1", "2", "3"),
+                listOf("4", "5", "6"),
+                listOf("7", "8", "9"),
+                listOf("", "0", "⌫")
+            ).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { digit ->
+                        if (digit.isEmpty()) {
+                            Spacer(modifier = Modifier.size(64.dp))
+                        } else {
+                            Button(
+                                onClick = {
+                                    if (digit == "⌫") {
+                                        if (pin.isNotEmpty()) {
+                                            pin = pin.dropLast(1)
+                                        }
+                                    } else if (pin.length < 4) {
+                                        pin += digit
+                                        if (pin.length == 4) {
+                                            onPinEntered(pin)
+                                            pin = ""
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.size(64.dp),
+                                enabled = !isCoolingDown
+                            ) {
+                                Text(
+                                    text = digit,
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (errorMessage != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
     }
 }
 

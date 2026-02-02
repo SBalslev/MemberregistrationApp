@@ -40,6 +40,7 @@ data class SyncPayload(
 @Serializable
 data class SyncEntities(
     val members: List<SyncableMember> = emptyList(),
+    val memberDeletions: List<SyncableMemberDeletion> = emptyList(),
     val checkIns: List<SyncableCheckIn> = emptyList(),
     val practiceSessions: List<SyncablePracticeSession> = emptyList(),
     val scanEvents: List<SyncableScanEvent> = emptyList(),
@@ -52,7 +53,7 @@ data class SyncEntities(
     val trainerDisciplines: List<SyncableTrainerDiscipline> = emptyList()
 ) {
     /** Total number of entities in this payload */
-    val totalCount: Int get() = members.size + checkIns.size + practiceSessions.size +
+    val totalCount: Int get() = members.size + memberDeletions.size + checkIns.size + practiceSessions.size +
             scanEvents.size + newMemberRegistrations.size + equipmentItems.size +
             equipmentCheckouts.size + devices.size + memberPreferences.size +
             trainerInfos.size + trainerDisciplines.size
@@ -60,6 +61,11 @@ data class SyncEntities(
     /** Check if payload is empty */
     val isEmpty: Boolean get() = totalCount == 0
 }
+
+@Serializable
+data class SyncableMemberDeletion(
+    val internalId: String
+)
 
 /**
  * HTTP response status codes for sync operations.

@@ -570,14 +570,19 @@ class SyncManager @Inject constructor(
         
         return when (response.status) {
             SyncResponseStatus.OK -> {
-                // The response contains entities in a SyncPayload
-                // Apply them through the repository
-                // Note: The actual entities are returned in a different response format
-                // This is a simplified implementation
+                val payload = response.payload
+                val result = if (payload != null) {
+                    syncRepository.applySyncPayload(payload, payload.deviceId)
+                } else {
+                    SyncResult()
+                }
+                if (result.hasConflicts) {
+                    result.conflicts.forEach { conflict ->
+                        conflictRepository.storeConflict(conflict)
+                    }
+                }
                 lastPullTimestamp = Clock.System.now()
-                SyncResult(
-                    membersProcessed = response.acceptedCount
-                )
+                result
             }
             SyncResponseStatus.CONFLICT -> {
                 response.conflicts.forEach { conflict ->

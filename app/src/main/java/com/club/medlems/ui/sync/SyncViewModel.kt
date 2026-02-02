@@ -286,10 +286,16 @@ class SyncViewModel @Inject constructor(
      * Generates a 6-digit pairing code for other devices to connect to this tablet.
      * The code is valid for 5 minutes.
      *
-     * @param expectedDeviceType The type of device expected to pair (default: any tablet)
+     * @param expectedDeviceType The type of device expected to pair (default: opposite tablet type)
      */
-    fun generatePairingCode(expectedDeviceType: DeviceType = DeviceType.MEMBER_TABLET) {
+    fun generatePairingCode(expectedDeviceType: DeviceType? = null) {
         viewModelScope.launch {
+            val resolvedExpectedDeviceType = expectedDeviceType ?: when (deviceConfigPreferences.getDeviceType()) {
+                DeviceType.MEMBER_TABLET -> DeviceType.TRAINER_TABLET
+                DeviceType.TRAINER_TABLET -> DeviceType.MEMBER_TABLET
+                else -> DeviceType.MEMBER_TABLET
+            }
+
             // Generate a random 6-digit code
             val code = String.format("%06d", Random.nextInt(1000000))
             val expiresAtMillis = System.currentTimeMillis() + 5 * 60 * 1000 // 5 minutes
@@ -300,8 +306,8 @@ class SyncViewModel @Inject constructor(
             // Register the pairing code with the server
             syncApiServer.registerPendingPairing(
                 token = code,
-                expectedDeviceType = expectedDeviceType,
-                deviceName = "Device", // Will be provided by connecting device
+                expectedDeviceType = resolvedExpectedDeviceType,
+                deviceName = null, // Use connecting device name
                 expiresAtMillis = expiresAtMillis
             )
 

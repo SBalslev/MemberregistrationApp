@@ -2,10 +2,21 @@
 
 > **Design Document**: [design.md](design.md)
 > **Created**: January 14, 2026
-> **Last Updated**: January 20, 2026 by sbalslev
+> **Last Updated**: February 2, 2026 by sbalslev
 > **Overall Progress**: ~100% complete (34/34 parent tasks, 196/196 sub-tasks)
 
----
+## Maintenance updates
+
+- [x] M-2026-02-02 Fix tablet-to-tablet pairing code expected device type
+  - **Started**: 2026-02-02 00:10:00 UTC+1
+  - **Completed**: 2026-02-02 00:18:08 UTC+1
+  - **Duration**: 8m
+  - **Notes**: Default expected device type now selects the opposite tablet role in `SyncViewModel.generatePairingCode()`.
+- [x] M-2026-02-02 Fix phantom discovery and device name on pairing
+  - **Started**: 2026-02-02 00:20:00 UTC+1
+  - **Completed**: 2026-02-02 00:29:43 UTC+01:00
+  - **Duration**: 9m
+  - **Notes**: Skip NSD entries without TXT records and use connecting device name when pairing.
 
 ## Tasks
 
@@ -1235,7 +1246,7 @@ End-to-end testing and performance optimization.
 
 **Document Version:** 1.5  
 **Created:** January 14, 2026  
-**Last Updated:** January 20, 2026 by sbalslev  
+**Last Updated:** February 2, 2026 by sbalslev  
 **Status:** ✅ COMPLETE (~99% - HTTPS is optional)
 
 ### Remaining Work (Optional)
