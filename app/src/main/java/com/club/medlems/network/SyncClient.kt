@@ -1,6 +1,7 @@
 package com.club.medlems.network
 
 import android.util.Log
+import com.club.medlems.data.sync.DeviceType
 import com.club.medlems.data.sync.SyncEntities
 import com.club.medlems.data.sync.SyncJson
 import com.club.medlems.data.sync.SyncPullRequest
@@ -232,6 +233,7 @@ class SyncClient @Inject constructor(
             val payload = SyncPayload(
                 schemaVersion = SyncSchemaVersion.version,
                 deviceId = trustManager.getThisDeviceId(),
+                deviceType = trustManager.getThisDeviceInfo()?.type ?: DeviceType.MEMBER_TABLET,
                 timestamp = Clock.System.now(),
                 entities = entities,
                 outboxIds = outboxIds
