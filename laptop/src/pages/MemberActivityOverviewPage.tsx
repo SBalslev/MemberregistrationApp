@@ -229,10 +229,6 @@ export function MemberActivityOverviewPage() {
     }
   }
 
-  function handlePracticeChartClick(event?: { activeLabel?: string }) {
-    if (!event?.activeLabel) return;
-    applyPracticeDrilldown(event.activeLabel);
-  }
 
   return (
     <div className="h-full overflow-y-auto p-8">
@@ -589,7 +585,12 @@ export function MemberActivityOverviewPage() {
                       <BarChart
                         data={stackedPracticeCounts}
                         margin={{ top: 10, right: 16, left: 0, bottom: 0 }}
-                        onClick={handlePracticeChartClick}
+                        onClick={(data) => {
+                          const label = data?.activeLabel;
+                          if (typeof label === 'string') {
+                            applyPracticeDrilldown(label);
+                          }
+                        }}
                       >
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="localDate" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
