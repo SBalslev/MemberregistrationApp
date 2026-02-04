@@ -8,23 +8,19 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import {
   getAttendanceBreakdown,
   getAttendanceCountsByDay,
-  getClassificationComparison,
   getDailyAttendanceMembers,
   getDailyPracticeSessions,
   getMemberPracticeStats,
   getPracticeClassificationOptions,
-  getPracticeCountsByDay,
+  getPracticeCountsByDayAndType,
   getPracticeLeaderboard,
-  getPracticeMembersForGroup,
-  getPracticeSummaryByDisciplineAndClassification,
   getPracticeTotals,
   getPracticeTypeOptions,
   getSeasonDateRange,
   type TrialFilter,
-  type PracticeMemberRow,
+  type PracticeCountByTypeRow,
   type DailyPracticeSessionRow,
   type LeaderboardRow,
-  type ClassificationComparisonRow,
   type MemberPracticeStats
 } from '../database';
 
@@ -55,14 +51,12 @@ export function MemberActivityOverviewPage() {
   const [classifications, setClassifications] = useState<string[]>([]);
   const [attendancePage, setAttendancePage] = useState(1);
   const [countsPage, setCountsPage] = useState(1);
-  const [practicePage, setPracticePage] = useState(1);
-  const [practiceCountsPage, setPracticeCountsPage] = useState(1);
   const [dailyPracticePage, setDailyPracticePage] = useState(1);
-  const [selectedPracticeGroup, setSelectedPracticeGroup] = useState<{
-    practiceType: string;
-    classification: string;
-  } | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [practiceDrilldownRange, setPracticeDrilldownRange] = useState<{
+    startDate: string;
+    endDate: string;
+  } | null>(null);
 
   const isSingleDay = startDate === endDate;
 
@@ -91,30 +85,30 @@ export function MemberActivityOverviewPage() {
     [startDate, endDate, trialFilter, practiceTypes]
   );
 
-  const practiceSummary = useMemo(
-    () => getPracticeSummaryByDisciplineAndClassification(startDate, endDate, {
-      trialFilter,
-      practiceTypes,
-      classifications
-    }),
-    [startDate, endDate, trialFilter, practiceTypes, classifications]
-  );
-
-  const practiceMembers: PracticeMemberRow[] = useMemo(() => {
-    if (!selectedPracticeGroup) return [];
-    return getPracticeMembersForGroup(
-      startDate,
-      endDate,
-      selectedPracticeGroup.practiceType,
-      selectedPracticeGroup.classification,
-      trialFilter
-    );
-  }, [endDate, selectedPracticeGroup, startDate, trialFilter]);
-
-  const practiceCounts = useMemo(() => {
+  const practiceCountsByType: PracticeCountByTypeRow[] = useMemo(() => {
     if (isSingleDay) return [];
-    return getPracticeCountsByDay(startDate, endDate, trialFilter, practiceTypes, classifications);
+    return getPracticeCountsByDayAndType(startDate, endDate, trialFilter, practiceTypes, classifications);
   }, [isSingleDay, startDate, endDate, trialFilter, practiceTypes, classifications]);
+
+  const stackedPracticeCounts = useMemo(() => {
+    if (practiceCountsByType.length === 0) return [] as Array<Record<string, number | string>>;
+    const grouped = new Map<string, Record<string, number | string>>();
+    for (const row of practiceCountsByType) {
+      const existing = grouped.get(row.localDate) ?? { localDate: row.localDate };
+      existing[row.practiceType] = row.sessionCount;
+      grouped.set(row.localDate, existing);
+    }
+    return Array.from(grouped.values());
+  }, [practiceCountsByType]);
+
+  const practiceTypeColorMap = useMemo(() => {
+    const palette = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6'];
+    const map: Record<string, string> = {};
+    practiceTypeOptions.forEach((type, index) => {
+      map[type] = palette[index % palette.length];
+    });
+    return map;
+  }, [practiceTypeOptions]);
 
   const dailyPracticeSessions: DailyPracticeSessionRow[] = useMemo(() => {
     if (!isSingleDay) return [];
@@ -128,10 +122,6 @@ export function MemberActivityOverviewPage() {
   const leaderboard: LeaderboardRow[] = useMemo(() => {
     return getPracticeLeaderboard(startDate, endDate, trialFilter, practiceTypes, classifications, 20);
   }, [startDate, endDate, trialFilter, practiceTypes, classifications]);
-
-  const classificationComparison: ClassificationComparisonRow[] = useMemo(() => {
-    return getClassificationComparison(startDate, endDate, trialFilter, practiceTypes);
-  }, [startDate, endDate, trialFilter, practiceTypes]);
 
   const selectedMemberStats: MemberPracticeStats | null = useMemo(() => {
     if (!selectedMemberId) return null;
@@ -150,17 +140,7 @@ export function MemberActivityOverviewPage() {
 
   const attendanceTotalPages = Math.max(1, Math.ceil(attendanceRows.length / DEFAULT_PAGE_SIZE));
   const countsTotalPages = Math.max(1, Math.ceil(attendanceCounts.length / DEFAULT_PAGE_SIZE));
-  const practiceTotalPages = Math.max(1, Math.ceil(practiceMembers.length / DEFAULT_PAGE_SIZE));
-  const practiceCountsTotalPages = Math.max(1, Math.ceil(practiceCounts.length / DEFAULT_PAGE_SIZE));
   const dailyPracticeTotalPages = Math.max(1, Math.ceil(dailyPracticeSessions.length / DEFAULT_PAGE_SIZE));
-  const pagedPracticeMembers = useMemo(() => {
-    const start = (practicePage - 1) * DEFAULT_PAGE_SIZE;
-    return practiceMembers.slice(start, start + DEFAULT_PAGE_SIZE);
-  }, [practiceMembers, practicePage]);
-  const pagedPracticeCounts = useMemo(() => {
-    const start = (practiceCountsPage - 1) * DEFAULT_PAGE_SIZE;
-    return practiceCounts.slice(start, start + DEFAULT_PAGE_SIZE);
-  }, [practiceCounts, practiceCountsPage]);
   const pagedDailyPracticeSessions = useMemo(() => {
     const start = (dailyPracticePage - 1) * DEFAULT_PAGE_SIZE;
     return dailyPracticeSessions.slice(start, start + DEFAULT_PAGE_SIZE);
@@ -182,15 +162,14 @@ export function MemberActivityOverviewPage() {
     setEndDate(nextEnd);
     setAttendancePage(1);
     setCountsPage(1);
-    setPracticeCountsPage(1);
     setDailyPracticePage(1);
+    setPracticeDrilldownRange(null);
   }
 
   function togglePracticeType(type: string) {
     setPracticeTypes((prev) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
     );
-    setPracticeCountsPage(1);
     setDailyPracticePage(1);
   }
 
@@ -200,22 +179,28 @@ export function MemberActivityOverviewPage() {
         ? prev.filter((c) => c !== classification)
         : [...prev, classification]
     );
-    setPracticeCountsPage(1);
     setDailyPracticePage(1);
-  }
-
-  function handlePracticeGroupSelect(practiceType: string, classification: string) {
-    setSelectedPracticeGroup({ practiceType, classification });
-    setPracticePage(1);
-  }
-
-  function clearPracticeSelection() {
-    setSelectedPracticeGroup(null);
-    setPracticePage(1);
   }
 
   function applyDateRange(day: string) {
     handleDateChange(day, day);
+  }
+
+  function applyPracticeDrilldown(day: string) {
+    setPracticeDrilldownRange({ startDate, endDate });
+    setStartDate(day);
+    setEndDate(day);
+    setAttendancePage(1);
+    setCountsPage(1);
+    setDailyPracticePage(1);
+  }
+
+  function restorePracticeDrilldown() {
+    if (!practiceDrilldownRange) return;
+    setStartDate(practiceDrilldownRange.startDate);
+    setEndDate(practiceDrilldownRange.endDate);
+    setPracticeDrilldownRange(null);
+    setDailyPracticePage(1);
   }
 
   function handleMemberSelect(internalId: string) {
@@ -242,6 +227,11 @@ export function MemberActivityOverviewPage() {
       case 'stable': return 'Stabil';
       default: return 'Utilstrækkelig data';
     }
+  }
+
+  function handlePracticeChartClick(event?: { activeLabel?: string }) {
+    if (!event?.activeLabel) return;
+    applyPracticeDrilldown(event.activeLabel);
   }
 
   return (
@@ -510,7 +500,7 @@ export function MemberActivityOverviewPage() {
         <div className="space-y-6">
           {/* Summary statistics */}
           {practiceTotals.totalSessions > 0 && (
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Træningspas</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{practiceTotals.totalSessions}</p>
@@ -519,18 +509,22 @@ export function MemberActivityOverviewPage() {
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Medlemmer</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">{practiceTotals.totalMembers}</p>
               </div>
-              <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Point i alt</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{practiceTotals.totalPoints}</p>
-              </div>
             </div>
           )}
 
           {isSingleDay ? (
             /* Single-day view: show individual practice sessions */
             <div className="bg-white rounded-xl border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-100">
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900">Træningspas for {startDate}</h2>
+                {practiceDrilldownRange && (
+                  <button
+                    onClick={restorePracticeDrilldown}
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Tilbage til overblik
+                  </button>
+                )}
               </div>
               {dailyPracticeSessions.length === 0 ? (
                 <div className="px-6 py-8 text-gray-500">Ingen træningspas denne dag.</div>
@@ -586,110 +580,39 @@ export function MemberActivityOverviewPage() {
               <div className="px-6 py-4 border-b border-gray-100">
                 <h2 className="text-lg font-semibold text-gray-900">Træningspas over tid</h2>
               </div>
-              {practiceCounts.length === 0 ? (
+              {stackedPracticeCounts.length === 0 ? (
                 <div className="px-6 py-8 text-gray-500">Ingen træningspas i den valgte periode.</div>
               ) : (
-                <>
-                  <div className="px-6 py-4">
-                    <div className="h-56">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={practiceCounts} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="localDate" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
-                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                          <Tooltip
-                            formatter={(value, name) => {
-                              if (name === 'sessionCount') return [value, 'Træningspas'];
-                              if (name === 'memberCount') return [value, 'Medlemmer'];
-                              if (name === 'totalPoints') return [value, 'Point'];
-                              return [value, String(name)];
-                            }}
-                          />
-                          <Bar dataKey="sessionCount" fill="#10b981" radius={[4, 4, 0, 0]} name="sessionCount" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                  <div className="divide-y divide-gray-100">
-                    {pagedPracticeCounts.map((row) => (
-                      <button
-                        key={row.localDate}
-                        onClick={() => applyDateRange(row.localDate)}
-                        className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-gray-50"
+                <div className="px-6 py-4">
+                  <div className="h-56">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={stackedPracticeCounts}
+                        margin={{ top: 10, right: 16, left: 0, bottom: 0 }}
+                        onClick={handlePracticeChartClick}
                       >
-                        <span className="text-sm text-gray-600">{row.localDate}</span>
-                        <div className="text-right">
-                          <span className="text-sm font-medium text-gray-900">{row.sessionCount} pas</span>
-                          <span className="text-xs text-gray-500 ml-2">({row.memberCount} medlemmer, {row.totalPoints} point)</span>
-                        </div>
-                      </button>
-                    ))}
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="localDate" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                        <Tooltip
+                          formatter={(value, name) => [value, String(name)]}
+                          labelFormatter={(label) => `Dato: ${label}`}
+                        />
+                        {practiceTypeOptions.map((type) => (
+                          <Bar
+                            key={type}
+                            dataKey={type}
+                            stackId="practice"
+                            fill={practiceTypeColorMap[type]}
+                            name={type}
+                          />
+                        ))}
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                </>
-              )}
-              {practiceCountsTotalPages > 1 && (
-                <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
-                  <span>Side {practiceCountsPage} af {practiceCountsTotalPages}</span>
-                  <div className="flex gap-2">
-                    <button
-                      disabled={practiceCountsPage === 1}
-                      onClick={() => setPracticeCountsPage((page) => Math.max(1, page - 1))}
-                      className="px-2 py-1 rounded border border-gray-200 disabled:opacity-50"
-                    >
-                      Forrige
-                    </button>
-                    <button
-                      disabled={practiceCountsPage === practiceCountsTotalPages}
-                      onClick={() => setPracticeCountsPage((page) => Math.min(practiceCountsTotalPages, page + 1))}
-                      className="px-2 py-1 rounded border border-gray-200 disabled:opacity-50"
-                    >
-                      Næste
-                    </button>
-                  </div>
+                  <p className="mt-3 text-xs text-gray-500">Klik på en dag i diagrammet for at se detaljer.</p>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Classification comparison */}
-          {!isSingleDay && classificationComparison.length > 1 && (
-            <div className="bg-white rounded-xl border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="text-lg font-semibold text-gray-900">Sammenligning på tværs af klassifikationer</h2>
-              </div>
-              <div className="px-6 py-4">
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={classificationComparison} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="classification" tick={{ fontSize: 12 }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                      <Tooltip
-                        formatter={(value, name) => {
-                          if (name === 'avgPointsPerSession') return [value, 'Gns. point/pas'];
-                          if (name === 'avgPointsPerMember') return [value, 'Gns. point/medlem'];
-                          return [value, String(name)];
-                        }}
-                      />
-                      <Bar dataKey="avgPointsPerSession" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="avgPointsPerSession" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {classificationComparison.map((row) => (
-                  <div key={row.classification} className="px-6 py-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{row.classification}</p>
-                      <p className="text-xs text-gray-500">{row.memberCount} medlemmer, {row.sessionCount} pas</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-gray-900">{row.avgPointsPerSession} point/pas</p>
-                      <p className="text-xs text-gray-500">{row.totalPoints} point i alt</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
 
@@ -698,7 +621,7 @@ export function MemberActivityOverviewPage() {
             <div className="bg-white rounded-xl border border-gray-200">
               <div className="px-6 py-4 border-b border-gray-100">
                 <h2 className="text-lg font-semibold text-gray-900">🏆 Rangliste</h2>
-                <p className="text-xs text-gray-500 mt-1">Top 20 efter samlet point</p>
+                <p className="text-xs text-gray-500 mt-1">Top 20 efter gennemsnit pr. pas og krydser</p>
               </div>
               <div className="divide-y divide-gray-100">
                 {leaderboard.map((row) => (
@@ -725,102 +648,14 @@ export function MemberActivityOverviewPage() {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-bold text-gray-900">{row.totalPoints}</p>
+                        <p className="text-lg font-bold text-gray-900">{row.avgPointsPerSession}</p>
                         <p className="text-xs text-gray-500">
-                          Gns: {row.avgPointsPerSession} • Bedst: {row.bestSession}
+                          Krydser: {row.totalKrydser} • Bedst: {row.bestSession}
                         </p>
                       </div>
                     </div>
                   </button>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {/* By weapon type - still useful for drilling down by category */}
-          {!isSingleDay && practiceSummary.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="text-lg font-semibold text-gray-900">Fordelt på våbentype</h2>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {practiceSummary.map((row) => (
-                  <button
-                    key={`${row.practiceType}-${row.classification}`}
-                    onClick={() => handlePracticeGroupSelect(row.practiceType, row.classification)}
-                    className="w-full px-6 py-3 text-left hover:bg-gray-50"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{row.practiceType}</p>
-                        <p className="text-xs text-gray-500">{row.classification}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-gray-900">{row.sessionCount} pas</p>
-                        <p className="text-xs text-gray-500">{row.memberCount} medlemmer</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'practice' && selectedPracticeGroup && (
-        <div className="mt-6 bg-white rounded-xl border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Medlemmer i udvalgt gruppe</h3>
-              <p className="text-sm text-gray-500">
-                {selectedPracticeGroup.practiceType} - {selectedPracticeGroup.classification}
-              </p>
-            </div>
-            <button
-              onClick={clearPracticeSelection}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              Ryd valg
-            </button>
-          </div>
-          {practiceMembers.length === 0 ? (
-            <div className="px-6 py-8 text-gray-500">Ingen aktivitet i den valgte periode.</div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {pagedPracticeMembers.map((member) => (
-                <div key={member.internalId} className="px-6 py-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {member.firstName} {member.lastName}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {member.membershipId ?? 'Prøvemedlem'}
-                    </p>
-                  </div>
-                  <span className="text-sm text-gray-600">{member.sessionCount} pas</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {practiceTotalPages > 1 && (
-            <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
-              <span>Side {practicePage} af {practiceTotalPages}</span>
-              <div className="flex gap-2">
-                <button
-                  disabled={practicePage === 1}
-                  onClick={() => setPracticePage((page) => Math.max(1, page - 1))}
-                  className="px-2 py-1 rounded border border-gray-200 disabled:opacity-50"
-                >
-                  Forrige
-                </button>
-                <button
-                  disabled={practicePage === practiceTotalPages}
-                  onClick={() => setPracticePage((page) => Math.min(practiceTotalPages, page + 1))}
-                  className="px-2 py-1 rounded border border-gray-200 disabled:opacity-50"
-                >
-                  Næste
-                </button>
               </div>
             </div>
           )}
@@ -847,11 +682,7 @@ export function MemberActivityOverviewPage() {
             </button>
           </div>
           <div className="p-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <p className="text-2xl font-bold text-gray-900">{selectedMemberStats.totalPoints}</p>
-                <p className="text-xs text-gray-500 mt-1">Point i alt</p>
-              </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="bg-gray-50 rounded-lg p-4 text-center">
                 <p className="text-2xl font-bold text-gray-900">{selectedMemberStats.sessionCount}</p>
                 <p className="text-xs text-gray-500 mt-1">Træningspas</p>

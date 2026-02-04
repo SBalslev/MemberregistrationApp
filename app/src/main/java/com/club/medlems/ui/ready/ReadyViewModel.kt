@@ -120,6 +120,8 @@ class ReadyViewModel @Inject constructor(
                 // Queue check-in for sync and trigger reactive sync
                 syncOutboxManager.queueCheckIn(checkIn, deviceId)
                 syncManager.notifyEntityChanged("CheckIn", checkIn.id)
+                // Trigger immediate tablet sync (non-blocking)
+                syncManager.triggerImmediateTabletSync()
 
                 val scanEventId = UUID.randomUUID().toString()
                 val scanEvent = ScanEvent(

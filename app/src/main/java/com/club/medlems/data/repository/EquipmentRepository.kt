@@ -233,6 +233,8 @@ class EquipmentRepository @Inject constructor(
             // Queue checkout for sync and trigger reactive sync
             syncOutboxManager.queueEquipmentCheckout(checkout, deviceId, OutboxOperation.INSERT)
             syncManager.notifyEntityChanged("EquipmentCheckout", checkout.id)
+            // Trigger immediate tablet sync (non-blocking)
+            syncManager.triggerImmediateTabletSync()
 
             Log.i(TAG, "Checked out equipment ${equipment.serialNumber} to member $membershipId")
             Result.success(checkout)
@@ -284,6 +286,8 @@ class EquipmentRepository @Inject constructor(
                 // Queue updated checkout for sync and trigger reactive sync
                 syncOutboxManager.queueEquipmentCheckout(updatedCheckout, deviceId, OutboxOperation.UPDATE)
                 syncManager.notifyEntityChanged("EquipmentCheckout", checkoutId)
+                // Trigger immediate tablet sync (non-blocking)
+                syncManager.triggerImmediateTabletSync()
             }
 
             // Update equipment status back to available

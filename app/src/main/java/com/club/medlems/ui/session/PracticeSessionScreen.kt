@@ -91,6 +91,8 @@ class PracticeSessionViewModel @javax.inject.Inject constructor(
             // Queue practice session for sync and trigger reactive sync
             syncOutboxManager.queuePracticeSession(session, trustManager.getThisDeviceId())
             syncManager.notifyEntityChanged("PracticeSession", session.id)
+            // Trigger immediate tablet sync (non-blocking)
+            syncManager.triggerImmediateTabletSync()
             scanEventDao.linkSession(scanEventId, session.id)
             lastStore.set(memberId, type, classification)
             saving = false

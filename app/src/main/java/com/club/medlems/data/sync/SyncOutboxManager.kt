@@ -4,6 +4,7 @@ import android.util.Log
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.EquipmentCheckout
 import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.MemberType
 import com.club.medlems.data.entity.NewMemberRegistration
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.ScanEvent
@@ -157,9 +158,12 @@ class SyncOutboxManager @Inject constructor(
                         outboxIds.add(entry.id)
                     }
                     "Member" -> {
-                        // Only include members when pushing to laptop
-                        if (destinationDeviceType == DeviceType.LAPTOP) {
-                            members.add(json.decodeFromString<SyncableMember>(entry.payload))
+                        // Include TRIAL members for tablet sync (new registrations)
+                        // Other members only sync to laptop
+                        val member = json.decodeFromString<SyncableMember>(entry.payload)
+                        if (destinationDeviceType == DeviceType.LAPTOP ||
+                            member.memberType == MemberType.TRIAL) {
+                            members.add(member)
                             outboxIds.add(entry.id)
                         }
                     }

@@ -13,7 +13,21 @@ When a check-in or practice session is registered on one tablet, it should appea
 
 **Key Insight:** Tablets are in active use during training sessions. A trainer checking in a member needs to see that check-in reflected immediately on the member tablet (and vice versa). The laptop can sync less frequently since it's used for administrative purposes.
 
-**Scope:** Instant tablet-to-tablet sync on check-in/registration events + UI refresh on sync receive
+**Scope:** Instant tablet-to-tablet sync on all operational events + UI refresh on sync receive
+
+---
+
+## Clarified Requirements
+
+| Question | Decision |
+|----------|----------|
+| When to trigger sync? | **Both foreground + background service** - immediate when active, background catches up |
+| Offline tablet handling? | **Retry in 1 minute** via periodic sync fallback |
+| UI notification on sync? | **Silent refresh** - just update the list, no toast/badge |
+| Target latency? | **< 2 seconds** between tablets |
+| Rapid check-ins (5 in 10s)? | **Each triggers sync** - no batching, every event syncs immediately |
+| Laptop sync? | **Periodic only (5 min)** - pull-based is acceptable |
+| Which entity types? | **All operational data** - CheckIn, PracticeSession, EquipmentCheckout, NewRegistration |
 
 ---
 
@@ -60,11 +74,12 @@ When a check-in or practice session is registered on one tablet, it should appea
 ```
                     ┌─────────────────────┐
                     │   LAPTOP (Master)   │
-                    │   Lower Priority    │
+                    │   Pull-based only   │
                     │   (5-min periodic)  │
                     └──────────┬──────────┘
                                │
-                    Background sync only
+                    Pulls from tablets every 5 min
+                    (no push from tablets to laptop)
                                │
          ┌─────────────────────┼─────────────────────┐
          │                     │                     │
@@ -77,24 +92,30 @@ When a check-in or practice session is registered on one tablet, it should appea
          │                     │                     │
          └═════════════════════╧═════════════════════┘
                   INSTANT SYNC (< 2 seconds)
-                  On: CheckIn, PracticeSession, NewRegistration
+                  On: CheckIn, PracticeSession,
+                      EquipmentCheckout, NewRegistration
 ```
 
 ---
 
 ## Proposed Solution
 
-### 1. Immediate Sync for Critical Events (No Debounce)
+### 1. Immediate Sync for Operational Events (No Debounce)
 
-Certain entity types should trigger **immediate** sync to tablets, bypassing the 2-second debounce:
+All operational entity types trigger **immediate** sync to tablets, bypassing the 2-second debounce:
 
-| Entity Type | Immediate Sync to Tablets | Debounced Sync to Laptop |
-|-------------|--------------------------|--------------------------|
-| CheckIn | Yes (0ms) | Yes (normal) |
-| PracticeSession | Yes (0ms) | Yes (normal) |
-| NewMemberRegistration | Yes (0ms) | Yes (normal) |
-| Member (edit) | No (debounced) | Yes (normal) |
-| Equipment | No (debounced) | Yes (normal) |
+| Entity Type | Immediate Sync to Tablets | Sync to Laptop |
+|-------------|--------------------------|----------------|
+| CheckIn | Yes (0ms) | Periodic (5 min) |
+| PracticeSession | Yes (0ms) | Periodic (5 min) |
+| Member (new TRIAL registration) | Yes (0ms) | Periodic (5 min) |
+| EquipmentCheckout | Yes (0ms) | Periodic (5 min) |
+| Member (edit existing) | No (debounced) | Periodic (5 min) |
+| Equipment (inventory) | No (debounced) | Periodic (5 min) |
+
+**No batching:** Each check-in/registration triggers its own immediate sync. This ensures < 2 second latency even during rapid check-ins.
+
+**Important:** New trial member registrations must sync to OTHER TABLETS (not just laptop). Currently, Member entities only sync to laptop. This requires changing the sync filtering logic.
 
 ### 2. Tablet-First Sync Order
 
@@ -141,11 +162,19 @@ When the `SyncRepository.applySyncPayload()` completes, the UI should automatica
 
 **FR-1.2** PracticeSession creation SHALL trigger immediate sync to all connected tablets.
 
-**FR-1.3** NewMemberRegistration creation SHALL trigger immediate sync to all connected tablets.
+**FR-1.3** New TRIAL Member registration SHALL trigger immediate sync to all connected tablets.
 
-**FR-1.4** Immediate sync SHALL bypass the 2-second debounce.
+**FR-1.4** EquipmentCheckout creation/update SHALL trigger immediate sync to all connected tablets.
 
-**FR-1.5** Immediate sync SHALL only target tablet devices (not laptop).
+**FR-1.5** Immediate sync SHALL bypass the 2-second debounce.
+
+**FR-1.6** Immediate sync SHALL only target tablet devices (not laptop).
+
+**FR-1.7** Each event SHALL trigger its own sync (no batching of rapid events).
+
+**FR-1.8** Immediate sync SHALL work in both foreground and background (via background service).
+
+**FR-1.9** TRIAL Members SHALL be included in tablet-to-tablet sync (unlike existing members which only sync to laptop).
 
 ### FR-2: Tablet Priority
 
@@ -155,7 +184,7 @@ When the `SyncRepository.applySyncPayload()` completes, the UI should automatica
 
 **FR-2.3** Laptop sync failure SHALL NOT block tablet sync.
 
-### FR-3: UI Auto-Refresh
+### FR-3: UI Auto-Refresh (Silent)
 
 **FR-3.1** After receiving sync data, the UI SHALL refresh affected views automatically.
 
@@ -165,7 +194,11 @@ When the `SyncRepository.applySyncPayload()` completes, the UI should automatica
 
 **FR-3.4** Registration lists SHALL update when new registrations are synced.
 
-**FR-3.5** UI refresh SHALL occur within 500ms of sync completion.
+**FR-3.5** Equipment checkout lists SHALL update when new checkouts are synced.
+
+**FR-3.6** UI refresh SHALL occur within 500ms of sync completion.
+
+**FR-3.7** Refresh SHALL be silent (no toast, no badge, no notification) - just update the data.
 
 ### FR-4: Periodic Sync Fallback
 
@@ -243,8 +276,9 @@ fun notifyEntityChanged(
     entityId: String,
     operation: String
 ) {
+    // All operational data gets IMMEDIATE priority for tablet sync
     val priority = when (entityType) {
-        "CheckIn", "PracticeSession", "NewMemberRegistration" ->
+        "CheckIn", "PracticeSession", "NewMemberRegistration", "EquipmentCheckout" ->
             SyncPriority.IMMEDIATE
         else ->
             SyncPriority.NORMAL
@@ -253,19 +287,26 @@ fun notifyEntityChanged(
     val targetTypes = if (priority == SyncPriority.IMMEDIATE) {
         setOf(DeviceType.MEMBER_TABLET, DeviceType.TRAINER_TABLET)
     } else {
-        null // All devices
+        null // All devices (debounced)
     }
 
+    // No batching - each event triggers immediately
     scope.launch {
-        _syncTriggers.emit(
-            SyncTrigger.EntityChanged(
-                entityType = entityType,
-                entityId = entityId,
-                operation = operation,
-                priority = priority,
-                targetDeviceTypes = targetTypes
+        if (priority == SyncPriority.IMMEDIATE) {
+            // Bypass debounce entirely - sync now
+            syncWithTabletsImmediately()
+        } else {
+            // Normal debounced path
+            _syncTriggers.emit(
+                SyncTrigger.EntityChanged(
+                    entityType = entityType,
+                    entityId = entityId,
+                    operation = operation,
+                    priority = priority,
+                    targetDeviceTypes = targetTypes
+                )
             )
-        )
+        }
     }
 }
 ```
@@ -329,6 +370,50 @@ private fun refreshCheckInData() {
 
 ---
 
+## Code Changes Required
+
+### Change 1: Allow Trial Members to Sync Between Tablets
+
+Currently, Members only sync to laptop. Two places filter this:
+
+**SyncRepository.kt:442-446**
+```kotlin
+// CURRENT: Only include members when pushing to laptop
+val members = if (destinationDeviceType == DeviceType.LAPTOP) {
+    memberDao.getUnsynced().map { it.toSyncable(deviceId) }
+} else {
+    emptyList()
+}
+```
+
+**SyncOutboxManager.kt:159-165**
+```kotlin
+// CURRENT: Only include members when pushing to laptop
+"Member" -> {
+    if (destinationDeviceType == DeviceType.LAPTOP) {
+        members.add(json.decodeFromString<SyncableMember>(entry.payload))
+        outboxIds.add(entry.id)
+    }
+}
+```
+
+**CHANGE NEEDED:** Allow TRIAL members (new registrations) to sync to tablets:
+
+```kotlin
+// PROPOSED: Include TRIAL members for tablet sync
+val members = if (destinationDeviceType == DeviceType.LAPTOP) {
+    // Laptop gets all members
+    memberDao.getUnsynced().map { it.toSyncable(deviceId) }
+} else {
+    // Tablets only get TRIAL members (new registrations)
+    memberDao.getUnsynced()
+        .filter { it.memberType == MemberType.TRIAL }
+        .map { it.toSyncable(deviceId) }
+}
+```
+
+---
+
 ## Implementation Tasks
 
 ### Task 1: Add SyncPriority to Triggers
@@ -366,10 +451,13 @@ private fun refreshCheckInData() {
 - [ ] Check-in on Member tablet appears on Trainer tablet within 2 seconds
 - [ ] Practice session syncs immediately between tablets
 - [ ] New registration syncs immediately between tablets
-- [ ] Laptop receives check-ins within 5 minutes (not immediately)
-- [ ] UI refreshes automatically without manual action
+- [ ] Equipment checkout syncs immediately between tablets
+- [ ] Laptop receives data within 5 minutes (pull-based, not push)
+- [ ] UI refreshes silently without any toast/notification
 - [ ] If immediate sync fails, periodic sync catches it within 1 minute
 - [ ] Multiple tablets sync in parallel (not sequential)
+- [ ] 5 rapid check-ins (within 10 seconds) each sync independently
+- [ ] Sync works when app is in background (background service)
 
 ---
 

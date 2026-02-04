@@ -1,14 +1,16 @@
 package com.club.medlems.data.sync
 
+import com.club.medlems.data.entity.MemberType
 import org.junit.Assert.*
 import org.junit.Test
 
 /**
  * Unit tests for device type filtering in sync operations.
  * Verifies that:
- * - Members only sync to LAPTOP (laptop is authority)
+ * - Non-TRIAL members only sync to LAPTOP (laptop is authority)
+ * - TRIAL members sync to all devices (for instant tablet-to-tablet sync)
  * - Check-ins, sessions, and registrations sync to all peers
- * 
+ *
  * @see FR-18 - Sync Protocol Specification
  */
 class DeviceTypeFilteringTest {
@@ -23,10 +25,19 @@ class DeviceTypeFilteringTest {
     }
 
     /**
-     * Determines if members should be synced to the given destination.
-     * Members only flow from tablets TO laptop (laptop is master).
+     * Determines if a member should be synced to the given destination.
+     * - TRIAL members sync to all devices (instant tablet-to-tablet sync for new registrations)
+     * - Non-TRIAL members only sync to LAPTOP (laptop is master for member data)
      */
-    private fun shouldSyncMembersTo(destinationType: DeviceType): Boolean {
+    private fun shouldSyncMemberTo(destinationType: DeviceType, memberType: MemberType): Boolean {
+        return destinationType == DeviceType.LAPTOP || memberType == MemberType.TRIAL
+    }
+
+    /**
+     * Legacy function for backward compatibility in tests.
+     * Non-TRIAL members only flow from tablets TO laptop (laptop is master).
+     */
+    private fun shouldSyncNonTrialMembersTo(destinationType: DeviceType): Boolean {
         return destinationType == DeviceType.LAPTOP
     }
 
@@ -54,41 +65,91 @@ class DeviceTypeFilteringTest {
         return true // All device types receive registrations
     }
 
-    // ===== Member Sync Tests =====
+    // ===== Non-TRIAL Member Sync Tests =====
 
     @Test
-    fun `members should sync to LAPTOP`() {
+    fun `non-TRIAL members should sync to LAPTOP`() {
         assertTrue(
-            "Members should sync to laptop",
-            shouldSyncMembersTo(DeviceType.LAPTOP)
+            "Non-TRIAL members should sync to laptop",
+            shouldSyncMemberTo(DeviceType.LAPTOP, MemberType.FULL)
         )
     }
 
     @Test
-    fun `members should NOT sync to MEMBER_TABLET`() {
+    fun `non-TRIAL members should NOT sync to MEMBER_TABLET`() {
         assertFalse(
-            "Members should not sync from tablet to tablet",
-            shouldSyncMembersTo(DeviceType.MEMBER_TABLET)
+            "Non-TRIAL members should not sync from tablet to tablet",
+            shouldSyncMemberTo(DeviceType.MEMBER_TABLET, MemberType.FULL)
         )
     }
 
     @Test
-    fun `members should NOT sync to TRAINER_TABLET`() {
+    fun `non-TRIAL members should NOT sync to TRAINER_TABLET`() {
         assertFalse(
-            "Members should not sync to trainer tablet",
-            shouldSyncMembersTo(DeviceType.TRAINER_TABLET)
+            "Non-TRIAL members should not sync to trainer tablet",
+            shouldSyncMemberTo(DeviceType.TRAINER_TABLET, MemberType.FULL)
         )
     }
 
     @Test
-    fun `members should NOT sync to DISPLAY devices`() {
+    fun `non-TRIAL members should NOT sync to DISPLAY devices`() {
         assertFalse(
-            "Members should not sync to display dashboard",
-            shouldSyncMembersTo(DeviceType.DISPLAY_DASHBOARD)
+            "Non-TRIAL members should not sync to display dashboard",
+            shouldSyncMemberTo(DeviceType.DISPLAY_DASHBOARD, MemberType.FULL)
         )
         assertFalse(
-            "Members should not sync to display leaderboard",
-            shouldSyncMembersTo(DeviceType.DISPLAY_LEADERBOARD)
+            "Non-TRIAL members should not sync to display leaderboard",
+            shouldSyncMemberTo(DeviceType.DISPLAY_LEADERBOARD, MemberType.FULL)
+        )
+    }
+
+    // ===== TRIAL Member Sync Tests (Instant Tablet-to-Tablet Sync) =====
+
+    @Test
+    fun `TRIAL members should sync to LAPTOP`() {
+        assertTrue(
+            "TRIAL members should sync to laptop",
+            shouldSyncMemberTo(DeviceType.LAPTOP, MemberType.TRIAL)
+        )
+    }
+
+    @Test
+    fun `TRIAL members should sync to MEMBER_TABLET`() {
+        assertTrue(
+            "TRIAL members should sync to member tablet for instant sync",
+            shouldSyncMemberTo(DeviceType.MEMBER_TABLET, MemberType.TRIAL)
+        )
+    }
+
+    @Test
+    fun `TRIAL members should sync to TRAINER_TABLET`() {
+        assertTrue(
+            "TRIAL members should sync to trainer tablet for instant sync",
+            shouldSyncMemberTo(DeviceType.TRAINER_TABLET, MemberType.TRIAL)
+        )
+    }
+
+    @Test
+    fun `TRIAL members should sync to all device types`() {
+        DeviceType.entries.forEach { deviceType ->
+            assertTrue(
+                "TRIAL members should sync to $deviceType",
+                shouldSyncMemberTo(deviceType, MemberType.TRIAL)
+            )
+        }
+    }
+
+    @Test
+    fun `new registration TRIAL member should be available on other tablets immediately`() {
+        // Scenario: Member tablet registers a TRIAL member
+        // Expected: TRIAL member should sync to trainer tablet for instant visibility
+        val sourceType = DeviceType.MEMBER_TABLET
+        val destType = DeviceType.TRAINER_TABLET
+        val memberType = MemberType.TRIAL
+
+        assertTrue(
+            "TRIAL member from $sourceType should sync to $destType",
+            shouldSyncMemberTo(destType, memberType)
         )
     }
 

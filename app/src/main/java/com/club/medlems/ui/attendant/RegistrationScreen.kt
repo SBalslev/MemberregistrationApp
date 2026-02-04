@@ -346,6 +346,8 @@ class RegistrationViewModel @Inject constructor(
                     // Queue trial member for sync and trigger reactive sync
                     syncOutboxManager.queueMember(member, trustManager.getThisDeviceId(), photoBase64 = photoBase64, idPhotoBase64 = idPhotoBase64)
                     syncManager.notifyEntityChanged("Member", member.internalId)
+                    // Trigger immediate tablet sync (non-blocking)
+                    syncManager.triggerImmediateTabletSync()
                     saveRegistrationInfo(internalId, photoPath)
                 }
                 

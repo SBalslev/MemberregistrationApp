@@ -671,6 +671,48 @@ class SyncManager @Inject constructor(
         }
     }
 
+    /**
+     * Triggers immediate PUSH sync to tablets only (bypasses debounce).
+     *
+     * NON-BLOCKING: This method returns immediately. The actual sync
+     * runs in the background on Dispatchers.IO. The UI is never blocked.
+     *
+     * - Push-only (no pull) - fast, lightweight
+     * - Tablets only (laptop uses periodic sync)
+     * - Fire-and-forget - caller doesn't wait for result
+     */
+    fun triggerImmediateTabletSync() {
+        // Fire-and-forget: scope.launch returns immediately
+        // All work happens on background IO threads
+        scope.launch {
+            val trustedDeviceIds = trustManager.trustedDevices.value.map { it.id }.toSet()
+            val tablets = _connectedPeers.value.filter { peer ->
+                trustedDeviceIds.contains(peer.deviceId) &&
+                (peer.deviceType == DeviceType.MEMBER_TABLET || peer.deviceType == DeviceType.TRAINER_TABLET)
+            }
+
+            if (tablets.isEmpty()) {
+                Log.d(TAG, "No tablets connected for immediate sync")
+                return@launch
+            }
+
+            Log.i(TAG, "Immediate tablet sync to ${tablets.size} tablet(s)")
+
+            // Push to all tablets in parallel
+            tablets.forEach { tablet ->
+                launch {  // Each tablet syncs independently
+                    try {
+                        val baseUrl = "http://${tablet.address.hostAddress}:${tablet.port}"
+                        pushChangesToPeer(baseUrl, tablet.deviceId, tablet.deviceType)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Immediate sync to ${tablet.deviceName} failed", e)
+                        // Failure is silent - periodic sync will catch up
+                    }
+                }
+            }
+        }
+    }
+
     // === Sync Status (FR-4) ===
 
     /**

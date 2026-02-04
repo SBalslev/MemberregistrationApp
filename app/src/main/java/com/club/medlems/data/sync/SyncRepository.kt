@@ -437,12 +437,16 @@ class SyncRepository @Inject constructor(
         deviceId: String,
         destinationDeviceType: DeviceType = DeviceType.LAPTOP
     ): SyncEntities = withContext(Dispatchers.IO) {
-        // Only include members when pushing to laptop (laptop is master for member data)
-        // Tablets don't need to share member data with each other
+        // Include TRIAL members for tablet sync (new registrations can be shared)
+        // Other members only sync to laptop (laptop is master for member data)
         val members = if (destinationDeviceType == DeviceType.LAPTOP) {
+            // Laptop gets all members
             memberDao.getUnsynced().map { it.toSyncable(deviceId) }
         } else {
-            emptyList()
+            // Tablets only get TRIAL members (new registrations)
+            memberDao.getUnsynced()
+                .filter { it.memberType == MemberType.TRIAL }
+                .map { it.toSyncable(deviceId) }
         }
 
         // Include member preferences when pushing to laptop (for backup/transfer to new tablets)

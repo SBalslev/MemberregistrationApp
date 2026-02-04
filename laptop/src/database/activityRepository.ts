@@ -399,6 +399,12 @@ export interface PracticeCountRow {
   totalPoints: number;
 }
 
+export interface PracticeCountByTypeRow {
+  localDate: string;
+  practiceType: string;
+  sessionCount: number;
+}
+
 export function getPracticeCountsByDay(
   startDate: string,
   endDate: string,
@@ -425,6 +431,35 @@ export function getPracticeCountsByDay(
        ${classificationClause.clause}
      GROUP BY p.localDate
      ORDER BY p.localDate`,
+    [startDate, endDate, ...typeClause.params, ...classificationClause.params]
+  );
+}
+
+export function getPracticeCountsByDayAndType(
+  startDate: string,
+  endDate: string,
+  trialFilter: TrialFilter,
+  practiceTypes?: string[],
+  classifications?: string[]
+): PracticeCountByTypeRow[] {
+  const trialClause = buildTrialFilterClause(trialFilter, 'm');
+  const typeClause = buildInClause(practiceTypes ?? [], 'p.practiceType');
+  const classificationClause = buildInClause(classifications ?? [], 'p.classification');
+  return query<PracticeCountByTypeRow>(
+    `SELECT
+      p.localDate,
+      p.practiceType,
+      COUNT(*) as sessionCount
+     FROM PracticeSession p
+     JOIN Member m ON m.internalId = p.internalMemberId
+     WHERE p.localDate >= ?
+       AND p.localDate <= ?
+       AND m.mergedIntoId IS NULL
+       ${trialClause}
+       ${typeClause.clause}
+       ${classificationClause.clause}
+     GROUP BY p.localDate, p.practiceType
+     ORDER BY p.localDate, p.practiceType`,
     [startDate, endDate, ...typeClause.params, ...classificationClause.params]
   );
 }
@@ -519,6 +554,7 @@ export interface LeaderboardRow {
   lastName: string;
   memberLifecycleStage: string;
   totalPoints: number;
+  totalKrydser: number;
   sessionCount: number;
   avgPointsPerSession: number;
   bestSession: number;
@@ -544,6 +580,7 @@ export function getPracticeLeaderboard(
       m.lastName,
       m.memberLifecycleStage,
       COALESCE(SUM(p.points), 0) as totalPoints,
+      COALESCE(SUM(p.krydser), 0) as totalKrydser,
       COUNT(*) as sessionCount,
       ROUND(COALESCE(AVG(p.points), 0), 1) as avgPointsPerSession,
       COALESCE(MAX(p.points), 0) as bestSession
@@ -556,7 +593,7 @@ export function getPracticeLeaderboard(
        ${typeClause.clause}
        ${classificationClause.clause}
      GROUP BY m.internalId
-     ORDER BY totalPoints DESC
+     ORDER BY avgPointsPerSession DESC, totalKrydser DESC, sessionCount DESC
      LIMIT ?`,
     [startDate, endDate, ...typeClause.params, ...classificationClause.params, limit]
   );
