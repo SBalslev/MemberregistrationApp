@@ -46,6 +46,8 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
     var importing by remember { mutableStateOf(false) }
     var sessionImportResult by remember { mutableStateOf<String?>(null) }
     var sessionImporting by remember { mutableStateOf(false) }
+    var checkInImportResult by remember { mutableStateOf<String?>(null) }
+    var checkInImporting by remember { mutableStateOf(false) }
     var sdSyncEnabled by remember { mutableStateOf(sdCardSyncPreferences.isAutoSyncEnabled()) }
     var sdSyncResult by remember { mutableStateOf<String?>(null) }
     var sdSyncing by remember { mutableStateOf(false) }
@@ -72,6 +74,19 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                     sessionImportResult = "Importeret=${res.imported}, dubletter=${res.skippedDuplicates}, fejl=${res.errors.size}"
                 }.onFailure { e -> sessionImportResult = "Fejl: ${e.message}" }
                 sessionImporting = false
+            }
+        }
+    }
+    val checkInPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                runCatching {
+                    checkInImporting = true
+                    val csv = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                    val res = csvService.importCheckIns(csv)
+                    checkInImportResult = "Importeret=${res.imported}, dubletter=${res.skippedDuplicates}, medlem ikke fundet=${res.skippedMemberNotFound}, fejl=${res.errors.size}"
+                }.onFailure { e -> checkInImportResult = "Fejl: ${e.message}" }
+                checkInImporting = false
             }
         }
     }
@@ -348,6 +363,25 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                     OutlinedButton(onClick = { sessionImportResult = null }) { Text("Ryd resultat") }
                 }
                 sessionImportResult?.let { Text(it) }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        ElevatedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Importer check-ins CSV", style = MaterialTheme.typography.titleMedium)
+                Text("Importerer check-ins fra tidligere eksport. Medlemmer skal importeres først.",
+                     style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { checkInPicker.launch(arrayOf("text/*","text/csv","application/octet-stream")) }, enabled = !checkInImporting) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (checkInImporting) "Importer..." else "Vælg fil")
+                    }
+                    OutlinedButton(onClick = { checkInImportResult = null }) { Text("Ryd resultat") }
+                }
+                checkInImportResult?.let { Text(it) }
             }
         }
 

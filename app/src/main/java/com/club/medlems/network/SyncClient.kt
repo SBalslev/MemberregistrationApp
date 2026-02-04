@@ -110,22 +110,23 @@ class SyncClient @Inject constructor(
     /**
      * Pulls changes from a peer device since the given timestamp.
      * Includes automatic retry with exponential backoff.
-     * 
+     *
      * @param baseUrl The base URL of the peer device
      * @param since The timestamp to pull changes from
+     * @param targetDeviceId The ID of the device we're pulling from (for token lookup)
      * @return SyncResponse with entities, or error response
      */
     suspend fun pullChanges(
         baseUrl: String,
-        since: Instant
+        since: Instant,
+        targetDeviceId: String? = null
     ): PullResult {
-        // Use persistent token if available, otherwise generate a device token for local network sync
-        val authToken = trustManager.getPersistentToken() 
-            ?: trustManager.generateDeviceToken(trustManager.getThisDeviceInfo() 
+        // Get or request a token for the target device
+        val authToken = getOrRequestToken(baseUrl, targetDeviceId)
             ?: return PullResult(
                 status = SyncResponseStatus.UNAUTHORIZED,
-                errorMessage = "Device not configured"
-            ))
+                errorMessage = "Could not obtain auth token for target device"
+            )
         
         return withRetry(MAX_RETRIES) {
             val request = SyncPullRequest(
@@ -210,24 +211,26 @@ class SyncClient @Inject constructor(
     /**
      * Pushes local changes to a peer device.
      * Includes automatic retry with exponential backoff.
-     * 
+     *
      * @param baseUrl The base URL of the peer device
      * @param entities The entities to push
+     * @param outboxIds The outbox IDs to acknowledge
+     * @param targetDeviceId The ID of the device we're pushing to (for token lookup)
      * @return SyncResponse with result
      */
     suspend fun pushChanges(
         baseUrl: String,
         entities: SyncEntities,
-        outboxIds: List<String> = emptyList()
+        outboxIds: List<String> = emptyList(),
+        targetDeviceId: String? = null
     ): SyncResponse {
-        // Use persistent token if available, otherwise generate a device token for local network sync
-        val authToken = trustManager.getPersistentToken()
-            ?: trustManager.generateDeviceToken(trustManager.getThisDeviceInfo()
-                ?: return SyncResponse(
-                    status = SyncResponseStatus.UNAUTHORIZED,
-                    timestamp = Clock.System.now(),
-                    errorMessage = "Device not configured"
-                ))
+        // Get or request a token for the target device
+        val authToken = getOrRequestToken(baseUrl, targetDeviceId)
+            ?: return SyncResponse(
+                status = SyncResponseStatus.UNAUTHORIZED,
+                timestamp = Clock.System.now(),
+                errorMessage = "Could not obtain auth token for target device"
+            )
 
         return withRetry(MAX_RETRIES) {
             val payload = SyncPayload(
@@ -264,24 +267,120 @@ class SyncClient @Inject constructor(
     
     /**
      * Performs a full bidirectional sync with a peer device.
-     * 
+     *
      * @param baseUrl The base URL of the peer device
      * @param localEntities Local changes to push
      * @param since Timestamp to pull remote changes from
+     * @param targetDeviceId The ID of the device we're syncing with
      * @return Pair of (push result, pull result)
      */
     suspend fun bidirectionalSync(
         baseUrl: String,
         localEntities: SyncEntities,
-        since: Instant
+        since: Instant,
+        targetDeviceId: String? = null
     ): Pair<SyncResponse, PullResult> {
         // First push our changes
-        val pushResult = pushChanges(baseUrl, localEntities)
-        
+        val pushResult = pushChanges(baseUrl, localEntities, emptyList(), targetDeviceId)
+
         // Then pull their changes
-    val pullResult = pullChanges(baseUrl, since)
-        
+        val pullResult = pullChanges(baseUrl, since, targetDeviceId)
+
         return Pair(pushResult, pullResult)
+    }
+
+    /**
+     * Gets an existing token for a device, or requests a new one if needed.
+     *
+     * @param baseUrl The base URL of the target device
+     * @param targetDeviceId The ID of the target device (optional, will be fetched from status if null)
+     * @return The auth token, or null if unable to obtain one
+     */
+    private suspend fun getOrRequestToken(baseUrl: String, targetDeviceId: String?): String? {
+        // If we have the device ID, check for a cached token first
+        if (targetDeviceId != null) {
+            val cachedToken = trustManager.getDeviceToken(targetDeviceId)
+            if (cachedToken != null) {
+                Log.d(TAG, "Using cached token for device $targetDeviceId")
+                return cachedToken
+            }
+        }
+
+        // Try to get device ID from status endpoint if not provided
+        val deviceId = targetDeviceId ?: run {
+            val status = checkStatus(baseUrl)
+            status?.device?.id
+        }
+
+        if (deviceId == null) {
+            Log.w(TAG, "Could not determine target device ID")
+            // Fall back to persistent token as last resort (for backward compatibility)
+            return trustManager.getPersistentToken()
+        }
+
+        // Check again with the fetched device ID
+        val cachedToken = trustManager.getDeviceToken(deviceId)
+        if (cachedToken != null) {
+            Log.d(TAG, "Using cached token for device $deviceId")
+            return cachedToken
+        }
+
+        // No cached token, request one from the target device
+        Log.d(TAG, "Requesting new token from device $deviceId at $baseUrl")
+        val newToken = requestToken(baseUrl, deviceId)
+        if (newToken != null) {
+            trustManager.saveDeviceToken(deviceId, newToken)
+            Log.i(TAG, "Obtained and cached new token from device $deviceId")
+            return newToken
+        }
+
+        // Token request failed (e.g., laptop doesn't have this endpoint)
+        // Fall back to persistent token for backward compatibility
+        Log.d(TAG, "Token request failed, falling back to persistent token")
+        return trustManager.getPersistentToken()
+    }
+
+    /**
+     * Requests an auth token from a target device.
+     * This works when we are in the target device's trusted list.
+     *
+     * @param baseUrl The base URL of the target device
+     * @param targetDeviceId The ID of the target device (for logging)
+     * @return The auth token, or null if the request failed
+     */
+    private suspend fun requestToken(baseUrl: String, targetDeviceId: String): String? {
+        val thisDeviceInfo = trustManager.getThisDeviceInfo()
+            ?: return null
+
+        return try {
+            val request = TokenRequest(
+                deviceId = thisDeviceInfo.id,
+                deviceName = thisDeviceInfo.name,
+                deviceType = thisDeviceInfo.type.name
+            )
+
+            val response = client.post("$baseUrl/api/sync/request-token") {
+                contentType(ContentType.Application.Json)
+                setBody(SyncJson.json.encodeToString(TokenRequest.serializer(), request))
+            }
+
+            if (response.status.isSuccess()) {
+                val tokenResponse = SyncJson.json.decodeFromString<TokenResponse>(response.bodyAsText())
+                if (tokenResponse.success && tokenResponse.authToken != null) {
+                    Log.i(TAG, "Successfully obtained token from $targetDeviceId")
+                    tokenResponse.authToken
+                } else {
+                    Log.w(TAG, "Token request failed: ${tokenResponse.errorMessage}")
+                    null
+                }
+            } else {
+                Log.w(TAG, "Token request failed with status ${response.status}")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error requesting token from $targetDeviceId: ${e.message}", e)
+            null
+        }
     }
 
     /**

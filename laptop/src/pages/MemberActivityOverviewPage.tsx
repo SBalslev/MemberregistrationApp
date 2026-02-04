@@ -8,14 +8,24 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import {
   getAttendanceBreakdown,
   getAttendanceCountsByDay,
+  getClassificationComparison,
   getDailyAttendanceMembers,
+  getDailyPracticeSessions,
+  getMemberPracticeStats,
   getPracticeClassificationOptions,
+  getPracticeCountsByDay,
+  getPracticeLeaderboard,
   getPracticeMembersForGroup,
   getPracticeSummaryByDisciplineAndClassification,
+  getPracticeTotals,
   getPracticeTypeOptions,
   getSeasonDateRange,
   type TrialFilter,
-  type PracticeMemberRow
+  type PracticeMemberRow,
+  type DailyPracticeSessionRow,
+  type LeaderboardRow,
+  type ClassificationComparisonRow,
+  type MemberPracticeStats
 } from '../database';
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -34,10 +44,6 @@ const trialFilterOptions: TrialFilterOption[] = [
   { value: 'only-trial', label: 'Kun prøvemedlemskab' }
 ];
 
-function getSelectedOptions(values: string[], options: string[]): string[] {
-  return options.filter((option) => values.includes(option));
-}
-
 export function MemberActivityOverviewPage() {
   const season = getSeasonDateRange();
   const [activeTab, setActiveTab] = useState<ActivityTab>('attendance');
@@ -50,10 +56,13 @@ export function MemberActivityOverviewPage() {
   const [attendancePage, setAttendancePage] = useState(1);
   const [countsPage, setCountsPage] = useState(1);
   const [practicePage, setPracticePage] = useState(1);
+  const [practiceCountsPage, setPracticeCountsPage] = useState(1);
+  const [dailyPracticePage, setDailyPracticePage] = useState(1);
   const [selectedPracticeGroup, setSelectedPracticeGroup] = useState<{
     practiceType: string;
     classification: string;
   } | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
   const isSingleDay = startDate === endDate;
 
@@ -102,6 +111,33 @@ export function MemberActivityOverviewPage() {
     );
   }, [endDate, selectedPracticeGroup, startDate, trialFilter]);
 
+  const practiceCounts = useMemo(() => {
+    if (isSingleDay) return [];
+    return getPracticeCountsByDay(startDate, endDate, trialFilter, practiceTypes, classifications);
+  }, [isSingleDay, startDate, endDate, trialFilter, practiceTypes, classifications]);
+
+  const dailyPracticeSessions: DailyPracticeSessionRow[] = useMemo(() => {
+    if (!isSingleDay) return [];
+    return getDailyPracticeSessions(startDate, trialFilter, practiceTypes, classifications);
+  }, [isSingleDay, startDate, trialFilter, practiceTypes, classifications]);
+
+  const practiceTotals = useMemo(() => {
+    return getPracticeTotals(startDate, endDate, trialFilter, practiceTypes, classifications);
+  }, [startDate, endDate, trialFilter, practiceTypes, classifications]);
+
+  const leaderboard: LeaderboardRow[] = useMemo(() => {
+    return getPracticeLeaderboard(startDate, endDate, trialFilter, practiceTypes, classifications, 20);
+  }, [startDate, endDate, trialFilter, practiceTypes, classifications]);
+
+  const classificationComparison: ClassificationComparisonRow[] = useMemo(() => {
+    return getClassificationComparison(startDate, endDate, trialFilter, practiceTypes);
+  }, [startDate, endDate, trialFilter, practiceTypes]);
+
+  const selectedMemberStats: MemberPracticeStats | null = useMemo(() => {
+    if (!selectedMemberId) return null;
+    return getMemberPracticeStats(selectedMemberId, startDate, endDate, practiceTypes, classifications);
+  }, [selectedMemberId, startDate, endDate, practiceTypes, classifications]);
+
   const pagedAttendanceRows = useMemo(() => {
     const start = (attendancePage - 1) * DEFAULT_PAGE_SIZE;
     return attendanceRows.slice(start, start + DEFAULT_PAGE_SIZE);
@@ -115,10 +151,20 @@ export function MemberActivityOverviewPage() {
   const attendanceTotalPages = Math.max(1, Math.ceil(attendanceRows.length / DEFAULT_PAGE_SIZE));
   const countsTotalPages = Math.max(1, Math.ceil(attendanceCounts.length / DEFAULT_PAGE_SIZE));
   const practiceTotalPages = Math.max(1, Math.ceil(practiceMembers.length / DEFAULT_PAGE_SIZE));
+  const practiceCountsTotalPages = Math.max(1, Math.ceil(practiceCounts.length / DEFAULT_PAGE_SIZE));
+  const dailyPracticeTotalPages = Math.max(1, Math.ceil(dailyPracticeSessions.length / DEFAULT_PAGE_SIZE));
   const pagedPracticeMembers = useMemo(() => {
     const start = (practicePage - 1) * DEFAULT_PAGE_SIZE;
     return practiceMembers.slice(start, start + DEFAULT_PAGE_SIZE);
   }, [practiceMembers, practicePage]);
+  const pagedPracticeCounts = useMemo(() => {
+    const start = (practiceCountsPage - 1) * DEFAULT_PAGE_SIZE;
+    return practiceCounts.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [practiceCounts, practiceCountsPage]);
+  const pagedDailyPracticeSessions = useMemo(() => {
+    const start = (dailyPracticePage - 1) * DEFAULT_PAGE_SIZE;
+    return dailyPracticeSessions.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [dailyPracticeSessions, dailyPracticePage]);
 
   function handleTabChange(tab: ActivityTab) {
     setActiveTab(tab);
@@ -136,16 +182,26 @@ export function MemberActivityOverviewPage() {
     setEndDate(nextEnd);
     setAttendancePage(1);
     setCountsPage(1);
+    setPracticeCountsPage(1);
+    setDailyPracticePage(1);
   }
 
-  function handlePracticeTypesChange(values: string[]) {
-    const selected = getSelectedOptions(values, practiceTypeOptions);
-    setPracticeTypes(selected);
+  function togglePracticeType(type: string) {
+    setPracticeTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+    setPracticeCountsPage(1);
+    setDailyPracticePage(1);
   }
 
-  function handleClassificationsChange(values: string[]) {
-    const selected = getSelectedOptions(values, classificationOptions);
-    setClassifications(selected);
+  function toggleClassification(classification: string) {
+    setClassifications((prev) =>
+      prev.includes(classification)
+        ? prev.filter((c) => c !== classification)
+        : [...prev, classification]
+    );
+    setPracticeCountsPage(1);
+    setDailyPracticePage(1);
   }
 
   function handlePracticeGroupSelect(practiceType: string, classification: string) {
@@ -160,6 +216,32 @@ export function MemberActivityOverviewPage() {
 
   function applyDateRange(day: string) {
     handleDateChange(day, day);
+  }
+
+  function handleMemberSelect(internalId: string) {
+    setSelectedMemberId(internalId);
+  }
+
+  function clearMemberSelection() {
+    setSelectedMemberId(null);
+  }
+
+  function getTrendIcon(trend: MemberPracticeStats['recentTrend']) {
+    switch (trend) {
+      case 'improving': return '↗️';
+      case 'declining': return '↘️';
+      case 'stable': return '→';
+      default: return '—';
+    }
+  }
+
+  function getTrendLabel(trend: MemberPracticeStats['recentTrend']) {
+    switch (trend) {
+      case 'improving': return 'Forbedring';
+      case 'declining': return 'Tilbagegang';
+      case 'stable': return 'Stabil';
+      default: return 'Utilstrækkelig data';
+    }
   }
 
   return (
@@ -242,47 +324,63 @@ export function MemberActivityOverviewPage() {
           </div>
         </div>
 
-        {activeTab === 'practice' && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        {activeTab === 'practice' && practiceTypeOptions.length > 0 && (
+          <div className="mt-4 space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Våbentype</label>
-              <select
-                multiple
-                value={practiceTypes}
-                onChange={(event) =>
-                  handlePracticeTypesChange(
-                    Array.from(event.target.selectedOptions, (option) => option.value)
-                  )
-                }
-                className="w-full h-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
+              <label className="block text-xs font-medium text-gray-600 mb-2">Våbentype</label>
+              <div className="flex flex-wrap gap-2">
                 {practiceTypeOptions.map((type) => (
-                  <option key={type} value={type}>
+                  <button
+                    key={type}
+                    onClick={() => togglePracticeType(type)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                      practiceTypes.length === 0 || practiceTypes.includes(type)
+                        ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                        : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                    }`}
+                  >
                     {type}
-                  </option>
+                  </button>
                 ))}
-              </select>
+                {practiceTypes.length > 0 && (
+                  <button
+                    onClick={() => setPracticeTypes([])}
+                    className="px-3 py-1.5 rounded-full text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                  >
+                    Vis alle
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Klassifikation</label>
-              <select
-                multiple
-                value={classifications}
-                onChange={(event) =>
-                  handleClassificationsChange(
-                    Array.from(event.target.selectedOptions, (option) => option.value)
-                  )
-                }
-                className="w-full h-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                {classificationOptions.map((classification) => (
-                  <option key={classification} value={classification}>
-                    {classification}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {classificationOptions.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-2">Klassifikation</label>
+                <div className="flex flex-wrap gap-2">
+                  {classificationOptions.map((classification) => (
+                    <button
+                      key={classification}
+                      onClick={() => toggleClassification(classification)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                        classifications.length === 0 || classifications.includes(classification)
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                          : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                      }`}
+                    >
+                      {classification}
+                    </button>
+                  ))}
+                  {classifications.length > 0 && (
+                    <button
+                      onClick={() => setClassifications([])}
+                      className="px-3 py-1.5 rounded-full text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                    >
+                      Vis alle
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -409,32 +507,262 @@ export function MemberActivityOverviewPage() {
       )}
 
       {activeTab === 'practice' && (
-        <div className="bg-white rounded-xl border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900">Træningspas efter våbentype</h2>
-          </div>
-          {practiceSummary.length === 0 ? (
-            <div className="px-6 py-8 text-gray-500">Ingen træningspas i den valgte periode.</div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {practiceSummary.map((row) => (
-                <button
-                  key={`${row.practiceType}-${row.classification}`}
-                  onClick={() => handlePracticeGroupSelect(row.practiceType, row.classification)}
-                  className="w-full px-6 py-3 text-left hover:bg-gray-50"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{row.practiceType}</p>
-                      <p className="text-xs text-gray-500">{row.classification}</p>
+        <div className="space-y-6">
+          {/* Summary statistics */}
+          {practiceTotals.totalSessions > 0 && (
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Træningspas</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{practiceTotals.totalSessions}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Medlemmer</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{practiceTotals.totalMembers}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Point i alt</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{practiceTotals.totalPoints}</p>
+              </div>
+            </div>
+          )}
+
+          {isSingleDay ? (
+            /* Single-day view: show individual practice sessions */
+            <div className="bg-white rounded-xl border border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">Træningspas for {startDate}</h2>
+              </div>
+              {dailyPracticeSessions.length === 0 ? (
+                <div className="px-6 py-8 text-gray-500">Ingen træningspas denne dag.</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {pagedDailyPracticeSessions.map((session) => (
+                    <div key={session.id} className="px-6 py-3 flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-gray-900">
+                          {session.firstName} {session.lastName}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {session.membershipId ?? 'Prøvemedlem'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium text-gray-900">
+                          {session.practiceType} - {session.classification}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {session.points} point • {session.createdAtUtc.substring(11, 16)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-gray-900">{row.sessionCount} pas</p>
-                      <p className="text-xs text-gray-500">{row.memberCount} medlemmer</p>
+                  ))}
+                </div>
+              )}
+              {dailyPracticeTotalPages > 1 && (
+                <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
+                  <span>Side {dailyPracticePage} af {dailyPracticeTotalPages}</span>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={dailyPracticePage === 1}
+                      onClick={() => setDailyPracticePage((page) => Math.max(1, page - 1))}
+                      className="px-2 py-1 rounded border border-gray-200 disabled:opacity-50"
+                    >
+                      Forrige
+                    </button>
+                    <button
+                      disabled={dailyPracticePage === dailyPracticeTotalPages}
+                      onClick={() => setDailyPracticePage((page) => Math.min(dailyPracticeTotalPages, page + 1))}
+                      className="px-2 py-1 rounded border border-gray-200 disabled:opacity-50"
+                    >
+                      Næste
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Multi-day view: chart + daily counts */
+            <div className="bg-white rounded-xl border border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">Træningspas over tid</h2>
+              </div>
+              {practiceCounts.length === 0 ? (
+                <div className="px-6 py-8 text-gray-500">Ingen træningspas i den valgte periode.</div>
+              ) : (
+                <>
+                  <div className="px-6 py-4">
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={practiceCounts} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="localDate" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                          <Tooltip
+                            formatter={(value, name) => {
+                              if (name === 'sessionCount') return [value, 'Træningspas'];
+                              if (name === 'memberCount') return [value, 'Medlemmer'];
+                              if (name === 'totalPoints') return [value, 'Point'];
+                              return [value, String(name)];
+                            }}
+                          />
+                          <Bar dataKey="sessionCount" fill="#10b981" radius={[4, 4, 0, 0]} name="sessionCount" />
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
                   </div>
-                </button>
-              ))}
+                  <div className="divide-y divide-gray-100">
+                    {pagedPracticeCounts.map((row) => (
+                      <button
+                        key={row.localDate}
+                        onClick={() => applyDateRange(row.localDate)}
+                        className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-gray-50"
+                      >
+                        <span className="text-sm text-gray-600">{row.localDate}</span>
+                        <div className="text-right">
+                          <span className="text-sm font-medium text-gray-900">{row.sessionCount} pas</span>
+                          <span className="text-xs text-gray-500 ml-2">({row.memberCount} medlemmer, {row.totalPoints} point)</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              {practiceCountsTotalPages > 1 && (
+                <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
+                  <span>Side {practiceCountsPage} af {practiceCountsTotalPages}</span>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={practiceCountsPage === 1}
+                      onClick={() => setPracticeCountsPage((page) => Math.max(1, page - 1))}
+                      className="px-2 py-1 rounded border border-gray-200 disabled:opacity-50"
+                    >
+                      Forrige
+                    </button>
+                    <button
+                      disabled={practiceCountsPage === practiceCountsTotalPages}
+                      onClick={() => setPracticeCountsPage((page) => Math.min(practiceCountsTotalPages, page + 1))}
+                      className="px-2 py-1 rounded border border-gray-200 disabled:opacity-50"
+                    >
+                      Næste
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Classification comparison */}
+          {!isSingleDay && classificationComparison.length > 1 && (
+            <div className="bg-white rounded-xl border border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">Sammenligning på tværs af klassifikationer</h2>
+              </div>
+              <div className="px-6 py-4">
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={classificationComparison} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="classification" tick={{ fontSize: 12 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                      <Tooltip
+                        formatter={(value, name) => {
+                          if (name === 'avgPointsPerSession') return [value, 'Gns. point/pas'];
+                          if (name === 'avgPointsPerMember') return [value, 'Gns. point/medlem'];
+                          return [value, String(name)];
+                        }}
+                      />
+                      <Bar dataKey="avgPointsPerSession" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="avgPointsPerSession" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {classificationComparison.map((row) => (
+                  <div key={row.classification} className="px-6 py-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{row.classification}</p>
+                      <p className="text-xs text-gray-500">{row.memberCount} medlemmer, {row.sessionCount} pas</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-gray-900">{row.avgPointsPerSession} point/pas</p>
+                      <p className="text-xs text-gray-500">{row.totalPoints} point i alt</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Leaderboard */}
+          {!isSingleDay && leaderboard.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">🏆 Rangliste</h2>
+                <p className="text-xs text-gray-500 mt-1">Top 20 efter samlet point</p>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {leaderboard.map((row) => (
+                  <button
+                    key={row.internalId}
+                    onClick={() => handleMemberSelect(row.internalId)}
+                    className="w-full px-6 py-3 text-left hover:bg-gray-50"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                        row.rank === 1 ? 'bg-yellow-100 text-yellow-700' :
+                        row.rank === 2 ? 'bg-gray-200 text-gray-700' :
+                        row.rank === 3 ? 'bg-orange-100 text-orange-700' :
+                        'bg-gray-100 text-gray-500'
+                      }`}>
+                        {row.rank}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">
+                          {row.firstName} {row.lastName}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {row.membershipId ?? 'Prøvemedlem'} • {row.sessionCount} pas
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-gray-900">{row.totalPoints}</p>
+                        <p className="text-xs text-gray-500">
+                          Gns: {row.avgPointsPerSession} • Bedst: {row.bestSession}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* By weapon type - still useful for drilling down by category */}
+          {!isSingleDay && practiceSummary.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">Fordelt på våbentype</h2>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {practiceSummary.map((row) => (
+                  <button
+                    key={`${row.practiceType}-${row.classification}`}
+                    onClick={() => handlePracticeGroupSelect(row.practiceType, row.classification)}
+                    className="w-full px-6 py-3 text-left hover:bg-gray-50"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{row.practiceType}</p>
+                        <p className="text-xs text-gray-500">{row.classification}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-gray-900">{row.sessionCount} pas</p>
+                        <p className="text-xs text-gray-500">{row.memberCount} medlemmer</p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -496,6 +824,67 @@ export function MemberActivityOverviewPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Member detail stats panel */}
+      {activeTab === 'practice' && selectedMemberStats && (
+        <div className="mt-6 bg-white rounded-xl border border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {selectedMemberStats.firstName} {selectedMemberStats.lastName}
+              </h3>
+              <p className="text-sm text-gray-500">
+                {selectedMemberStats.membershipId ?? 'Prøvemedlem'}
+              </p>
+            </div>
+            <button
+              onClick={clearMemberSelection}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              Luk
+            </button>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-gray-50 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-gray-900">{selectedMemberStats.totalPoints}</p>
+                <p className="text-xs text-gray-500 mt-1">Point i alt</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-gray-900">{selectedMemberStats.sessionCount}</p>
+                <p className="text-xs text-gray-500 mt-1">Træningspas</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-gray-900">{selectedMemberStats.avgPointsPerSession}</p>
+                <p className="text-xs text-gray-500 mt-1">Gns. pr. pas</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-gray-900">{selectedMemberStats.bestSession}</p>
+                <p className="text-xs text-gray-500 mt-1">Bedste pas</p>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">
+              <div>
+                <p className="text-sm text-gray-600">Udvikling</p>
+                <p className="text-xs text-gray-500">Baseret på første vs. sidste halvdel</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{getTrendIcon(selectedMemberStats.recentTrend)}</span>
+                <span className={`text-sm font-medium ${
+                  selectedMemberStats.recentTrend === 'improving' ? 'text-green-600' :
+                  selectedMemberStats.recentTrend === 'declining' ? 'text-red-600' :
+                  'text-gray-600'
+                }`}>
+                  {getTrendLabel(selectedMemberStats.recentTrend)}
+                </span>
+              </div>
+            </div>
+            <div className="mt-4 text-xs text-gray-500">
+              Dårligste pas: {selectedMemberStats.worstSession} point
+            </div>
+          </div>
         </div>
       )}
     </div>

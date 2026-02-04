@@ -66,6 +66,7 @@ Returns counts of all related data that will be deleted, plus:
 
 #### `processPendingMemberDeletions()`
 Called during online sync to process queued member deletions:
+
 - Retrieves pending DELETE operations from SyncOutbox
 - Pushes to cloud API with all related entity IDs
 - Marks as completed on success, records failure for retry on error
@@ -85,6 +86,8 @@ Called during online sync to process queued member deletions:
 5. Deletion executes (with loading state)
 6. Success toast, member removed from list
 7. Cloud sync triggered via outbox (with retry support)
+8. If another device deletes a member, the laptop shows a pending delete approval list in Online sync settings
+9. User can approve the delete to remove the member locally, or keep the member locally
 
 ## Cloud Sync Details
 
@@ -98,9 +101,12 @@ Called during online sync to process queued member deletions:
 
 ### Pull Flow
 When pulling from cloud, if a member deletion is detected:
+
 - Checks if member still exists locally
 - If member doesn't exist (we deleted it), skips adding to pending deletes
 - If member exists (someone else deleted it), adds to pending deletes for user confirmation
+
+Approval happens in Online sync settings, where pending deletes are listed with member details and actions.
 
 ### API Format
 ```json

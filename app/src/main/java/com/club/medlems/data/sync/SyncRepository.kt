@@ -888,7 +888,7 @@ data class SyncResult(
         equipmentItemsProcessed + equipmentCheckoutsProcessed +
         trainerInfosProcessed + trainerDisciplinesProcessed
     val hasConflicts: Boolean get() = conflicts.isNotEmpty()
-    val hasErrors: Boolean get() = errorMessage != null || conflicts.isNotEmpty()
+    val hasErrors: Boolean get() = errorMessage != null
 
     /**
      * Combines this result with another, summing counts and merging conflicts.

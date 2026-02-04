@@ -461,7 +461,7 @@ class SyncManager @Inject constructor(
             result = result.combine(pushResult)
 
             // Pull their changes
-            val pullResult = pullChangesFromPeer(baseUrl)
+            val pullResult = pullChangesFromPeer(baseUrl, peer.deviceId)
             result = result.combine(pullResult)
 
         } catch (e: Exception) {
@@ -472,6 +472,11 @@ class SyncManager @Inject constructor(
                 trustManager.recordConnectionFailure(peer.deviceId, ip)
             }
             result = result.copy(errorMessage = e.message)
+        }
+
+        // Record successful sync time for this peer (only if no errors)
+        if (!result.hasErrors) {
+            trustManager.recordSyncSuccess(peer.deviceId)
         }
 
         return result
@@ -508,7 +513,7 @@ class SyncManager @Inject constructor(
             syncOutboxManager.recordDeliveryAttempt(outboxId, peerDeviceId)
         }
 
-        val response = syncClient.pushChanges(baseUrl, entities, outboxIds)
+        val response = syncClient.pushChanges(baseUrl, entities, outboxIds, peerDeviceId)
 
         return when (response.status) {
             SyncResponseStatus.OK -> {
@@ -562,11 +567,14 @@ class SyncManager @Inject constructor(
     
     /**
      * Pulls changes from a peer since last sync.
+     *
+     * @param baseUrl The peer's API base URL
+     * @param peerDeviceId The peer's device ID (for token lookup)
      */
-    private suspend fun pullChangesFromPeer(baseUrl: String): SyncResult {
+    private suspend fun pullChangesFromPeer(baseUrl: String, peerDeviceId: String): SyncResult {
         Log.d(TAG, "Pulling changes from $baseUrl since $lastPullTimestamp")
-        
-        val response = syncClient.pullChanges(baseUrl, lastPullTimestamp)
+
+        val response = syncClient.pullChanges(baseUrl, lastPullTimestamp, peerDeviceId)
         
         return when (response.status) {
             SyncResponseStatus.OK -> {
@@ -695,12 +703,14 @@ class SyncManager @Inject constructor(
      * Gets detailed sync status for the status detail sheet.
      */
     suspend fun getSyncStatusDetail(): SyncStatusDetail {
+        val connectionProfiles = trustManager.connectionProfiles.value
         val peers = _connectedPeers.value.map { peer ->
+            val profile = connectionProfiles[peer.deviceId]
             PeerSyncStatus(
                 deviceId = peer.deviceId,
                 deviceName = peer.deviceName,
                 deviceType = peer.deviceType,
-                lastSyncTime = null, // TODO: Track per-peer sync time
+                lastSyncTime = profile?.connectionStats?.lastSuccessfulSync,
                 pendingForPeer = syncOutboxManager.getPendingForDevice(peer.deviceId).size
             )
         }

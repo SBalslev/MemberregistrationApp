@@ -23,7 +23,31 @@ vi.mock('../database', () => ({
       memberLifecycleStage: 'FULL',
       sessionCount: 2
     }
-  ]
+  ],
+  getPracticeCountsByDay: () => [
+    { localDate: '2026-01-02', sessionCount: 4, memberCount: 2, totalPoints: 8 }
+  ],
+  getDailyPracticeSessions: () => [],
+  getPracticeTotals: () => ({ totalSessions: 4, totalMembers: 2, totalPoints: 8 }),
+  getPracticeLeaderboard: () => [
+    {
+      rank: 1,
+      internalId: 'member-1',
+      membershipId: 'M001',
+      firstName: 'Anne',
+      lastName: 'Hansen',
+      memberLifecycleStage: 'FULL',
+      totalPoints: 100,
+      sessionCount: 10,
+      avgPointsPerSession: 10,
+      bestSession: 15
+    }
+  ],
+  getClassificationComparison: () => [
+    { classification: 'A', memberCount: 2, sessionCount: 10, totalPoints: 100, avgPointsPerSession: 10, avgPointsPerMember: 50 },
+    { classification: 'B', memberCount: 3, sessionCount: 15, totalPoints: 90, avgPointsPerSession: 6, avgPointsPerMember: 30 }
+  ],
+  getMemberPracticeStats: () => null
 }));
 
 describe('MemberActivityOverviewPage', () => {
@@ -49,9 +73,12 @@ describe('MemberActivityOverviewPage', () => {
     render(<MemberActivityOverviewPage />);
 
     fireEvent.click(screen.getByText('Træning'));
-    fireEvent.click(screen.getByRole('button', { name: /RIFLE/ }));
+    // Click the drill-down button in "Fordelt på våbentype" section, not the filter chip
+    const drillDownButton = screen.getByRole('button', { name: /RIFLE.*4 pas.*2 medlemmer/s });
+    fireEvent.click(drillDownButton);
 
     expect(screen.getByText('Medlemmer i udvalgt gruppe')).toBeTruthy();
-    expect(screen.getByText('Anne Hansen')).toBeTruthy();
+    // Anne Hansen appears multiple times (in leaderboard and member list), so check for at least one
+    expect(screen.getAllByText('Anne Hansen').length).toBeGreaterThanOrEqual(1);
   });
 });

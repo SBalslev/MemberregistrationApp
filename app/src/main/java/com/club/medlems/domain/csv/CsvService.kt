@@ -29,6 +29,13 @@ data class SessionImportResult(
     val errors: List<String>
 )
 
+data class CheckInImportResult(
+    val imported: Int,
+    val skippedDuplicates: Int,
+    val skippedMemberNotFound: Int,
+    val errors: List<String>
+)
+
 @Singleton
 class CsvService @Inject constructor(
     private val memberDao: MemberDao,
@@ -265,6 +272,75 @@ class CsvService @Inject constructor(
         }
 
         SessionImportResult(imported, skippedDup, errors)
+    }
+
+    suspend fun importCheckIns(csvContent: String): CheckInImportResult = withContext(Dispatchers.IO) {
+        val firstLine = csvContent.lines().firstOrNull() ?: ""
+        val delimiter = if (';' in firstLine) ';' else ','
+
+        val lines = csvReader { this.delimiter = delimiter }.readAll(csvContent)
+        if (lines.isEmpty()) return@withContext CheckInImportResult(0, 0, 0, listOf("Empty file"))
+        val header = lines.first()
+        val required = setOf("FORMAT_VERSION", "checkin_id", "membership_id", "created_at_utc", "local_date")
+        if (!required.all { it in header }) return@withContext CheckInImportResult(0, 0, 0, listOf("Missing required headers: ${required - header.toSet()}"))
+        val idx = header.withIndex().associate { it.value to it.index }
+        val errors = mutableListOf<String>()
+        var imported = 0
+        var skippedDup = 0
+        var skippedMemberNotFound = 0
+
+        // Build a map of members by membershipId for lookup
+        val membersByMembershipId = memberDao.allMembers()
+            .filter { it.membershipId != null }
+            .associateBy { it.membershipId!! }
+
+        val rows = lines.drop(1)
+        rows.forEachIndexed { lineIdx, row ->
+            val lineNumber = lineIdx + 2
+            val checkInId = row.getOrNull(idx["checkin_id"] ?: -1).orEmpty().trim()
+            if (checkInId.isBlank()) {
+                errors += "Line ${lineNumber}: blank checkin_id"
+                return@forEachIndexed
+            }
+            // Skip if check-in already exists
+            if (checkInDao.countById(checkInId) > 0) {
+                skippedDup++
+                return@forEachIndexed
+            }
+            val membershipId = row.getOrNull(idx["membership_id"] ?: -1).orEmpty().trim()
+            if (membershipId.isBlank()) {
+                errors += "Line ${lineNumber}: blank membership_id"
+                return@forEachIndexed
+            }
+            val member = membersByMembershipId[membershipId]
+            if (member == null) {
+                skippedMemberNotFound++
+                return@forEachIndexed
+            }
+            val createdAtRaw = row.getOrNull(idx["created_at_utc"] ?: -1).orEmpty().trim()
+            val localDateRaw = row.getOrNull(idx["local_date"] ?: -1).orEmpty().trim()
+
+            val createdAt = runCatching { Instant.parse(createdAtRaw) }.getOrElse {
+                errors += "Line ${lineNumber}: invalid created_at_utc"
+                return@forEachIndexed
+            }
+            val localDate = runCatching { LocalDate.parse(localDateRaw) }.getOrElse {
+                errors += "Line ${lineNumber}: invalid local_date"
+                return@forEachIndexed
+            }
+
+            val checkIn = CheckIn(
+                id = checkInId,
+                internalMemberId = member.internalId,
+                membershipId = member.membershipId,
+                createdAtUtc = createdAt,
+                localDate = localDate
+            )
+            checkInDao.insert(checkIn)
+            imported++
+        }
+
+        CheckInImportResult(imported, skippedDup, skippedMemberNotFound, errors)
     }
 
     suspend fun importMembers(csvContent: String): ImportResult = withContext(Dispatchers.IO) {

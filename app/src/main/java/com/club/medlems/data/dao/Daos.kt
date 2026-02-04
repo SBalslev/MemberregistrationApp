@@ -135,6 +135,9 @@ interface CheckInDao {
     
     @Query("SELECT * FROM CheckIn WHERE syncedAtUtc IS NULL")
     suspend fun getUnsynced(): List<CheckIn>
+
+    @Query("SELECT COUNT(*) FROM CheckIn WHERE id = :id")
+    suspend fun countById(id: String): Int
 }
 
 @Dao

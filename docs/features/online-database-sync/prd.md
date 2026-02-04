@@ -100,6 +100,8 @@ As a club administrator, I want member data automatically synchronized to the on
 
 As a club administrator, I want to see the status of online synchronization (last sync time, pending changes, errors) so that I can verify data is properly backed up.
 
+Pending deletes from the online database should be visible and actionable in the settings UI.
+
 **US-5: Offline Graceful Degradation**
 
 As a club administrator, I want the system to continue working normally when internet is unavailable so that training sessions are never interrupted by online connectivity issues.

@@ -34,9 +34,17 @@ import {
   type OnlineSyncProgress,
   type OnlineSyncResult,
   type SyncVerificationResult,
+  type PendingDelete,
 } from '../../database/onlineSyncService';
 import { isElectron, getElectronAPI } from '../../types/electron';
 import { SYNC_SCHEMA_VERSION } from '../../database/syncService';
+import { getMemberByInternalId } from '../../database/memberRepository';
+import { buildPendingDeleteSummary, type PendingDeleteSummary } from './pendingDeleteUtils';
+
+type PendingDeleteItem = {
+  pending: PendingDelete;
+  summary: PendingDeleteSummary;
+};
 
 export function OnlineSyncSettings() {
   // Connection state
@@ -66,6 +74,8 @@ export function OnlineSyncSettings() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<OnlineSyncProgress | null>(null);
   const [lastSyncResult, setLastSyncResult] = useState<OnlineSyncResult | null>(null);
+  const [pendingDeleteItems, setPendingDeleteItems] = useState<PendingDeleteItem[]>([]);
+  const [pendingDeleteAction, setPendingDeleteAction] = useState<string | null>(null);
 
   // Diagnostic state
   const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
@@ -79,6 +89,25 @@ export function OnlineSyncSettings() {
   useEffect(() => {
     checkConnectionStatus();
   }, []);
+
+  const loadPendingDeletes = useCallback(() => {
+    const items = onlineSyncService.getPendingDeletes().map((pending) => {
+      const member = pending.entityType === 'member'
+        ? getMemberByInternalId(pending.entityId)
+        : null;
+      return {
+        pending,
+        summary: buildPendingDeleteSummary(pending, member),
+      };
+    });
+
+    setPendingDeleteItems(items);
+    setLastSyncResult((prev) => (prev ? { ...prev, pendingDeletes: items.length } : prev));
+  }, []);
+
+  useEffect(() => {
+    loadPendingDeletes();
+  }, [loadPendingDeletes]);
 
   // Countdown timer for retry
   useEffect(() => {
@@ -151,6 +180,7 @@ export function OnlineSyncSettings() {
       error: null,
     });
     setSchemaWarning(null);
+    setPendingDeleteItems([]);
   };
 
   const handleAuthenticate = async () => {
@@ -225,6 +255,7 @@ export function OnlineSyncSettings() {
       if (result.success) {
         await checkConnectionStatus();
       }
+      loadPendingDeletes();
     } catch (error) {
       setLastSyncResult({
         success: false,
@@ -236,9 +267,32 @@ export function OnlineSyncSettings() {
         duration: 0,
         error: error instanceof Error ? error.message : 'Sync fejlede',
       });
+      loadPendingDeletes();
     } finally {
       setIsSyncing(false);
       setSyncProgress(null);
+    }
+  };
+
+  const handleApproveDelete = (pending: PendingDelete) => {
+    const actionKey = `${pending.entityType}:${pending.entityId}:approve`;
+    setPendingDeleteAction(actionKey);
+    try {
+      onlineSyncService.confirmDelete(pending.entityType, pending.entityId);
+    } finally {
+      setPendingDeleteAction(null);
+      loadPendingDeletes();
+    }
+  };
+
+  const handleRejectDelete = (pending: PendingDelete) => {
+    const actionKey = `${pending.entityType}:${pending.entityId}:reject`;
+    setPendingDeleteAction(actionKey);
+    try {
+      onlineSyncService.rejectDelete(pending.entityType, pending.entityId);
+    } finally {
+      setPendingDeleteAction(null);
+      loadPendingDeletes();
     }
   };
 
@@ -628,6 +682,62 @@ export function OnlineSyncSettings() {
                       )}
                       <div className="text-xs text-gray-500 mt-1">
                         Varighed: {(lastSyncResult.duration / 1000).toFixed(1)}s
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Pending Deletes */}
+              {pendingDeleteItems.length > 0 && (
+                <div className="mt-4 p-3 rounded-lg bg-yellow-50 border border-yellow-200">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
+                    <div className="flex-1">
+                      <div className="font-medium text-yellow-800">
+                        Sletninger afventer godkendelse
+                      </div>
+                      <div className="text-sm text-yellow-700 mt-1">
+                        Godkend sletning for at fjerne medlemmer lokalt, eller behold dem lokalt.
+                      </div>
+                      <div className="mt-3 space-y-3">
+                        {pendingDeleteItems.map(({ pending, summary }) => {
+                          const approveKey = `${pending.entityType}:${pending.entityId}:approve`;
+                          const rejectKey = `${pending.entityType}:${pending.entityId}:reject`;
+                          const isProcessing = pendingDeleteAction === approveKey || pendingDeleteAction === rejectKey;
+
+                          return (
+                            <div
+                              key={`${pending.entityType}:${pending.entityId}`}
+                              className="bg-white border border-yellow-200 rounded-lg p-3"
+                            >
+                              <div className="text-sm font-medium text-gray-900">
+                                {summary.title}
+                              </div>
+                              <div className="text-xs text-gray-600 mt-1">
+                                {summary.subtitle}
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveDelete(pending)}
+                                  disabled={isProcessing}
+                                  className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors disabled:opacity-50"
+                                >
+                                  Godkend sletning
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRejectDelete(pending)}
+                                  disabled={isProcessing}
+                                  className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors disabled:opacity-50"
+                                >
+                                  Behold lokalt
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>

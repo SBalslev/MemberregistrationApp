@@ -1,7 +1,7 @@
 # Feature Status Overview
 
 **Project:** Medlemscheckin (Club Member Check-in System)
-**Last Updated:** February 1, 2026
+**Last Updated:** February 3, 2026
 **Updated By:** Claude
 
 ---
@@ -10,34 +10,26 @@
 
 | Feature | Status | Target | Documentation |
 |---------|--------|--------|---------------|
-| **Enhanced Trial Registration** | 📋 Planned | TBD | [prd.md](enhanced-trial-registration/prd.md) |
-| **Trainer Experience** | 📋 Draft | TBD | [prd.md](trainer-experience/prd.md) |
+| **Enhanced Trial Registration** | 🔄 In Progress (~90%) | TBD | [prd.md](enhanced-trial-registration/prd.md) |
 
 ### Enhanced Trial Registration
 
 **Summary:** Age validation, ID photo capture for adults, photo review/retake flow, trainer photo management, assisted check-in, and automatic ID photo deletion.
 
-**Key Capabilities (Planned):**
+**Status:** Most capabilities implemented via Trainer Experience feature. Remaining items:
+- ID photo automatic deletion when membershipId assigned AND fee paid (lifecycle management)
 
-- Birth date validation (valid date, not future, reasonable age)
-- Adult detection (age >= 18)
-- ID photo capture for adults (driver's license or ID card)
-- Photo review and retake flow for both profile and ID photos
-- Trainer can view trial members and their photos
-- Trainer can retake profile or ID photos
-- Trainer assisted check-in and practice session registration
-- ID photo automatically deleted when membershipId assigned AND fee paid
-- ID photo sync to online database
+**Implemented Capabilities:**
 
-**Epics:**
-
-1. Member App - Age Validation & Photo Review
-2. Member App - ID Photo Capture
-3. Trainer App - Trial Member Management
-4. Trainer App - Assisted Check-in
-5. Laptop Admin - ID Photo Display
-6. ID Photo Lifecycle Management
-7. Sync Protocol Updates
+- ✅ Birth date validation (valid date, not future, reasonable age)
+- ✅ Adult detection (age >= 18)
+- ✅ ID photo capture for adults (driver's license or ID card)
+- ✅ Photo review and retake flow for both profile and ID photos
+- ✅ Trainer can view trial members and their photos
+- ✅ Trainer can retake profile or ID photos
+- ✅ Trainer assisted check-in and practice session registration
+- ✅ ID photo sync to online database
+- ⏳ ID photo automatically deleted when membershipId assigned AND fee paid
 
 ---
 
@@ -45,6 +37,7 @@
 
 | Feature | Status | Completion Date | Documentation |
 |---------|--------|-----------------|---------------|
+| **Trainer Experience** | ✅ Complete | 2026-02-03 | [prd.md](trainer-experience/prd.md) |
 | **Distributed Membership System** | ✅ Complete | 2026-01-20 | [FEATURE_COMPLETE.md](distributed-membership-system/completion/FEATURE_COMPLETE.md) |
 | **Trial Member Registration** | ✅ Complete | 2026-01-20 | [FEATURE-COMPLETION-SUMMARY.md](trial-member-registration/completion/FEATURE-COMPLETION-SUMMARY.md) |
 | **Equipment Sync** | ✅ Complete | 2026-01-20 | [FEATURE_COMPLETE.md](equipment-sync/completion/FEATURE_COMPLETE.md) |
@@ -67,7 +60,57 @@
 
 ## Completed Feature Details
 
-### 1. Distributed Membership System
+### 1. Trainer Experience
+
+**Summary:** Dedicated trainer experience on the trainer tablet with authentication, practice management, equipment checkout, and trial member photo management.
+
+**Key Capabilities:**
+
+- **Trainer Authentication:** Card scan authentication with 60-second session timeout and "extend session" warning
+- **Admin PIN Fallback:** PIN-based authentication for initial setup when no trainers are registered
+- **Daily Overview Dashboard:** Real-time view of today's check-ins and practice sessions
+- **Equipment Management:** Full CRUD for equipment items with check-out/check-in flow
+- **Trial Member Management:** View recent trial members, photos, and ID photo status
+- **Photo Retake:** Camera capture to retake profile or ID photos for trial members
+- **Assisted Check-in:** Search and check in members on their behalf (US-10)
+- **Assisted Practice Session:** Register practice sessions for members without cards (US-11)
+- **Historical Data:** 90-day lookback with date range, member, and discipline filtering
+- **Laptop Admin:** Trainer designation, Skydeleder certification, and discipline management
+
+**Implementation (5 Phases):**
+
+- **Phase 1 - Data Model & Sync:** `TrainerInfo`, `TrainerDiscipline` entities with bidirectional sync
+- **Phase 2 - Trainer Authentication:** `TrainerAuthViewModel`, `TrainerSessionManager` with 60s timeout
+- **Phase 2b - Laptop Admin:** `TrainersPage.tsx`, `TrainerDetailPanel.tsx` for trainer management
+- **Phase 3 - Dashboard:** `TrainerDashboardScreen.kt` with check-ins, sessions, trial members
+- **Phase 4 - Equipment:** `EquipmentListScreen.kt`, `EquipmentDetailScreen.kt`, `MemberSearchDialog.kt`
+- **Phase 5 - Historical Data:** `HistoryScreen.kt`, `HistoryViewModel.kt` with pagination
+
+**User Stories Completed (11/11):**
+
+| US | Description | Status |
+|----|-------------|--------|
+| US-1 | Trainer Authentication | ✅ |
+| US-2 | Trainer Role Management | ✅ |
+| US-3 | Daily Check-in Overview | ✅ |
+| US-4 | Practice Session Management | ✅ |
+| US-5 | Equipment Management | ✅ |
+| US-6 | Historical Data Access | ✅ |
+| US-7 | Trial Member Overview | ✅ |
+| US-8 | View Member Photos | ✅ |
+| US-9 | Retake Member Photos | ✅ |
+| US-10 | Assisted Check-in | ✅ |
+| US-11 | Assisted Practice Session | ✅ |
+
+**Key Files:**
+
+- Android: `ui/trainer/` package (~15 files)
+- Laptop: `TrainersPage.tsx`, `TrainerDetailPanel.tsx`, `trainerRepository.ts`
+- Sync: `SyncPayload.kt`, `SyncRepository.kt`, `syncService.ts`
+
+**Note:** `EquipmentTransaction` entity for audit logging was specified in PRD but not implemented. Core functionality works without it.
+
+### 2. Distributed Membership System
 
 **Summary:** Real-time sync of member data, check-ins, practice sessions, and equipment across multiple devices.
 
@@ -86,7 +129,7 @@
 - 34 parent tasks, 196 sub-tasks
 - ~15,000 lines of code
 
-### 2. Trial Member Registration
+### 3. Trial Member Registration
 
 **Summary:** Support for trial members who can check in without a membership number.
 
@@ -99,7 +142,7 @@
 - Trial member badges and age warnings
 - Member merge with FK transfer
 
-### 3. Equipment Sync
+### 4. Equipment Sync
 
 **Summary:** Equipment tracking and checkout sync (implemented as Phase 3 of Distributed Membership System).
 
@@ -110,7 +153,7 @@
 - Conflict detection for concurrent checkouts
 - Wall-mounted display variant
 
-### 4. Enhanced Member Registration
+### 5. Enhanced Member Registration
 
 **Summary:** Photo sync and additional member fields (implemented via Trial Member Registration).
 
@@ -127,7 +170,7 @@
 
 ## Completed Feature Details (Continued)
 
-### 5. Photo Storage Optimization
+### 6. Photo Storage Optimization
 
 **Summary:** Optimize photo storage for performance while preserving full-quality photos.
 
@@ -145,7 +188,7 @@
 - `getPhotoSrc()` utility handles file:// URL conversion
 - Migration runs once on startup for existing members with data URL photos
 
-### 6. Financial Transactions (Kassebog)
+### 7. Financial Transactions (Kassebog)
 
 **Summary:** Club financial transaction recording and reporting.
 
@@ -172,7 +215,7 @@
 - Excel export: `excelExport.ts`
 - Types: `finance.ts`
 
-### 7. Member Preference Sync
+### 8. Member Preference Sync
 
 **Summary:** Sync member practice preferences between tablets via the laptop for seamless tablet replacement.
 
@@ -192,7 +235,7 @@
 - Laptop: `MemberPreference` table in SQLite schema
 - Sync: `memberPreferences` field in `SyncEntities`
 
-### 8. Member Deletion
+### 9. Member Deletion
 
 **Summary:** Permanent deletion of inactive members with cascade delete, transaction protection, and cloud sync.
 
@@ -214,7 +257,7 @@
 - `processPendingMemberDeletions()` in onlineSyncService for outbox processing
 - `queueMemberDeletion()` in syncOutboxRepository for reliable delivery
 
-### 9. UI/UX Improvements (February 2026)
+### 10. UI/UX Improvements (February 2026)
 
 **Summary:** Various UI improvements to the laptop admin application for better usability.
 
@@ -262,7 +305,7 @@
 - `App.tsx` - Added Statistics route
 - `pages/index.ts` - Exported StatisticsPage
 
-### 10. UX Review Fixes (February 2026)
+### 11. UX Review Fixes (February 2026)
 
 **Summary:** Comprehensive UX review and fixes addressing accessibility, consistency, and usability issues.
 
@@ -318,8 +361,8 @@
 
 ## Next Steps
 
-1. **Enhanced Trial Registration:** Implement age validation, ID photo capture, and photo review flow
-2. **Trainer Experience:** Complete trainer dashboard with assisted check-in features
-3. **Production Deployment:** All completed features are ready for production use
-4. **Optional:** Implement HTTPS for sync API (SEC-5) if security requirements increase
-5. **Future:** Consider additional features (MobilePay integration, bank CSV import)
+1. **Enhanced Trial Registration (Final):** Implement automatic ID photo deletion when membershipId assigned AND fee paid
+2. **Production Deployment:** All completed features are ready for production use
+3. **Optional - Equipment Audit Trail:** Add `EquipmentTransaction` entity for equipment operation logging
+4. **Optional - HTTPS:** Implement HTTPS for sync API (SEC-5) if security requirements increase
+5. **Future:** Consider additional features (MobilePay integration, bank CSV import, attendance reports)

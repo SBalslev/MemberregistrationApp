@@ -391,3 +391,322 @@ export function getPracticeClassificationOptions(
 
   return rows.map(row => row.classification);
 }
+
+export interface PracticeCountRow {
+  localDate: string;
+  sessionCount: number;
+  memberCount: number;
+  totalPoints: number;
+}
+
+export function getPracticeCountsByDay(
+  startDate: string,
+  endDate: string,
+  trialFilter: TrialFilter,
+  practiceTypes?: string[],
+  classifications?: string[]
+): PracticeCountRow[] {
+  const trialClause = buildTrialFilterClause(trialFilter, 'm');
+  const typeClause = buildInClause(practiceTypes ?? [], 'p.practiceType');
+  const classificationClause = buildInClause(classifications ?? [], 'p.classification');
+  return query<PracticeCountRow>(
+    `SELECT
+      p.localDate,
+      COUNT(*) as sessionCount,
+      COUNT(DISTINCT p.internalMemberId) as memberCount,
+      SUM(p.points) as totalPoints
+     FROM PracticeSession p
+     JOIN Member m ON m.internalId = p.internalMemberId
+     WHERE p.localDate >= ?
+       AND p.localDate <= ?
+       AND m.mergedIntoId IS NULL
+       ${trialClause}
+       ${typeClause.clause}
+       ${classificationClause.clause}
+     GROUP BY p.localDate
+     ORDER BY p.localDate`,
+    [startDate, endDate, ...typeClause.params, ...classificationClause.params]
+  );
+}
+
+export interface DailyPracticeSessionRow {
+  id: string;
+  internalMemberId: string;
+  membershipId: string | null;
+  firstName: string;
+  lastName: string;
+  memberLifecycleStage: string;
+  practiceType: string;
+  classification: string;
+  points: number;
+  createdAtUtc: string;
+}
+
+export function getDailyPracticeSessions(
+  localDate: string,
+  trialFilter: TrialFilter,
+  practiceTypes?: string[],
+  classifications?: string[]
+): DailyPracticeSessionRow[] {
+  const trialClause = buildTrialFilterClause(trialFilter, 'm');
+  const typeClause = buildInClause(practiceTypes ?? [], 'p.practiceType');
+  const classificationClause = buildInClause(classifications ?? [], 'p.classification');
+  return query<DailyPracticeSessionRow>(
+    `SELECT
+      p.id,
+      p.internalMemberId,
+      m.membershipId,
+      m.firstName,
+      m.lastName,
+      m.memberLifecycleStage,
+      p.practiceType,
+      p.classification,
+      p.points,
+      p.createdAtUtc
+     FROM PracticeSession p
+     JOIN Member m ON m.internalId = p.internalMemberId
+     WHERE p.localDate = ?
+       AND m.mergedIntoId IS NULL
+       ${trialClause}
+       ${typeClause.clause}
+       ${classificationClause.clause}
+     ORDER BY p.createdAtUtc DESC`,
+    [localDate, ...typeClause.params, ...classificationClause.params]
+  );
+}
+
+export interface PracticeTotalsRow {
+  totalSessions: number;
+  totalMembers: number;
+  totalPoints: number;
+}
+
+export function getPracticeTotals(
+  startDate: string,
+  endDate: string,
+  trialFilter: TrialFilter,
+  practiceTypes?: string[],
+  classifications?: string[]
+): PracticeTotalsRow {
+  const trialClause = buildTrialFilterClause(trialFilter, 'm');
+  const typeClause = buildInClause(practiceTypes ?? [], 'p.practiceType');
+  const classificationClause = buildInClause(classifications ?? [], 'p.classification');
+  const rows = query<PracticeTotalsRow>(
+    `SELECT
+      COUNT(*) as totalSessions,
+      COUNT(DISTINCT p.internalMemberId) as totalMembers,
+      COALESCE(SUM(p.points), 0) as totalPoints
+     FROM PracticeSession p
+     JOIN Member m ON m.internalId = p.internalMemberId
+     WHERE p.localDate >= ?
+       AND p.localDate <= ?
+       AND m.mergedIntoId IS NULL
+       ${trialClause}
+       ${typeClause.clause}
+       ${classificationClause.clause}`,
+    [startDate, endDate, ...typeClause.params, ...classificationClause.params]
+  );
+  return rows[0] ?? { totalSessions: 0, totalMembers: 0, totalPoints: 0 };
+}
+
+// ===== Leaderboard / Rankings =====
+
+export interface LeaderboardRow {
+  rank: number;
+  internalId: string;
+  membershipId: string | null;
+  firstName: string;
+  lastName: string;
+  memberLifecycleStage: string;
+  totalPoints: number;
+  sessionCount: number;
+  avgPointsPerSession: number;
+  bestSession: number;
+}
+
+export function getPracticeLeaderboard(
+  startDate: string,
+  endDate: string,
+  trialFilter: TrialFilter,
+  practiceTypes?: string[],
+  classifications?: string[],
+  limit = 20
+): LeaderboardRow[] {
+  const trialClause = buildTrialFilterClause(trialFilter, 'm');
+  const typeClause = buildInClause(practiceTypes ?? [], 'p.practiceType');
+  const classificationClause = buildInClause(classifications ?? [], 'p.classification');
+
+  const rows = query<Omit<LeaderboardRow, 'rank'>>(
+    `SELECT
+      m.internalId,
+      m.membershipId,
+      m.firstName,
+      m.lastName,
+      m.memberLifecycleStage,
+      COALESCE(SUM(p.points), 0) as totalPoints,
+      COUNT(*) as sessionCount,
+      ROUND(COALESCE(AVG(p.points), 0), 1) as avgPointsPerSession,
+      COALESCE(MAX(p.points), 0) as bestSession
+     FROM PracticeSession p
+     JOIN Member m ON m.internalId = p.internalMemberId
+     WHERE p.localDate >= ?
+       AND p.localDate <= ?
+       AND m.mergedIntoId IS NULL
+       ${trialClause}
+       ${typeClause.clause}
+       ${classificationClause.clause}
+     GROUP BY m.internalId
+     ORDER BY totalPoints DESC
+     LIMIT ?`,
+    [startDate, endDate, ...typeClause.params, ...classificationClause.params, limit]
+  );
+
+  return rows.map((row, index) => ({ ...row, rank: index + 1 }));
+}
+
+// ===== Classification Comparison =====
+
+export interface ClassificationComparisonRow {
+  classification: string;
+  memberCount: number;
+  sessionCount: number;
+  totalPoints: number;
+  avgPointsPerSession: number;
+  avgPointsPerMember: number;
+}
+
+export function getClassificationComparison(
+  startDate: string,
+  endDate: string,
+  trialFilter: TrialFilter,
+  practiceTypes?: string[]
+): ClassificationComparisonRow[] {
+  const trialClause = buildTrialFilterClause(trialFilter, 'm');
+  const typeClause = buildInClause(practiceTypes ?? [], 'p.practiceType');
+
+  return query<ClassificationComparisonRow>(
+    `SELECT
+      p.classification,
+      COUNT(DISTINCT p.internalMemberId) as memberCount,
+      COUNT(*) as sessionCount,
+      COALESCE(SUM(p.points), 0) as totalPoints,
+      ROUND(COALESCE(AVG(p.points), 0), 1) as avgPointsPerSession,
+      ROUND(COALESCE(SUM(p.points) * 1.0 / COUNT(DISTINCT p.internalMemberId), 0), 1) as avgPointsPerMember
+     FROM PracticeSession p
+     JOIN Member m ON m.internalId = p.internalMemberId
+     WHERE p.localDate >= ?
+       AND p.localDate <= ?
+       AND m.mergedIntoId IS NULL
+       ${trialClause}
+       ${typeClause.clause}
+     GROUP BY p.classification
+     ORDER BY avgPointsPerSession DESC`,
+    [startDate, endDate, ...typeClause.params]
+  );
+}
+
+// ===== Detailed Member Stats =====
+
+export interface MemberPracticeStats {
+  internalId: string;
+  membershipId: string | null;
+  firstName: string;
+  lastName: string;
+  totalPoints: number;
+  sessionCount: number;
+  avgPointsPerSession: number;
+  bestSession: number;
+  worstSession: number;
+  recentTrend: 'improving' | 'declining' | 'stable' | 'insufficient_data';
+}
+
+export function getMemberPracticeStats(
+  internalMemberId: string,
+  startDate: string,
+  endDate: string,
+  practiceTypes?: string[],
+  classifications?: string[]
+): MemberPracticeStats | null {
+  const typeClause = buildInClause(practiceTypes ?? [], 'p.practiceType');
+  const classificationClause = buildInClause(classifications ?? [], 'p.classification');
+
+  const rows = query<{
+    internalId: string;
+    membershipId: string | null;
+    firstName: string;
+    lastName: string;
+    totalPoints: number;
+    sessionCount: number;
+    avgPointsPerSession: number;
+    bestSession: number;
+    worstSession: number;
+  }>(
+    `SELECT
+      m.internalId,
+      m.membershipId,
+      m.firstName,
+      m.lastName,
+      COALESCE(SUM(p.points), 0) as totalPoints,
+      COUNT(*) as sessionCount,
+      ROUND(COALESCE(AVG(p.points), 0), 1) as avgPointsPerSession,
+      COALESCE(MAX(p.points), 0) as bestSession,
+      COALESCE(MIN(p.points), 0) as worstSession
+     FROM PracticeSession p
+     JOIN Member m ON m.internalId = p.internalMemberId
+     WHERE p.internalMemberId = ?
+       AND p.localDate >= ?
+       AND p.localDate <= ?
+       AND m.mergedIntoId IS NULL
+       ${typeClause.clause}
+       ${classificationClause.clause}
+     GROUP BY m.internalId`,
+    [internalMemberId, startDate, endDate, ...typeClause.params, ...classificationClause.params]
+  );
+
+  if (rows.length === 0) return null;
+
+  // Calculate trend by comparing first half vs second half of period
+  const trend = calculateMemberTrend(internalMemberId, startDate, endDate, practiceTypes, classifications);
+
+  return { ...rows[0], recentTrend: trend };
+}
+
+function calculateMemberTrend(
+  internalMemberId: string,
+  startDate: string,
+  endDate: string,
+  practiceTypes?: string[],
+  classifications?: string[]
+): 'improving' | 'declining' | 'stable' | 'insufficient_data' {
+  const typeClause = buildInClause(practiceTypes ?? [], 'p.practiceType');
+  const classificationClause = buildInClause(classifications ?? [], 'p.classification');
+
+  // Get all sessions ordered by date
+  const sessions = query<{ points: number; localDate: string }>(
+    `SELECT p.points, p.localDate
+     FROM PracticeSession p
+     WHERE p.internalMemberId = ?
+       AND p.localDate >= ?
+       AND p.localDate <= ?
+       ${typeClause.clause}
+       ${classificationClause.clause}
+     ORDER BY p.localDate`,
+    [internalMemberId, startDate, endDate, ...typeClause.params, ...classificationClause.params]
+  );
+
+  if (sessions.length < 4) return 'insufficient_data';
+
+  const midpoint = Math.floor(sessions.length / 2);
+  const firstHalf = sessions.slice(0, midpoint);
+  const secondHalf = sessions.slice(midpoint);
+
+  const avgFirst = firstHalf.reduce((sum, s) => sum + s.points, 0) / firstHalf.length;
+  const avgSecond = secondHalf.reduce((sum, s) => sum + s.points, 0) / secondHalf.length;
+
+  const diff = avgSecond - avgFirst;
+  const threshold = avgFirst * 0.1; // 10% change threshold
+
+  if (diff > threshold) return 'improving';
+  if (diff < -threshold) return 'declining';
+  return 'stable';
+}

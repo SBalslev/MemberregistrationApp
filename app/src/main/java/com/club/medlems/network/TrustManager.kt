@@ -48,6 +48,7 @@ class TrustManager @Inject constructor(
         private const val KEY_THIS_DEVICE_ID = "this_device_id"
         private const val KEY_THIS_DEVICE_INFO = "this_device_info"
         private const val KEY_PERSISTENT_TOKEN = "persistent_token"
+        private const val KEY_DEVICE_TOKENS = "device_tokens"
         private const val TOKEN_BYTES = 48 // 384-bit tokens
     }
     
@@ -166,7 +167,67 @@ class TrustManager @Inject constructor(
     fun getPersistentToken(): String? {
         return prefs.getString(KEY_PERSISTENT_TOKEN, null)
     }
-    
+
+    /**
+     * Saves a token issued by a specific device for authenticating with that device.
+     * Each device we communicate with gives us a token signed with their secret.
+     *
+     * @param deviceId The ID of the device that issued the token
+     * @param token The token issued by that device
+     */
+    fun saveDeviceToken(deviceId: String, token: String) {
+        val tokens = getDeviceTokens().toMutableMap()
+        tokens[deviceId] = token
+        saveDeviceTokens(tokens)
+        Log.i(TAG, "Saved token for device: $deviceId")
+    }
+
+    /**
+     * Gets the token issued by a specific device, or null if we don't have one.
+     *
+     * @param deviceId The ID of the device we want to authenticate with
+     * @return The token that device issued to us, or null
+     */
+    fun getDeviceToken(deviceId: String): String? {
+        return getDeviceTokens()[deviceId]
+    }
+
+    /**
+     * Removes the token for a specific device (e.g., when trust is revoked).
+     */
+    fun removeDeviceToken(deviceId: String) {
+        val tokens = getDeviceTokens().toMutableMap()
+        if (tokens.remove(deviceId) != null) {
+            saveDeviceTokens(tokens)
+            Log.i(TAG, "Removed token for device: $deviceId")
+        }
+    }
+
+    private fun getDeviceTokens(): Map<String, String> {
+        val json = prefs.getString(KEY_DEVICE_TOKENS, null) ?: return emptyMap()
+        return try {
+            SyncJson.json.decodeFromString(
+                MapSerializer(String.serializer(), String.serializer()),
+                json
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load device tokens", e)
+            emptyMap()
+        }
+    }
+
+    private fun saveDeviceTokens(tokens: Map<String, String>) {
+        try {
+            val json = SyncJson.json.encodeToString(
+                MapSerializer(String.serializer(), String.serializer()),
+                tokens
+            )
+            prefs.edit().putString(KEY_DEVICE_TOKENS, json).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save device tokens", e)
+        }
+    }
+
     /**
      * Generates a device token for authentication.
      * This is a simple signed token; for production, use proper JWT with RS256.
@@ -275,8 +336,9 @@ class TrustManager @Inject constructor(
             _trustedDevices.value = currentList
             saveTrustedDevices()
 
-            // Also remove the connection profile
+            // Also remove the connection profile and any stored token
             removeConnectionProfile(deviceId)
+            removeDeviceToken(deviceId)
 
             Log.i(TAG, "Removed device from trusted list: ${device.name}")
         }
@@ -469,6 +531,26 @@ class TrustManager @Inject constructor(
             _connectionProfiles.value = currentProfiles
             saveConnectionProfiles()
             Log.d(TAG, "Recorded connection failure for $deviceId at $ip")
+        }
+    }
+
+    /**
+     * Records a successful sync completion with a device.
+     * Updates only the lastSuccessfulSync timestamp without affecting connection statistics.
+     * Called after data has been successfully exchanged, not just when connection is established.
+     */
+    fun recordSyncSuccess(deviceId: String) {
+        val now = Clock.System.now()
+        val currentProfiles = _connectionProfiles.value.toMutableMap()
+
+        val existingProfile = currentProfiles[deviceId]
+        if (existingProfile != null) {
+            currentProfiles[deviceId] = existingProfile.copy(
+                connectionStats = existingProfile.connectionStats.copy(lastSuccessfulSync = now)
+            )
+            _connectionProfiles.value = currentProfiles
+            saveConnectionProfiles()
+            Log.d(TAG, "Recorded sync success for $deviceId at $now")
         }
     }
 
