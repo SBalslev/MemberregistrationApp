@@ -113,6 +113,20 @@ android {
     testOptions {
         unitTests {
             isReturnDefaultValues = true
+            isIncludeAndroidResources = true
+        }
+        unitTests.all {
+            // Increase heap size for test JVM to prevent OOM
+            it.maxHeapSize = "4g"
+            // Fork a new JVM more frequently to prevent memory accumulation
+            it.forkEvery = 5
+            // Add JVM args for better memory management
+            it.jvmArgs(
+                "-Xms1g",               // Start with 1GB to reduce GC pressure
+                "-XX:+UseG1GC",
+                "-XX:MaxGCPauseMillis=100",
+                "-XX:+HeapDumpOnOutOfMemoryError"
+            )
         }
     }
 }

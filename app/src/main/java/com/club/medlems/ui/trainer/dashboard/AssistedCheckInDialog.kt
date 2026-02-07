@@ -1,9 +1,11 @@
 package com.club.medlems.ui.trainer.dashboard
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -37,6 +39,8 @@ import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.entity.SessionSource
 import com.club.medlems.data.sync.SyncOutboxManager
 import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.domain.ClassificationOptions
+import com.club.medlems.domain.prefs.LastClassificationStore
 import com.club.medlems.network.TrustManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,6 +69,7 @@ data class AssistedCheckInState(
     // Practice session fields
     val showPracticeForm: Boolean = false,
     val selectedPracticeType: PracticeType = PracticeType.Riffel,
+    val selectedClassification: String? = null,
     val practicePoints: String = "",
     val isSavingSession: Boolean = false,
     val sessionSaved: Boolean = false
@@ -85,7 +90,8 @@ class AssistedCheckInViewModel @Inject constructor(
     private val practiceSessionDao: PracticeSessionDao,
     private val syncOutboxManager: SyncOutboxManager,
     private val syncManager: SyncManager,
-    private val trustManager: TrustManager
+    private val trustManager: TrustManager,
+    private val lastClassificationStore: LastClassificationStore
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AssistedCheckInState())
@@ -97,7 +103,10 @@ class AssistedCheckInViewModel @Inject constructor(
         if (query.length >= 2) {
             viewModelScope.launch {
                 _state.value = _state.value.copy(isSearching = true)
-                val results = memberDao.searchByNameOrId(query)
+                val today = Clock.System.now()
+                    .toLocalDateTime(TimeZone.currentSystemDefault())
+                    .date
+                val results = memberDao.searchByNameOrIdExcludingCheckedIn(query, today)
                 _state.value = _state.value.copy(
                     searchResults = results,
                     isSearching = false
@@ -177,7 +186,13 @@ class AssistedCheckInViewModel @Inject constructor(
 
     // Practice session methods
     fun showPracticeForm() {
-        _state.value = _state.value.copy(showPracticeForm = true)
+        val member = _state.value.selectedMember ?: return
+        val (lastType, lastClassification) = lastClassificationStore.get(member.internalId)
+        _state.value = _state.value.copy(
+            showPracticeForm = true,
+            selectedPracticeType = lastType ?: PracticeType.Riffel,
+            selectedClassification = lastClassification
+        )
     }
 
     fun hidePracticeForm() {
@@ -185,7 +200,14 @@ class AssistedCheckInViewModel @Inject constructor(
     }
 
     fun selectPracticeType(type: PracticeType) {
-        _state.value = _state.value.copy(selectedPracticeType = type)
+        _state.value = _state.value.copy(
+            selectedPracticeType = type,
+            selectedClassification = null
+        )
+    }
+
+    fun selectClassification(classification: String) {
+        _state.value = _state.value.copy(selectedClassification = classification)
     }
 
     fun onPointsChanged(points: String) {
@@ -207,6 +229,13 @@ class AssistedCheckInViewModel @Inject constructor(
                     .date
                 val points = _state.value.practicePoints.toIntOrNull() ?: 0
 
+                // Save last selection for this member
+                lastClassificationStore.set(
+                    member.internalId,
+                    _state.value.selectedPracticeType,
+                    _state.value.selectedClassification
+                )
+
                 val session = PracticeSession(
                     id = UUID.randomUUID().toString(),
                     internalMemberId = member.internalId,
@@ -216,7 +245,7 @@ class AssistedCheckInViewModel @Inject constructor(
                     practiceType = _state.value.selectedPracticeType,
                     points = points,
                     krydser = null,
-                    classification = null,
+                    classification = _state.value.selectedClassification,
                     source = SessionSource.attendant,
                     deviceId = trustManager.getThisDeviceId(),
                     syncVersion = 0,
@@ -395,6 +424,31 @@ fun AssistedCheckInDialog(
                                             }
                                         }
 
+                                        // Classification selector
+                                        val classificationOptions = ClassificationOptions.optionsFor(state.selectedPracticeType)
+                                        if (classificationOptions.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Text(
+                                                text = "Klassifikation",
+                                                style = MaterialTheme.typography.labelMedium
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                classificationOptions.forEach { option ->
+                                                    FilterChip(
+                                                        selected = state.selectedClassification == option,
+                                                        onClick = { viewModel.selectClassification(option) },
+                                                        label = { Text(option) }
+                                                    )
+                                                }
+                                            }
+                                        }
+
                                         Spacer(modifier = Modifier.height(16.dp))
 
                                         // Points input
@@ -423,7 +477,7 @@ fun AssistedCheckInDialog(
                                             Button(
                                                 onClick = { viewModel.savePracticeSession() },
                                                 modifier = Modifier.weight(1f),
-                                                enabled = !state.isSavingSession
+                                                enabled = !state.isSavingSession && state.selectedClassification != null
                                             ) {
                                                 if (state.isSavingSession) {
                                                     CircularProgressIndicator(

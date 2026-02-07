@@ -4,6 +4,18 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/react';
 import { MemberActivityOverviewPage } from './MemberActivityOverviewPage';
 
+vi.mock('recharts', async () => {
+  const actual = await vi.importActual<typeof import('recharts')>('recharts');
+  return {
+    ...actual,
+    ResponsiveContainer: ({ width, height, children }: { width?: number | string; height?: number | string; children: any }) => (
+      <div style={{ width: width ?? 800, height: height ?? 400 }}>
+        {typeof children === 'function' ? children({ width: 800, height: 400 }) : children}
+      </div>
+    )
+  };
+});
+
 vi.mock('../database', () => ({
   getSeasonDateRange: () => ({ startDate: '2026-01-01', endDate: '2026-01-31' }),
   getDailyAttendanceMembers: () => [],
@@ -26,13 +38,16 @@ vi.mock('../database', () => ({
       lastName: 'Hansen',
       memberLifecycleStage: 'FULL',
       totalPoints: 100,
-      totalKrydser: 12,
       sessionCount: 10,
       avgPointsPerSession: 10,
+      avgKrydserPerSession: 1,
       bestSession: 15
     }
   ],
-  getMemberPracticeStats: () => null
+  getMemberPracticeStats: () => null,
+  getMemberPracticeSeries: () => [
+    { localDate: '2026-01-02', points: 180, krydser: 2, createdAtUtc: '2026-01-02T18:30:00Z' }
+  ],
 }));
 
 describe('MemberActivityOverviewPage', () => {
@@ -50,7 +65,7 @@ describe('MemberActivityOverviewPage', () => {
     render(<MemberActivityOverviewPage />);
 
     expect(screen.getByText('Fremmøde over flere dage')).toBeTruthy();
-    expect(screen.getByText('2026-01-02')).toBeTruthy();
+    expect(screen.getAllByText('2026-01-02').length).toBeGreaterThan(0);
     expect(screen.getByText('3 medlemmer')).toBeTruthy();
   });
 

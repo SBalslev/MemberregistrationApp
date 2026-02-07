@@ -33,7 +33,8 @@ import javax.inject.Inject
 data class CheckInWithMember(
     val checkIn: CheckIn,
     val memberName: String,
-    val memberId: String
+    val memberId: String,
+    val internalMemberId: String
 )
 
 /**
@@ -87,7 +88,9 @@ data class TrainerDashboardState(
     val isRefreshing: Boolean = false,
     val lastUpdated: String = "",
     val sessionExpiring: Boolean = false,
-    val sessionRemainingSeconds: Int = 0
+    val sessionRemainingSeconds: Int = 0,
+    /** Selected member for adding a session from the dashboard */
+    val selectedMemberForSession: CheckInWithMember? = null
 )
 
 /**
@@ -184,6 +187,20 @@ class TrainerDashboardViewModel @Inject constructor(
         trainerSessionManager.registerInteraction()
     }
 
+    /**
+     * Selects a member for adding a practice session from the dashboard.
+     */
+    fun selectMemberForSession(item: CheckInWithMember) {
+        _state.value = _state.value.copy(selectedMemberForSession = item)
+    }
+
+    /**
+     * Clears the selected member for session.
+     */
+    fun clearSessionSelection() {
+        _state.value = _state.value.copy(selectedMemberForSession = null)
+    }
+
     private fun loadData() {
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
@@ -221,7 +238,8 @@ class TrainerDashboardViewModel @Inject constructor(
             CheckInWithMember(
                 checkIn = checkIn,
                 memberName = member?.displayName ?: "Ukendt medlem",
-                memberId = member?.membershipId ?: checkIn.internalMemberId
+                memberId = member?.membershipId ?: checkIn.internalMemberId,
+                internalMemberId = checkIn.internalMemberId
             )
         }.sortedByDescending { it.checkIn.createdAtUtc }
 

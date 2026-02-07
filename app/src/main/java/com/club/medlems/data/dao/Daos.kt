@@ -74,9 +74,9 @@ interface MemberDao {
     
     // Search queries for equipment checkout and check-in
     @Query("""
-        SELECT * FROM Member 
-        WHERE status = 'ACTIVE' 
-        AND (firstName LIKE '%' || :query || '%' 
+        SELECT * FROM Member
+        WHERE status = 'ACTIVE'
+        AND (firstName LIKE '%' || :query || '%'
              OR lastName LIKE '%' || :query || '%'
              OR membershipId LIKE '%' || :query || '%'
              OR internalId LIKE '%' || :query || '%')
@@ -84,6 +84,21 @@ interface MemberDao {
         LIMIT 20
     """)
     suspend fun searchByNameOrId(query: String): List<Member>
+
+    @Query("""
+        SELECT * FROM Member
+        WHERE status = 'ACTIVE'
+        AND internalId NOT IN (
+            SELECT internalMemberId FROM CheckIn WHERE localDate = :today
+        )
+        AND (firstName LIKE '%' || :query || '%'
+             OR lastName LIKE '%' || :query || '%'
+             OR membershipId LIKE '%' || :query || '%'
+             OR internalId LIKE '%' || :query || '%')
+        ORDER BY lastName, firstName
+        LIMIT 20
+    """)
+    suspend fun searchByNameOrIdExcludingCheckedIn(query: String, today: LocalDate): List<Member>
 }
 
 data class MemberNameProjection(

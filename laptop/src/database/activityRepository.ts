@@ -474,6 +474,7 @@ export interface DailyPracticeSessionRow {
   practiceType: string;
   classification: string;
   points: number;
+  krydser: number | null;
   createdAtUtc: string;
 }
 
@@ -497,6 +498,7 @@ export function getDailyPracticeSessions(
       p.practiceType,
       p.classification,
       p.points,
+      p.krydser,
       p.createdAtUtc
      FROM PracticeSession p
      JOIN Member m ON m.internalId = p.internalMemberId
@@ -554,9 +556,9 @@ export interface LeaderboardRow {
   lastName: string;
   memberLifecycleStage: string;
   totalPoints: number;
-  totalKrydser: number;
   sessionCount: number;
   avgPointsPerSession: number;
+  avgKrydserPerSession: number;
   bestSession: number;
 }
 
@@ -580,9 +582,9 @@ export function getPracticeLeaderboard(
       m.lastName,
       m.memberLifecycleStage,
       COALESCE(SUM(p.points), 0) as totalPoints,
-      COALESCE(SUM(p.krydser), 0) as totalKrydser,
       COUNT(*) as sessionCount,
       ROUND(COALESCE(AVG(p.points), 0), 1) as avgPointsPerSession,
+      ROUND(COALESCE(AVG(p.krydser), 0), 1) as avgKrydserPerSession,
       COALESCE(MAX(p.points), 0) as bestSession
      FROM PracticeSession p
      JOIN Member m ON m.internalId = p.internalMemberId
@@ -593,7 +595,7 @@ export function getPracticeLeaderboard(
        ${typeClause.clause}
        ${classificationClause.clause}
      GROUP BY m.internalId
-     ORDER BY avgPointsPerSession DESC, totalKrydser DESC, sessionCount DESC
+     ORDER BY avgPointsPerSession DESC, avgKrydserPerSession DESC, sessionCount DESC
      LIMIT ?`,
     [startDate, endDate, ...typeClause.params, ...classificationClause.params, limit]
   );
@@ -652,9 +654,19 @@ export interface MemberPracticeStats {
   totalPoints: number;
   sessionCount: number;
   avgPointsPerSession: number;
+  avgKrydserPerSession: number;
   bestSession: number;
+  bestKrydser: number;
   worstSession: number;
+  worstKrydser: number;
   recentTrend: 'improving' | 'declining' | 'stable' | 'insufficient_data';
+}
+
+export interface MemberPracticeSeriesRow {
+  localDate: string;
+  points: number;
+  krydser: number | null;
+  createdAtUtc: string;
 }
 
 export function getMemberPracticeStats(
@@ -675,8 +687,11 @@ export function getMemberPracticeStats(
     totalPoints: number;
     sessionCount: number;
     avgPointsPerSession: number;
+    avgKrydserPerSession: number;
     bestSession: number;
+    bestKrydser: number;
     worstSession: number;
+    worstKrydser: number;
   }>(
     `SELECT
       m.internalId,
@@ -686,8 +701,51 @@ export function getMemberPracticeStats(
       COALESCE(SUM(p.points), 0) as totalPoints,
       COUNT(*) as sessionCount,
       ROUND(COALESCE(AVG(p.points), 0), 1) as avgPointsPerSession,
-      COALESCE(MAX(p.points), 0) as bestSession,
-      COALESCE(MIN(p.points), 0) as worstSession
+      ROUND(COALESCE(AVG(p.krydser), 0), 1) as avgKrydserPerSession,
+      COALESCE((
+        SELECT p2.points
+        FROM PracticeSession p2
+        WHERE p2.internalMemberId = ?
+          AND p2.localDate >= ?
+          AND p2.localDate <= ?
+          ${typeClause.clause}
+          ${classificationClause.clause}
+        ORDER BY p2.points DESC, p2.krydser DESC, p2.createdAtUtc DESC
+        LIMIT 1
+      ), 0) as bestSession,
+      COALESCE((
+        SELECT COALESCE(p2.krydser, 0)
+        FROM PracticeSession p2
+        WHERE p2.internalMemberId = ?
+          AND p2.localDate >= ?
+          AND p2.localDate <= ?
+          ${typeClause.clause}
+          ${classificationClause.clause}
+        ORDER BY p2.points DESC, p2.krydser DESC, p2.createdAtUtc DESC
+        LIMIT 1
+      ), 0) as bestKrydser,
+      COALESCE((
+        SELECT p2.points
+        FROM PracticeSession p2
+        WHERE p2.internalMemberId = ?
+          AND p2.localDate >= ?
+          AND p2.localDate <= ?
+          ${typeClause.clause}
+          ${classificationClause.clause}
+        ORDER BY p2.points ASC, p2.krydser ASC, p2.createdAtUtc DESC
+        LIMIT 1
+      ), 0) as worstSession,
+      COALESCE((
+        SELECT COALESCE(p2.krydser, 0)
+        FROM PracticeSession p2
+        WHERE p2.internalMemberId = ?
+          AND p2.localDate >= ?
+          AND p2.localDate <= ?
+          ${typeClause.clause}
+          ${classificationClause.clause}
+        ORDER BY p2.points ASC, p2.krydser ASC, p2.createdAtUtc DESC
+        LIMIT 1
+      ), 0) as worstKrydser
      FROM PracticeSession p
      JOIN Member m ON m.internalId = p.internalMemberId
      WHERE p.internalMemberId = ?
@@ -697,7 +755,33 @@ export function getMemberPracticeStats(
        ${typeClause.clause}
        ${classificationClause.clause}
      GROUP BY m.internalId`,
-    [internalMemberId, startDate, endDate, ...typeClause.params, ...classificationClause.params]
+    [
+      internalMemberId,
+      startDate,
+      endDate,
+      ...typeClause.params,
+      ...classificationClause.params,
+      internalMemberId,
+      startDate,
+      endDate,
+      ...typeClause.params,
+      ...classificationClause.params,
+      internalMemberId,
+      startDate,
+      endDate,
+      ...typeClause.params,
+      ...classificationClause.params,
+      internalMemberId,
+      startDate,
+      endDate,
+      ...typeClause.params,
+      ...classificationClause.params,
+      internalMemberId,
+      startDate,
+      endDate,
+      ...typeClause.params,
+      ...classificationClause.params
+    ]
   );
 
   if (rows.length === 0) return null;
@@ -706,6 +790,33 @@ export function getMemberPracticeStats(
   const trend = calculateMemberTrend(internalMemberId, startDate, endDate, practiceTypes, classifications);
 
   return { ...rows[0], recentTrend: trend };
+}
+
+export function getMemberPracticeSeries(
+  internalMemberId: string,
+  startDate: string,
+  endDate: string,
+  practiceTypes?: string[],
+  classifications?: string[]
+): MemberPracticeSeriesRow[] {
+  const typeClause = buildInClause(practiceTypes ?? [], 'p.practiceType');
+  const classificationClause = buildInClause(classifications ?? [], 'p.classification');
+
+  return query<MemberPracticeSeriesRow>(
+    `SELECT
+      p.localDate,
+      p.points,
+      p.krydser,
+      p.createdAtUtc
+     FROM PracticeSession p
+     WHERE p.internalMemberId = ?
+       AND p.localDate >= ?
+       AND p.localDate <= ?
+       ${typeClause.clause}
+       ${classificationClause.clause}
+     ORDER BY p.localDate, p.createdAtUtc`,
+    [internalMemberId, startDate, endDate, ...typeClause.params, ...classificationClause.params]
+  );
 }
 
 function calculateMemberTrend(

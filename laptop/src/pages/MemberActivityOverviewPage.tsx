@@ -3,13 +3,14 @@
  * Provides attendance and practice insights.
  */
 
-import { useMemo, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useEffect, useMemo, useState } from 'react';
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   getAttendanceBreakdown,
   getAttendanceCountsByDay,
   getDailyAttendanceMembers,
   getDailyPracticeSessions,
+  getMemberPracticeSeries,
   getMemberPracticeStats,
   getPracticeClassificationOptions,
   getPracticeCountsByDayAndType,
@@ -21,7 +22,8 @@ import {
   type PracticeCountByTypeRow,
   type DailyPracticeSessionRow,
   type LeaderboardRow,
-  type MemberPracticeStats
+  type MemberPracticeStats,
+  type MemberPracticeSeriesRow
 } from '../database';
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -57,6 +59,7 @@ export function MemberActivityOverviewPage() {
     startDate: string;
     endDate: string;
   } | null>(null);
+  const [printTarget, setPrintTarget] = useState<'leaderboard' | 'member' | null>(null);
 
   const isSingleDay = startDate === endDate;
 
@@ -127,6 +130,18 @@ export function MemberActivityOverviewPage() {
     if (!selectedMemberId) return null;
     return getMemberPracticeStats(selectedMemberId, startDate, endDate, practiceTypes, classifications);
   }, [selectedMemberId, startDate, endDate, practiceTypes, classifications]);
+
+  const selectedMemberSeries: MemberPracticeSeriesRow[] = useMemo(() => {
+    if (!selectedMemberId) return [];
+    return getMemberPracticeSeries(selectedMemberId, startDate, endDate, practiceTypes, classifications);
+  }, [selectedMemberId, startDate, endDate, practiceTypes, classifications]);
+
+  const selectedMemberSeriesChart = useMemo(() => {
+    return selectedMemberSeries.map((row) => ({
+      ...row,
+      sessionLabel: `${row.localDate} ${row.createdAtUtc.substring(11, 16)}`
+    }));
+  }, [selectedMemberSeries]);
 
   const pagedAttendanceRows = useMemo(() => {
     const start = (attendancePage - 1) * DEFAULT_PAGE_SIZE;
@@ -211,6 +226,14 @@ export function MemberActivityOverviewPage() {
     setSelectedMemberId(null);
   }
 
+  function handlePrintLeaderboard() {
+    setPrintTarget('leaderboard');
+  }
+
+  function handlePrintMember() {
+    setPrintTarget('member');
+  }
+
   function getTrendIcon(trend: MemberPracticeStats['recentTrend']) {
     switch (trend) {
       case 'improving': return '↗️';
@@ -228,6 +251,22 @@ export function MemberActivityOverviewPage() {
       default: return 'Utilstrækkelig data';
     }
   }
+
+  function formatScore(points: number, krydser?: number | null) {
+    const pointValue = Math.floor(points);
+    const krydserValue = Math.floor(krydser ?? 0);
+    if (!krydserValue) return `${pointValue}`;
+    return `${pointValue}/${krydserValue}`;
+  }
+
+  useEffect(() => {
+    if (!printTarget) return;
+    const cleanup = () => setPrintTarget(null);
+    window.addEventListener('afterprint', cleanup);
+    return () => {
+      window.removeEventListener('afterprint', cleanup);
+    };
+  }, [printTarget]);
 
 
   return (
@@ -541,7 +580,7 @@ export function MemberActivityOverviewPage() {
                           {session.practiceType} - {session.classification}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {session.points} point • {session.createdAtUtc.substring(11, 16)}
+                          {formatScore(session.points, session.krydser)} point • {session.createdAtUtc.substring(11, 16)}
                         </p>
                       </div>
                     </div>
@@ -621,8 +660,18 @@ export function MemberActivityOverviewPage() {
           {!isSingleDay && leaderboard.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200">
               <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="text-lg font-semibold text-gray-900">🏆 Rangliste</h2>
-                <p className="text-xs text-gray-500 mt-1">Top 20 efter gennemsnit pr. pas og krydser</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">🏆 Rangliste</h2>
+                    <p className="text-xs text-gray-500 mt-1">Top 20 efter gennemsnit pr. pas og krydser</p>
+                  </div>
+                  <button
+                    onClick={handlePrintLeaderboard}
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Udskriv
+                  </button>
+                </div>
               </div>
               <div className="divide-y divide-gray-100">
                 {leaderboard.map((row) => (
@@ -649,9 +698,11 @@ export function MemberActivityOverviewPage() {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-bold text-gray-900">{row.avgPointsPerSession}</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatScore(row.avgPointsPerSession, row.avgKrydserPerSession)}
+                        </p>
                         <p className="text-xs text-gray-500">
-                          Krydser: {row.totalKrydser} • Bedst: {row.bestSession}
+                          Bedst: {row.bestSession}
                         </p>
                       </div>
                     </div>
@@ -675,12 +726,20 @@ export function MemberActivityOverviewPage() {
                 {selectedMemberStats.membershipId ?? 'Prøvemedlem'}
               </p>
             </div>
-            <button
-              onClick={clearMemberSelection}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              Luk
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handlePrintMember}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Udskriv
+              </button>
+              <button
+                onClick={clearMemberSelection}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Luk
+              </button>
+            </div>
           </div>
           <div className="p-6">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -693,7 +752,9 @@ export function MemberActivityOverviewPage() {
                 <p className="text-xs text-gray-500 mt-1">Gns. pr. pas</p>
               </div>
               <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <p className="text-2xl font-bold text-gray-900">{selectedMemberStats.bestSession}</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {formatScore(selectedMemberStats.bestSession, selectedMemberStats.bestKrydser)}
+                </p>
                 <p className="text-xs text-gray-500 mt-1">Bedste pas</p>
               </div>
             </div>
@@ -714,7 +775,229 @@ export function MemberActivityOverviewPage() {
               </div>
             </div>
             <div className="mt-4 text-xs text-gray-500">
-              Dårligste pas: {selectedMemberStats.worstSession} point
+              Dårligste pas: {formatScore(selectedMemberStats.worstSession, selectedMemberStats.worstKrydser)} point
+            </div>
+            <div className="mt-6">
+              <h4 className="text-sm font-semibold text-gray-900">Udvikling over tid</h4>
+              {selectedMemberSeries.length === 0 ? (
+                <p className="mt-2 text-xs text-gray-500">Ingen træningspas i den valgte periode.</p>
+              ) : (
+                <div className="mt-3 h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={selectedMemberSeriesChart} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="sessionLabel" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                      <Tooltip
+                        formatter={(value, name) => [value, name === 'points' ? 'Point' : 'Krydser']}
+                        labelFormatter={(label) => `Tidspunkt: ${label}`}
+                      />
+                      <Line type="monotone" dataKey="points" stroke="#2563eb" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="krydser" stroke="#10b981" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {printTarget === 'leaderboard' && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-auto p-6">
+          <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between no-print">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Udskriv rangliste</h2>
+                <p className="text-xs text-gray-500">Forhåndsvisning af de valgte filtre</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Udskriv
+                </button>
+                <button
+                  onClick={() => setPrintTarget(null)}
+                  className="px-3 py-1.5 rounded border border-gray-300 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                >
+                  Annuller
+                </button>
+              </div>
+            </div>
+            <div className="activity-print-view p-6">
+              <style>{`
+                @media print {
+                  body * {
+                    visibility: hidden;
+                  }
+                  .activity-print-view, .activity-print-view * {
+                    visibility: visible;
+                  }
+                  .activity-print-view {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    padding: 24px;
+                  }
+                  table {
+                    page-break-inside: auto;
+                  }
+                  tr {
+                    page-break-inside: avoid;
+                    page-break-after: auto;
+                  }
+                  thead {
+                    display: table-header-group;
+                  }
+                }
+              `}</style>
+              <div className="mb-6">
+                <h1 className="text-2xl font-bold text-gray-900">Rangliste</h1>
+                <p className="text-sm text-gray-600">Periode: {startDate} - {endDate}</p>
+                <p className="text-sm text-gray-600">Prøveforløb: {trialFilterOptions.find((o) => o.value === trialFilter)?.label}</p>
+                {practiceTypes.length > 0 && (
+                  <p className="text-sm text-gray-600">Våbentype: {practiceTypes.join(', ')}</p>
+                )}
+                {classifications.length > 0 && (
+                  <p className="text-sm text-gray-600">Klassifikation: {classifications.join(', ')}</p>
+                )}
+              </div>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border border-gray-300 px-2 py-2 text-left w-12">#</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left">Navn</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left w-24">Medlemsnr.</th>
+                    <th className="border border-gray-300 px-2 py-2 text-right w-24">Gns.</th>
+                    <th className="border border-gray-300 px-2 py-2 text-right w-24">Bedst</th>
+                    <th className="border border-gray-300 px-2 py-2 text-right w-20">Pas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard.map((row) => (
+                    <tr key={row.internalId}>
+                      <td className="border border-gray-300 px-2 py-2">{row.rank}</td>
+                      <td className="border border-gray-300 px-2 py-2">{row.firstName} {row.lastName}</td>
+                      <td className="border border-gray-300 px-2 py-2">{row.membershipId ?? 'Prøvemedlem'}</td>
+                      <td className="border border-gray-300 px-2 py-2 text-right">
+                        {formatScore(row.avgPointsPerSession, row.avgKrydserPerSession)}
+                      </td>
+                      <td className="border border-gray-300 px-2 py-2 text-right">{row.bestSession}</td>
+                      <td className="border border-gray-300 px-2 py-2 text-right">{row.sessionCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {printTarget === 'member' && selectedMemberStats && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-auto p-6">
+          <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between no-print">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Udskriv medlemsoverblik</h2>
+                <p className="text-xs text-gray-500">Forhåndsvisning af den valgte periode</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Udskriv
+                </button>
+                <button
+                  onClick={() => setPrintTarget(null)}
+                  className="px-3 py-1.5 rounded border border-gray-300 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                >
+                  Annuller
+                </button>
+              </div>
+            </div>
+            <div className="activity-print-view p-6">
+              <style>{`
+                @media print {
+                  body * {
+                    visibility: hidden;
+                  }
+                  .activity-print-view, .activity-print-view * {
+                    visibility: visible;
+                  }
+                  .activity-print-view {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    padding: 24px;
+                  }
+                  table {
+                    page-break-inside: auto;
+                  }
+                  tr {
+                    page-break-inside: avoid;
+                    page-break-after: auto;
+                  }
+                  thead {
+                    display: table-header-group;
+                  }
+                }
+              `}</style>
+              <div className="mb-6">
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {selectedMemberStats.firstName} {selectedMemberStats.lastName}
+                </h1>
+                <p className="text-sm text-gray-600">{selectedMemberStats.membershipId ?? 'Prøvemedlem'}</p>
+                <p className="text-sm text-gray-600">Periode: {startDate} - {endDate}</p>
+                {practiceTypes.length > 0 && (
+                  <p className="text-sm text-gray-600">Våbentype: {practiceTypes.join(', ')}</p>
+                )}
+                {classifications.length > 0 && (
+                  <p className="text-sm text-gray-600">Klassifikation: {classifications.join(', ')}</p>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="border border-gray-200 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">Træningspas</p>
+                  <p className="text-lg font-semibold text-gray-900">{selectedMemberStats.sessionCount}</p>
+                </div>
+                <div className="border border-gray-200 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">Gns. pr. pas</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {formatScore(selectedMemberStats.avgPointsPerSession, selectedMemberStats.avgKrydserPerSession)}
+                  </p>
+                </div>
+                <div className="border border-gray-200 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">Bedste pas</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {formatScore(selectedMemberStats.bestSession, selectedMemberStats.bestKrydser)}
+                  </p>
+                </div>
+              </div>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border border-gray-300 px-2 py-2 text-left w-32">Dato</th>
+                    <th className="border border-gray-300 px-2 py-2 text-left w-16">Tid</th>
+                    <th className="border border-gray-300 px-2 py-2 text-right w-24">Point</th>
+                    <th className="border border-gray-300 px-2 py-2 text-right w-20">Krydser</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedMemberSeries.map((row, index) => (
+                    <tr key={`${row.localDate}-${row.createdAtUtc}-${index}`}>
+                      <td className="border border-gray-300 px-2 py-2">{row.localDate}</td>
+                      <td className="border border-gray-300 px-2 py-2">{row.createdAtUtc.substring(11, 16)}</td>
+                      <td className="border border-gray-300 px-2 py-2 text-right">{row.points}</td>
+                      <td className="border border-gray-300 px-2 py-2 text-right">{row.krydser ?? 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
