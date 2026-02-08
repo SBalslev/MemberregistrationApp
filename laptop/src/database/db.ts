@@ -619,6 +619,19 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('AuditLog table created');
   }
 
+  // ===== Migration: PracticeSessionDeletion table for sync propagation =====
+  const practiceSessionDeletionCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='PracticeSessionDeletion'");
+  if (practiceSessionDeletionCheck.length === 0 || practiceSessionDeletionCheck[0].values.length === 0) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS PracticeSessionDeletion (
+        sessionId TEXT PRIMARY KEY NOT NULL,
+        sourceDeviceId TEXT NOT NULL,
+        deletedAtUtc TEXT NOT NULL
+      )
+    `);
+    migrationsRun.push('PracticeSessionDeletion table created');
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -1028,6 +1041,14 @@ async function createSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_AuditLog_entityType_action ON AuditLog(entityType, action);
     CREATE INDEX IF NOT EXISTS idx_AuditLog_createdAtUtc ON AuditLog(createdAtUtc);
+
+    -- ===== Practice Session Deletion Tracking =====
+
+    CREATE TABLE IF NOT EXISTS PracticeSessionDeletion (
+      sessionId TEXT PRIMARY KEY NOT NULL,
+      sourceDeviceId TEXT NOT NULL,
+      deletedAtUtc TEXT NOT NULL
+    );
 
     -- Schema version metadata
     CREATE TABLE IF NOT EXISTS _schema_version (

@@ -8,6 +8,7 @@ import com.club.medlems.data.dao.PracticeSessionDao
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.PracticeSession
+import com.club.medlems.data.sync.SyncManager
 import com.club.medlems.domain.trainer.TrainerSessionManager
 import com.club.medlems.util.BirthDateValidator
 import kotlin.time.Duration.Companion.days
@@ -111,7 +112,8 @@ class TrainerDashboardViewModel @Inject constructor(
     private val checkInDao: CheckInDao,
     private val practiceSessionDao: PracticeSessionDao,
     private val memberDao: MemberDao,
-    private val trainerSessionManager: TrainerSessionManager
+    private val trainerSessionManager: TrainerSessionManager,
+    private val syncManager: SyncManager
 ) : ViewModel() {
 
     companion object {
@@ -144,6 +146,23 @@ class TrainerDashboardViewModel @Inject constructor(
 
         // Start auto-refresh
         startAutoRefresh()
+
+        // Refresh when sync completes (new data from other devices)
+        observeSyncUpdates()
+    }
+
+    /**
+     * Observes sync completions to refresh data when new data arrives from other devices.
+     */
+    private fun observeSyncUpdates() {
+        viewModelScope.launch {
+            syncManager.lastSyncTime.collect { syncTime ->
+                if (syncTime != null && trainerSessionManager.isSessionActive) {
+                    // Sync completed - refresh to show new data
+                    loadDataInternal()
+                }
+            }
+        }
     }
 
     /**

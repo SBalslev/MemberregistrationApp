@@ -468,6 +468,37 @@ class SyncOutboxManager @Inject constructor(
     }
 
     /**
+     * Queues a PracticeSession deletion for sync.
+     *
+     * @param session The PracticeSession entity that was just deleted
+     * @param deviceId The device ID deleting this session
+     */
+    suspend fun queuePracticeSessionDeletion(session: PracticeSession, deviceId: String) {
+        val syncable = SyncablePracticeSession(
+            id = session.id,
+            internalMemberId = session.internalMemberId,
+            membershipId = session.membershipId,
+            localDate = session.localDate,
+            practiceType = session.practiceType,
+            points = session.points,
+            krydser = session.krydser,
+            classification = session.classification,
+            source = session.source,
+            deviceId = deviceId,
+            syncVersion = (session.syncVersion ?: 0) + 1,
+            createdAtUtc = session.createdAtUtc,
+            modifiedAtUtc = Clock.System.now(),
+            syncedAtUtc = null
+        )
+        queueForSync(
+            entityType = "PracticeSession",
+            entityId = session.id,
+            operation = OutboxOperation.DELETE,
+            entity = syncable
+        )
+    }
+
+    /**
      * Queues a ScanEvent for sync after local insert.
      *
      * @param scanEvent The ScanEvent entity that was just inserted

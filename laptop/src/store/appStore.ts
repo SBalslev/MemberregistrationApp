@@ -9,10 +9,12 @@ import { getMemberDataForFullSync, getTrainerDataForSync, processSyncPayload, SY
 import {
   collectEntitiesForDevice,
   hasDeliveredEntries,
+  getRequiredOutboxTargets,
   markDeliveredToDeviceBatch,
   recordFailedAttempt,
   cleanup as cleanupOutbox
 } from '../database/syncOutboxRepository';
+import { onlineApiService } from '../database/onlineApiService';
 
 // Sync result callback for UI notifications
 let syncResultCallback: ((result: SyncResultNotification) => void) | null = null;
@@ -216,19 +218,20 @@ export const useAppStore = create<AppState>((set) => ({
           const hasOutboxEntries = outboxData.outboxIds.length > 0;
           const hasDelivered = hasDeliveredEntries(device.id);
 
-          // If outbox has entries, push those; otherwise fall back to full sync
+          // If device hasn't received any outbox entries yet, send full member list
+          // but still include outboxIds and non-member entities for proper delivery tracking.
           let memberData: object[];
-          let outboxIds: string[];
+          const outboxIds = outboxData.outboxIds;
 
-          if (hasOutboxEntries && hasDelivered) {
-            console.log(`[Sync] Pushing ${outboxData.outboxIds.length} outbox entries to`, device.name);
+          if (hasDelivered && hasOutboxEntries) {
+            console.log(`[Sync] Pushing ${outboxIds.length} outbox entries to`, device.name);
             memberData = outboxData.members;
-            outboxIds = outboxData.outboxIds;
           } else {
-            // Fall back to full sync for backward compatibility
             memberData = getMemberDataForFullSync();
-            outboxIds = [];
             console.log(`[Sync] Full sync for ${device.name}: pushing ${memberData.length} members`);
+            if (hasOutboxEntries) {
+              console.log(`[Sync] Including ${outboxIds.length} outbox entries for delivery tracking`);
+            }
           }
 
           // Generate unique message ID for idempotency
@@ -275,7 +278,10 @@ export const useAppStore = create<AppState>((set) => ({
 
             // Mark outbox entries as delivered to this device
             if (outboxIds.length > 0) {
-              markDeliveredToDeviceBatch(outboxIds, device.id);
+              const requiredTargets = getRequiredOutboxTargets({
+                includeOnline: onlineApiService.isAuthenticated()
+              });
+              markDeliveredToDeviceBatch(outboxIds, device.id, requiredTargets);
               console.log(`[Sync] Marked ${outboxIds.length} outbox entries as delivered to ${device.name}`);
             }
           } else {

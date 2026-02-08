@@ -24,7 +24,7 @@ import {
 import { useAppStore } from '../store';
 import { PushConfirmationDialog } from './PushConfirmationDialog';
 import { query } from '../database';
-import { getPendingCount, getFailedCount } from '../database/syncOutboxRepository';
+import { getFailedCountForTargets, getPendingCountForTargets, getTrustedDeviceIds } from '../database/syncOutboxRepository';
 import type { DeviceInfo } from '../types/entities';
 import { isElectron, getElectronAPI } from '../types/electron';
 
@@ -175,8 +175,9 @@ export function Sidebar() {
   useEffect(() => {
     function refreshOutboxCounts() {
       try {
-        setOutboxPending(getPendingCount());
-        setOutboxFailed(getFailedCount());
+        const requiredTargets = getTrustedDeviceIds();
+        setOutboxPending(getPendingCountForTargets(requiredTargets));
+        setOutboxFailed(getFailedCountForTargets(requiredTargets));
       } catch {
         // Database may not be initialized yet
       }

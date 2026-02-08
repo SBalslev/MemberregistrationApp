@@ -93,8 +93,11 @@ import type {
 } from '../types/finance';
 import type { SqlValue } from 'sql.js';
 import {
-  getPendingEntries,
-  markCompleted,
+  getPendingForTarget,
+  getRequiredOutboxTargets,
+  markCompletedIfAllTargets,
+  markDeliveredToDevice,
+  ONLINE_TARGET_ID,
   recordFailedAttempt,
   type MemberDeletionPayload,
 } from './syncOutboxRepository';
@@ -1208,7 +1211,7 @@ class OnlineSyncService {
     if (!deviceId) return;
 
     // Get all pending DELETE operations for Member entity type
-    const pendingEntries = getPendingEntries().filter(
+    const pendingEntries = getPendingForTarget(ONLINE_TARGET_ID).filter(
       entry => entry.entityType === 'Member' && entry.operation === 'DELETE'
     );
 
@@ -1304,13 +1307,15 @@ class OnlineSyncService {
         // Push the deletion
         await onlineApiService.push(syncPayload);
 
-        // Mark outbox entry as completed
-        markCompleted(entry.id);
+        // Mark online delivery and complete if all targets are satisfied
+        const requiredTargets = getRequiredOutboxTargets({ includeOnline: true });
+        markDeliveredToDevice(entry.id, ONLINE_TARGET_ID);
+        markCompletedIfAllTargets(entry.id, requiredTargets);
         console.log(`[OnlineSyncService] Successfully deleted member ${payload.internalId} from online database`);
       } catch (error) {
         // Record the failure for retry
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        recordFailedAttempt(entry.id, deviceId, errorMessage);
+        recordFailedAttempt(entry.id, ONLINE_TARGET_ID, errorMessage);
         console.error(`[OnlineSyncService] Failed to delete member from outbox entry ${entry.id}:`, error);
       }
     }

@@ -13,7 +13,8 @@ import { showError } from '../store/toastStore';
 import { isElectron, getElectronAPI } from '../types/electron';
 import { query, execute, saveTrustedDevice, getTrustedDevices, getMemberDataForFullSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
 import { getTrainerDataForSync } from '../database';
-import { collectEntitiesForDevice, hasDeliveredEntries, markDeliveredToDeviceBatch, recordFailedAttempt } from '../database/syncOutboxRepository';
+import { collectEntitiesForDevice, getRequiredOutboxTargets, hasDeliveredEntries, markDeliveredToDeviceBatch, recordFailedAttempt } from '../database/syncOutboxRepository';
+import { onlineApiService } from '../database/onlineApiService';
 import type { DeviceInfo } from '../types/entities';
 
 export function DevicesPage() {
@@ -594,16 +595,17 @@ export function DevicesPage() {
                             const hasDelivered = hasDeliveredEntries(selectedDevice.id);
 
                             let memberData: object[];
-                            let outboxIds: string[];
+                            const outboxIds = outboxData.outboxIds;
 
-                            if (hasOutboxEntries && hasDelivered) {
-                              console.log(`[Sync] Pushing ${outboxData.outboxIds.length} outbox entries`);
+                            if (hasDelivered && hasOutboxEntries) {
+                              console.log(`[Sync] Pushing ${outboxIds.length} outbox entries`);
                               memberData = outboxData.members;
-                              outboxIds = outboxData.outboxIds;
                             } else {
                               memberData = getMemberDataForFullSync();
-                              outboxIds = [];
                               console.log(`[Sync] Full sync for ${selectedDevice.name}: pushing ${memberData.length} members`);
+                              if (hasOutboxEntries) {
+                                console.log(`[Sync] Including ${outboxIds.length} outbox entries for delivery tracking`);
+                              }
                             }
 
                             // Generate unique message ID for idempotency
@@ -653,7 +655,10 @@ export function DevicesPage() {
 
                               // Mark outbox entries as delivered
                               if (outboxIds.length > 0) {
-                                markDeliveredToDeviceBatch(outboxIds, selectedDevice.id);
+                                const requiredTargets = getRequiredOutboxTargets({
+                                  includeOnline: onlineApiService.isAuthenticated()
+                                });
+                                markDeliveredToDeviceBatch(outboxIds, selectedDevice.id, requiredTargets);
                                 console.log(`[Sync] Marked ${outboxIds.length} outbox entries as delivered`);
                               }
                             } else {

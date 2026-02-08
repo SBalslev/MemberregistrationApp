@@ -11,6 +11,7 @@ import com.club.medlems.data.entity.MemberStatus
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.entity.SessionSource
+import com.club.medlems.data.sync.SyncManager
 import com.club.medlems.domain.trainer.TrainerSessionManager
 import com.club.medlems.domain.trainer.TrainerSessionState
 import kotlinx.coroutines.Dispatchers
@@ -56,8 +57,10 @@ class TrainerDashboardViewModelTest {
     private lateinit var practiceSessionDao: PracticeSessionDao
     private lateinit var memberDao: MemberDao
     private lateinit var trainerSessionManager: TrainerSessionManager
+    private lateinit var syncManager: SyncManager
 
     private val sessionStateFlow = MutableStateFlow(TrainerSessionState())
+    private val lastSyncTimeFlow = MutableStateFlow<Instant?>(null)
 
     // Shared ViewModel - reused across tests that don't need fresh state
     private var viewModel: TrainerDashboardViewModel? = null
@@ -80,6 +83,9 @@ class TrainerDashboardViewModelTest {
             on { sessionState } doReturn sessionStateFlow
             on { isSessionActive } doReturn true
         }
+        syncManager = mock {
+            on { lastSyncTime } doReturn lastSyncTimeFlow
+        }
     }
 
     @After
@@ -95,7 +101,8 @@ class TrainerDashboardViewModelTest {
             checkInDao,
             practiceSessionDao,
             memberDao,
-            trainerSessionManager
+            trainerSessionManager,
+            syncManager
         ).also { viewModel = it }
     }
 
@@ -105,7 +112,8 @@ class TrainerDashboardViewModelTest {
             checkInDao,
             practiceSessionDao,
             memberDao,
-            trainerSessionManager
+            trainerSessionManager,
+            syncManager
         ).also { viewModel = it }
     }
 

@@ -375,7 +375,7 @@ fun AttendantMenuScreen(
                                                         TextButton(onClick = {
                                                             attendant.registerInteraction();
                                                             showEditPicker = false;
-                                                            openEditSessions(m.membershipId ?: m.internalId)
+                                                            openEditSessions(m.internalId)
                                                         }) { Text("Vælg") }
                                                     }
                                                 )

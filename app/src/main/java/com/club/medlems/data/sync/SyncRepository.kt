@@ -198,12 +198,12 @@ class SyncRepository @Inject constructor(
                     syncSession.internalMemberId,
                     syncSession.localDate
                 )
-                val isDuplicate = existingSessions.any { 
+                val isDuplicate = existingSessions.any {
                     it.practiceType == syncSession.practiceType &&
                     it.points == syncSession.points &&
                     it.krydser == syncSession.krydser
                 }
-                
+
                 if (!isDuplicate) {
                     practiceSessionDao.insert(syncSession.toEntity())
                     sessionsProcessed++
@@ -212,7 +212,23 @@ class SyncRepository @Inject constructor(
                 Log.e(TAG, "Error processing session for ${syncSession.membershipId}", e)
             }
         }
-        
+
+        // Process practice session deletions
+        payload.entities.practiceSessionDeletions.forEach { deletion ->
+            try {
+                val sessionId = deletion.id
+                // Check if session exists before attempting delete
+                if (practiceSessionDao.countById(sessionId) > 0) {
+                    // Get the session for logging, then delete
+                    Log.d(TAG, "Deleting practice session $sessionId from sync payload")
+                    // Delete by ID - need to add a query for this
+                    practiceSessionDao.deleteById(sessionId)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error deleting practice session ${deletion.id}", e)
+            }
+        }
+
         // Process new member registrations
         // Note: Updates existing registrations when incoming syncVersion is higher
         // This ensures approval/rejection status flows back from laptop to tablets

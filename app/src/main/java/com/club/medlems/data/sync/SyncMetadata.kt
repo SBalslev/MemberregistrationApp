@@ -98,7 +98,7 @@ data class DeviceInfo(
  */
 object SyncSchemaVersion {
     const val MAJOR = 1
-    const val MINOR = 6  // 1.6.0: Added member deletions to sync payload
+    const val MINOR = 7  // 1.7.0: Added practice session deletions to sync payload
     const val PATCH = 0
     
     val version: String get() = "$MAJOR.$MINOR.$PATCH"

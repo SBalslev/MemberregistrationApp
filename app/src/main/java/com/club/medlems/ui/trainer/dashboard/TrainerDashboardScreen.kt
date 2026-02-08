@@ -828,9 +828,17 @@ class AddSessionViewModel @Inject constructor(
 
     fun loadLastSelection(internalMemberId: String) {
         val (lastType, lastClassification) = lastClassificationStore.get(internalMemberId)
+        val type = lastType ?: PracticeType.Riffel
+        // Only use the saved classification if it's valid for the type
+        val validClassification = if (lastClassification != null &&
+            ClassificationOptions.optionsFor(type).contains(lastClassification)) {
+            lastClassification
+        } else {
+            null
+        }
         _state.value = _state.value.copy(
-            selectedPracticeType = lastType ?: PracticeType.Riffel,
-            selectedClassification = lastClassification
+            selectedPracticeType = type,
+            selectedClassification = validClassification
         )
     }
 
@@ -851,7 +859,7 @@ class AddSessionViewModel @Inject constructor(
         }
     }
 
-    fun saveSession(internalMemberId: String, membershipId: String?) {
+    fun saveSession(internalMemberId: String, membershipId: String?, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _state.value = _state.value.copy(isSaving = true, errorMessage = null)
 
@@ -891,6 +899,9 @@ class AddSessionViewModel @Inject constructor(
                 syncManager.notifyEntityChanged("PracticeSession", session.id)
 
                 _state.value = _state.value.copy(isSaving = false, isSaved = true)
+
+                // Call success callback directly
+                onSuccess()
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     isSaving = false,
@@ -919,15 +930,6 @@ fun AddSessionDialog(
 
     LaunchedEffect(memberItem.internalMemberId) {
         viewModel.loadLastSelection(memberItem.internalMemberId)
-    }
-
-    // Auto-dismiss after successful save
-    LaunchedEffect(state.isSaved) {
-        if (state.isSaved) {
-            kotlinx.coroutines.delay(1500)
-            viewModel.reset()
-            onSessionAdded()
-        }
     }
 
     Dialog(
@@ -1099,7 +1101,11 @@ fun AddSessionDialog(
                             onClick = {
                                 viewModel.saveSession(
                                     memberItem.internalMemberId,
-                                    if (memberItem.memberId != memberItem.internalMemberId) memberItem.memberId else null
+                                    if (memberItem.memberId != memberItem.internalMemberId) memberItem.memberId else null,
+                                    onSuccess = {
+                                        viewModel.reset()
+                                        onSessionAdded()
+                                    }
                                 )
                             },
                             modifier = Modifier.weight(1f),

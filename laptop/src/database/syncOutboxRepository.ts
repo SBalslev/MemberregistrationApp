@@ -14,6 +14,7 @@ import type { SyncableMemberData } from '../types/electron';
 const BACKOFF_DELAYS = [0, 5, 15, 60, 300, 900];
 const MAX_ATTEMPTS = 10;
 const LAPTOP_DEVICE_ID = 'laptop-master';
+export const ONLINE_TARGET_ID = 'online-db';
 
 function toSyncableMember(member: Member): SyncableMemberData {
   const now = new Date().toISOString();
@@ -134,6 +135,21 @@ export function queuePracticeSession(session: object): string {
 }
 
 /**
+ * Payload for practice session deletion sync.
+ */
+export interface PracticeSessionDeletionPayload {
+  id: string;
+}
+
+/**
+ * Queues a practice session deletion for sync.
+ */
+export function queuePracticeSessionDeletion(sessionId: string): string {
+  const payload: PracticeSessionDeletionPayload = { id: sessionId };
+  return queueForSync('PracticeSession', sessionId, 'DELETE', payload);
+}
+
+/**
  * Queues an EquipmentCheckout entity for sync.
  */
 export function queueEquipmentCheckout(checkout: object, operation: 'INSERT' | 'UPDATE' = 'INSERT'): string {
@@ -181,6 +197,27 @@ export function getPendingEntries(): SyncOutboxEntry[] {
 }
 
 /**
+ * Gets pending outbox entries for a specific delivery target.
+ * Returns entries that haven't been delivered to this target yet.
+ */
+export function getPendingForTarget(targetId: string): SyncOutboxEntry[] {
+  const now = new Date().toISOString();
+  return query<SyncOutboxEntry>(
+    `SELECT o.* FROM SyncOutbox o
+     WHERE o.status IN ('pending', 'in_progress')
+       AND (o.nextRetryUtc IS NULL OR o.nextRetryUtc <= ?)
+       AND NOT EXISTS (
+         SELECT 1 FROM SyncOutboxDelivery d
+         WHERE d.outboxId = o.id
+           AND d.deviceId = ?
+           AND d.deliveredAtUtc IS NOT NULL
+       )
+     ORDER BY o.createdAtUtc ASC`,
+    [now, targetId]
+  );
+}
+
+/**
  * Gets pending outbox entries for a specific device.
  * Returns entries that haven't been delivered to this device yet.
  */
@@ -212,12 +249,81 @@ export function getPendingCount(): number {
 }
 
 /**
+ * Gets trusted device IDs from the database.
+ */
+export function getTrustedDeviceIds(): string[] {
+  const result = query<{ id: string }>(
+    'SELECT id FROM TrustedDevice WHERE isTrusted = 1 ORDER BY id ASC'
+  );
+  return result.map((row) => row.id);
+}
+
+/**
+ * Gets required outbox delivery targets for completion.
+ */
+export function getRequiredOutboxTargets(options?: { includeOnline?: boolean }): string[] {
+  const ids = getTrustedDeviceIds();
+  if (options?.includeOnline) {
+    ids.push(ONLINE_TARGET_ID);
+  }
+  return Array.from(new Set(ids));
+}
+
+/**
+ * Gets the count of pending outbox entries for a set of targets.
+ * An entry is pending if it has not been delivered to all targets.
+ */
+export function getPendingCountForTargets(targetDeviceIds: string[]): number {
+  if (targetDeviceIds.length === 0) return 0;
+
+  const placeholders = targetDeviceIds.map(() => '?').join(', ');
+  const result = query<{ count: number }>(
+    `SELECT COUNT(*) as count
+     FROM SyncOutbox o
+     WHERE o.status IN ('pending', 'in_progress')
+       AND (
+         SELECT COUNT(*) FROM SyncOutboxDelivery d
+         WHERE d.outboxId = o.id
+           AND d.deviceId IN (${placeholders})
+           AND d.deliveredAtUtc IS NOT NULL
+       ) < ?`,
+    [...targetDeviceIds, targetDeviceIds.length]
+  );
+
+  return result[0]?.count || 0;
+}
+
+/**
  * Gets the count of failed outbox entries.
  */
 export function getFailedCount(): number {
   const result = query<{ count: number }>(
     `SELECT COUNT(*) as count FROM SyncOutbox WHERE status = 'failed'`
   );
+  return result[0]?.count || 0;
+}
+
+/**
+ * Gets the count of failed outbox entries scoped to a set of targets.
+ * An entry counts as failed if it has a failed status and is missing delivery to any target.
+ */
+export function getFailedCountForTargets(targetDeviceIds: string[]): number {
+  if (targetDeviceIds.length === 0) return 0;
+
+  const placeholders = targetDeviceIds.map(() => '?').join(', ');
+  const result = query<{ count: number }>(
+    `SELECT COUNT(*) as count
+     FROM SyncOutbox o
+     WHERE o.status = 'failed'
+       AND (
+         SELECT COUNT(*) FROM SyncOutboxDelivery d
+         WHERE d.outboxId = o.id
+           AND d.deviceId IN (${placeholders})
+           AND d.deliveredAtUtc IS NOT NULL
+       ) < ?`,
+    [...targetDeviceIds, targetDeviceIds.length]
+  );
+
   return result[0]?.count || 0;
 }
 
@@ -264,14 +370,42 @@ export function markDeliveredToDevice(outboxId: string, deviceId: string): void 
 /**
  * Marks multiple outbox entries as delivered to a specific device.
  */
-export function markDeliveredToDeviceBatch(outboxIds: string[], deviceId: string): void {
+export function markDeliveredToDeviceBatch(outboxIds: string[], deviceId: string, requiredTargets?: string[]): void {
   if (outboxIds.length === 0) return;
 
   transaction(() => {
     for (const outboxId of outboxIds) {
       markDeliveredToDevice(outboxId, deviceId);
+      if (requiredTargets) {
+        markCompletedIfAllTargets(outboxId, requiredTargets);
+      }
     }
   });
+}
+
+/**
+ * Marks an outbox entry as completed if delivered to all required targets.
+ */
+export function markCompletedIfAllTargets(outboxId: string, targetDeviceIds: string[]): void {
+  if (targetDeviceIds.length === 0) {
+    markCompleted(outboxId);
+    return;
+  }
+
+  const placeholders = targetDeviceIds.map(() => '?').join(', ');
+  const result = query<{ count: number }>(
+    `SELECT COUNT(*) as count
+     FROM SyncOutboxDelivery
+     WHERE outboxId = ?
+       AND deviceId IN (${placeholders})
+       AND deliveredAtUtc IS NOT NULL`,
+    [outboxId, ...targetDeviceIds]
+  );
+
+  const deliveredCount = result[0]?.count || 0;
+  if (deliveredCount >= targetDeviceIds.length) {
+    markCompleted(outboxId);
+  }
 }
 
 /**
@@ -412,6 +546,7 @@ export function collectEntitiesForDevice(deviceId: string): {
   memberDeletions: MemberDeletionPayload[];
   checkIns: object[];
   practiceSessions: object[];
+  practiceSessionDeletions: PracticeSessionDeletionPayload[];
   equipmentCheckouts: object[];
 } {
   const entries = getPendingForDevice(deviceId);
@@ -422,6 +557,7 @@ export function collectEntitiesForDevice(deviceId: string): {
     memberDeletions: [] as MemberDeletionPayload[],
     checkIns: [] as object[],
     practiceSessions: [] as object[],
+    practiceSessionDeletions: [] as PracticeSessionDeletionPayload[],
     equipmentCheckouts: [] as object[],
   };
 
@@ -445,7 +581,11 @@ export function collectEntitiesForDevice(deviceId: string): {
           result.checkIns.push(entity);
           break;
         case 'PracticeSession':
-          result.practiceSessions.push(entity);
+          if (entry.operation === 'DELETE') {
+            result.practiceSessionDeletions.push(entity as PracticeSessionDeletionPayload);
+          } else {
+            result.practiceSessions.push(entity);
+          }
           break;
         case 'EquipmentCheckout':
           result.equipmentCheckouts.push(entity);

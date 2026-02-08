@@ -12,6 +12,9 @@ import com.club.medlems.data.dao.PracticeSessionDao
 import com.club.medlems.data.dao.MemberDao
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.PracticeType
+import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.data.sync.SyncOutboxManager
+import com.club.medlems.network.TrustManager
 import com.club.medlems.ui.common.Formatters
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
@@ -23,30 +26,34 @@ import javax.inject.Inject
 @HiltViewModel
 class EditSessionsViewModel @Inject constructor(
     private val sessionDao: PracticeSessionDao,
-    private val memberDao: MemberDao
+    private val memberDao: MemberDao,
+    private val syncOutboxManager: SyncOutboxManager,
+    private val syncManager: SyncManager,
+    private val trustManager: TrustManager
 ): androidx.lifecycle.ViewModel() {
     var loading by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
         private set
 
-    suspend fun memberName(memberId: String): String? = memberDao.get(memberId)?.let { "${it.firstName} ${it.lastName}".trim().ifBlank { null } }
+    suspend fun memberName(internalMemberId: String): String? =
+        memberDao.getByInternalId(internalMemberId)?.let { "${it.firstName} ${it.lastName}".trim().ifBlank { null } }
 
-    suspend fun load(memberId: String): List<PracticeSession> {
+    suspend fun load(internalMemberId: String): List<PracticeSession> {
         loading = true; error = null
         val end = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         val start = kotlinx.datetime.LocalDate(end.year - 1, end.month, end.dayOfMonth)
         return try {
-            sessionDao.sessionsForMemberInRange(memberId, start, end).also { loading = false }
+            sessionDao.sessionsForMemberInRange(internalMemberId, start, end).also { loading = false }
         } catch (t: Throwable) {
             error = t.message; loading = false; emptyList()
         }
     }
 
-    suspend fun loadRange(memberId: String, start: kotlinx.datetime.LocalDate, end: kotlinx.datetime.LocalDate): List<PracticeSession> {
+    suspend fun loadRange(internalMemberId: String, start: kotlinx.datetime.LocalDate, end: kotlinx.datetime.LocalDate): List<PracticeSession> {
         loading = true; error = null
         return try {
-            sessionDao.sessionsForMemberInRange(memberId, start, end).also { loading = false }
+            sessionDao.sessionsForMemberInRange(internalMemberId, start, end).also { loading = false }
         } catch (t: Throwable) {
             error = t.message; loading = false; emptyList()
         }
@@ -54,10 +61,15 @@ class EditSessionsViewModel @Inject constructor(
 
     suspend fun save(session: PracticeSession) {
         sessionDao.update(session.copy())
+        // TODO: Queue update for sync when needed
     }
 
     suspend fun remove(session: PracticeSession) {
+        // Delete locally
         sessionDao.delete(session)
+        // Queue for sync
+        syncOutboxManager.queuePracticeSessionDeletion(session, trustManager.getThisDeviceId())
+        syncManager.notifyEntityChanged("PracticeSession", session.id)
     }
 }
 

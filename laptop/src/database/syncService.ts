@@ -15,11 +15,11 @@ import type { NewMemberRegistration } from '../types/entities';
 import { getAllMembers } from './memberRepository';
 import { processPhoto } from '../utils/photoStorage';
 import { getFeeCategoryFromBirthDate } from '../utils/feeCategory';
-import { hasPendingMemberDeletion, isMessageProcessed, recordProcessedMessage } from './syncOutboxRepository';
+import { hasPendingMemberDeletion, isMessageProcessed, recordProcessedMessage, queuePracticeSessionDeletion } from './syncOutboxRepository';
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
-export const SYNC_SCHEMA_VERSION = '1.6.0'; // 1.6.0: Added member deletions to sync payload
+export const SYNC_SCHEMA_VERSION = '1.7.0'; // 1.7.0: Added practice session deletions to sync payload
 export const SYNC_SCHEMA_MAJOR = 1;
 
 /**
@@ -51,6 +51,7 @@ export interface SyncPayload {
     memberDeletions?: SyncableMemberDeletion[];
     checkIns?: SyncableCheckIn[];
     practiceSessions?: SyncablePracticeSession[];
+    practiceSessionDeletions?: SyncablePracticeSessionDeletion[];
     newMemberRegistrations?: SyncableNewMemberRegistration[];
     equipmentItems?: SyncableEquipmentItem[];
     equipmentCheckouts?: SyncableEquipmentCheckout[];
@@ -102,6 +103,10 @@ interface SyncableMember {
 
 interface SyncableMemberDeletion {
   internalId: string;
+}
+
+interface SyncablePracticeSessionDeletion {
+  id: string;
 }
 
 interface SyncableCheckIn {
@@ -237,6 +242,7 @@ export interface SyncResult {
   registrationsUpdated: number;
   checkInsAdded: number;
   sessionsAdded: number;
+  sessionsDeleted: number;
   photosStored: number;
   equipmentItemsProcessed: number;
   equipmentCheckoutsProcessed: number;
@@ -264,6 +270,7 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     registrationsUpdated: 0,
     checkInsAdded: 0,
     sessionsAdded: 0,
+    sessionsDeleted: 0,
     photosStored: 0,
     equipmentItemsProcessed: 0,
     equipmentCheckoutsProcessed: 0,
@@ -369,6 +376,21 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
+  // Process practice session deletions
+  if (payload.entities.practiceSessionDeletions) {
+    console.log(`[SyncService] Processing ${payload.entities.practiceSessionDeletions.length} practice session deletions`);
+    for (const deletion of payload.entities.practiceSessionDeletions) {
+      try {
+        const deleted = processPracticeSessionDeletion(deletion, payload.deviceId);
+        if (deleted) result.sessionsDeleted++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`SessionDeletion ${deletion.id}: ${msg}`);
+        console.error(`[SyncService] Error processing session deletion ${deletion.id}:`, error);
+      }
+    }
+  }
+
   // Process equipment items
   if (payload.entities.equipmentItems) {
     console.log(`[SyncService] Processing ${payload.entities.equipmentItems.length} equipment items`);
@@ -444,7 +466,7 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
-  console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts, ${result.memberPreferencesProcessed} preferences, ${result.trainerInfosProcessed} trainer infos, ${result.trainerDisciplinesProcessed} trainer disciplines`);
+  console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions added, ${result.sessionsDeleted} sessions deleted, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts, ${result.memberPreferencesProcessed} preferences, ${result.trainerInfosProcessed} trainer infos, ${result.trainerDisciplinesProcessed} trainer disciplines`);
 
   // FR-3: Record message as processed for idempotency
   if (payload.messageId) {
@@ -1005,14 +1027,14 @@ async function processPracticeSession(session: SyncablePracticeSession): Promise
     'SELECT id FROM PracticeSession WHERE id = ?',
     [session.id]
   );
-  
+
   if (existing.length > 0) {
     return false; // Already exists
   }
 
   execute(
     `INSERT INTO PracticeSession (
-      id, internalMemberId, membershipId, localDate, practiceType, classification, 
+      id, internalMemberId, membershipId, localDate, practiceType, classification,
       points, krydser, notes, createdAtUtc, syncedAtUtc, syncVersion
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -1030,8 +1052,93 @@ async function processPracticeSession(session: SyncablePracticeSession): Promise
       session.syncVersion
     ]
   );
-  
+
   return true;
+}
+
+/**
+ * Process a practice session deletion from sync payload.
+ * Deletes the session locally and tracks it for syncing to other devices.
+ */
+function processPracticeSessionDeletion(
+  deletion: SyncablePracticeSessionDeletion,
+  sourceDeviceId: string
+): boolean {
+  // Check if session exists
+  const existing = query<{ id: string }>(
+    'SELECT id FROM PracticeSession WHERE id = ?',
+    [deletion.id]
+  );
+
+  if (existing.length === 0) {
+    // Already deleted or never existed - still track to propagate
+    trackPracticeSessionDeletion(deletion.id, sourceDeviceId);
+    return false;
+  }
+
+  // Delete the session
+  execute('DELETE FROM PracticeSession WHERE id = ?', [deletion.id]);
+
+  // Track deletion for propagation to other tablets
+  trackPracticeSessionDeletion(deletion.id, sourceDeviceId);
+
+  console.log(`[SyncService] Deleted practice session ${deletion.id} (from device ${sourceDeviceId})`);
+  return true;
+}
+
+/**
+ * Track a practice session deletion for propagation to other devices.
+ * Uses both PracticeSessionDeletion table (for full sync payloads) and
+ * SyncOutbox (for reliable delivery to all devices).
+ */
+function trackPracticeSessionDeletion(sessionId: string, sourceDeviceId: string): void {
+  const now = new Date().toISOString();
+
+  // Check if we already have this deletion tracked
+  const existing = query<{ sessionId: string }>(
+    'SELECT sessionId FROM PracticeSessionDeletion WHERE sessionId = ?',
+    [sessionId]
+  );
+
+  if (existing.length > 0) {
+    return; // Already tracked
+  }
+
+  // Insert deletion record for propagation (used by getFullSyncPayload)
+  execute(
+    `INSERT OR IGNORE INTO PracticeSessionDeletion (sessionId, sourceDeviceId, deletedAtUtc)
+     VALUES (?, ?, ?)`,
+    [sessionId, sourceDeviceId, now]
+  );
+
+  // Also queue to outbox for reliable delivery to all tablets
+  queuePracticeSessionDeletion(sessionId);
+  console.log(`[SyncService] Queued practice session deletion ${sessionId} for sync to all devices`);
+}
+
+/**
+ * Get practice session deletions for sync to tablets.
+ * Returns deletions that should be propagated to other devices.
+ */
+export function getPracticeSessionDeletionsForSync(): SyncablePracticeSessionDeletion[] {
+  const deletions = query<{ sessionId: string }>(
+    'SELECT sessionId FROM PracticeSessionDeletion ORDER BY deletedAtUtc ASC'
+  );
+
+  return deletions.map(d => ({ id: d.sessionId }));
+}
+
+/**
+ * Ensure the PracticeSessionDeletion tracking table exists.
+ */
+export function ensurePracticeSessionDeletionTable(): void {
+  execute(`
+    CREATE TABLE IF NOT EXISTS PracticeSessionDeletion (
+      sessionId TEXT PRIMARY KEY,
+      sourceDeviceId TEXT NOT NULL,
+      deletedAtUtc TEXT NOT NULL
+    )
+  `);
 }
 
 /**
@@ -1457,6 +1564,7 @@ export function getFullSyncPayload(deviceType?: string): SyncPayload {
   const members = getMemberDataForFullSync();
   const { equipmentItems, equipmentCheckouts } = getEquipmentForSync();
   const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
+  const practiceSessionDeletions = getPracticeSessionDeletionsForSync();
 
   // Only include member preferences for MEMBER_TABLET devices
   const memberPreferences = deviceType === 'MEMBER_TABLET'
@@ -1472,6 +1580,7 @@ export function getFullSyncPayload(deviceType?: string): SyncPayload {
       members,
       checkIns: [],
       practiceSessions: [],
+      practiceSessionDeletions,
       newMemberRegistrations: [],
       equipmentItems,
       equipmentCheckouts,

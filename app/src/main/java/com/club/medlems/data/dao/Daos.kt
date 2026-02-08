@@ -163,6 +163,9 @@ interface PracticeSessionDao {
     @Query("SELECT COUNT(*) FROM PracticeSession WHERE id = :id")
     suspend fun countById(id: String): Int
 
+    @Query("DELETE FROM PracticeSession WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Update
     suspend fun update(session: PracticeSession)
 

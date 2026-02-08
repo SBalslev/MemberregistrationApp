@@ -188,10 +188,18 @@ class AssistedCheckInViewModel @Inject constructor(
     fun showPracticeForm() {
         val member = _state.value.selectedMember ?: return
         val (lastType, lastClassification) = lastClassificationStore.get(member.internalId)
+        val type = lastType ?: PracticeType.Riffel
+        // Only use the saved classification if it's valid for the type
+        val validClassification = if (lastClassification != null &&
+            ClassificationOptions.optionsFor(type).contains(lastClassification)) {
+            lastClassification
+        } else {
+            null
+        }
         _state.value = _state.value.copy(
             showPracticeForm = true,
-            selectedPracticeType = lastType ?: PracticeType.Riffel,
-            selectedClassification = lastClassification
+            selectedPracticeType = type,
+            selectedClassification = validClassification
         )
     }
 
