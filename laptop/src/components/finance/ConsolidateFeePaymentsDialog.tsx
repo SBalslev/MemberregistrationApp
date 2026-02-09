@@ -4,6 +4,7 @@
  */
 
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Check, FileStack, Trash2, Calendar } from 'lucide-react';
 import type { PendingFeePaymentWithMember, PostingCategory } from '../../types';
 import { PAYMENT_METHOD_LABELS } from '../../types';
@@ -139,6 +140,8 @@ export function ConsolidateFeePaymentsDialog({
   const externalPayment = externalPaymentId
     ? pendingPayments.find(p => p.id === externalPaymentId)
     : null;
+
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -348,7 +351,7 @@ export function ConsolidateFeePaymentsDialog({
       </div>
 
       {/* Mini-dialog for marking payment as paid in different year */}
-      {externalPaymentId && externalPayment && (
+      {externalPaymentId && externalPayment && portalTarget && createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div
             className="fixed inset-0 bg-black/30"
@@ -400,7 +403,8 @@ export function ConsolidateFeePaymentsDialog({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        portalTarget
       )}
     </div>
   );
