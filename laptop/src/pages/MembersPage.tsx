@@ -1978,6 +1978,7 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [membershipId, setMembershipId] = useState('');
+  const [lifecycleStage, setLifecycleStage] = useState<'TRIAL' | 'FULL'>('FULL');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [birthday, setBirthday] = useState('');
@@ -1990,6 +1991,7 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
   const [guardianEmail, setGuardianEmail] = useState('');
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [feeCategory, setFeeCategory] = useState<Member['memberType']>('ADULT');
+  const isTrialMember = lifecycleStage === 'TRIAL';
 
   // Calculate if member is under 18
   const isUnder18 = birthday ? calculateAge(birthday) < 18 : false;
@@ -2005,6 +2007,12 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
       setFeeCategory('ADULT');
     }
   }, [isUnder18, feeCategory]);
+
+  useEffect(() => {
+    if (isTrialMember && membershipId) {
+      setMembershipId('');
+    }
+  }, [isTrialMember, membershipId]);
 
   // Handle photo file selection
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -2025,7 +2033,7 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     
-    if (!firstName.trim() || !lastName.trim() || !membershipId.trim()) {
+    if (!firstName.trim() || !lastName.trim() || (!isTrialMember && !membershipId.trim())) {
       return;
     }
 
@@ -2034,8 +2042,8 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
     const effectiveFeeCategory: Member['memberType'] = feeCategory === 'HONORARY' ? 'HONORARY' : (isUnder18 ? feeCategory : 'ADULT');
     const newMember: Member = {
       internalId: crypto.randomUUID(),
-      membershipId: membershipId.trim(),
-      memberLifecycleStage: 'FULL', // Has membershipId, so FULL
+      membershipId: isTrialMember ? null : membershipId.trim(),
+      memberLifecycleStage: isTrialMember ? 'TRIAL' : 'FULL',
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       birthDate: birthday || null,
@@ -2146,15 +2154,34 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Medlemsnummer <span className="text-red-500">*</span>
+              Medlemstype
+            </label>
+            <select
+              value={lifecycleStage}
+              onChange={(e) => setLifecycleStage(e.target.value as 'TRIAL' | 'FULL')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            >
+              <option value="FULL">Fuld medlem (medlemsnummer kræves)</option>
+              <option value="TRIAL">Prøvemedlem (medlemsnummer tildeles senere)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Medlemsnummer {!isTrialMember && <span className="text-red-500">*</span>}
             </label>
             <input
               type="text"
               value={membershipId}
               onChange={(e) => setMembershipId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              required
+              disabled={isTrialMember}
+              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${isTrialMember ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+              placeholder={isTrialMember ? 'Tildeles senere' : undefined}
+              required={!isTrialMember}
             />
+            {isTrialMember && (
+              <p className="mt-1 text-xs text-gray-500">Prøvemedlemmer kan oprettes uden medlemsnummer.</p>
+            )}
           </div>
 
           <div>

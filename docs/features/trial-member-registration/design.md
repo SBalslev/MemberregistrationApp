@@ -2,7 +2,7 @@
 
 **Feature:** Trial Member Registration (Prøvemedlem)
 **Version:** 1.2
-**Last Updated:** 2026-01-20
+**Last Updated:** 2026-02-09
 **Author:** sbalslev
 **Related PRD:** [prd.md](prd.md)
 
@@ -345,6 +345,16 @@ data class SyncableMember(
          │                                                │
          │  ◄──────── 200 OK ────────────────────────────│
 ```
+
+#### 3.1.3 Trial member creation (Laptop)
+
+Laptop admins can create a trial member directly from the add member form when a membership ID is not available yet.
+
+Key behavior:
+
+- If the admin selects Prøvemedlem, the form allows saving without membershipId
+- The member is saved with `memberType = TRIAL` and `membershipId = null`
+- The record syncs to tablets on the next push like any other member update
 
 ### 3.2 Conflict Resolution Rules
 

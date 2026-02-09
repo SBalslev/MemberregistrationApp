@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import { Printer, Users, Baby, UserCheck } from 'lucide-react';
 import { getAllMembers } from '../database';
 import { calculateAge } from '../utils/feeCategory';
+import { hasMemberPaidFee } from '../services/idPhotoLifecycleService';
 import type { Member } from '../types';
 
 interface DetailedDemographics {
@@ -21,12 +22,87 @@ interface DetailedDemographics {
   grandTotal: number;
 }
 
+interface AgeFeeBucket {
+  label: string;
+  total: number;
+  paid: number;
+  unpaid: number;
+}
+
+interface AgeFeeBuckets {
+  today: AgeFeeBucket[];
+  jan1: AgeFeeBucket[];
+}
+
+function calculateAgeFeeBuckets(members: Member[]): AgeFeeBuckets {
+  const today = new Date();
+  const jan1 = new Date(today.getFullYear(), 0, 1);
+  const activeMembers = members.filter(m => m.status === 'ACTIVE');
+
+  const bucketDefinitions = [
+    { label: '0-12 år', min: 0, max: 12 },
+    { label: '13-18 år', min: 13, max: 18 },
+    { label: '19-24 år', min: 19, max: 24 },
+    { label: '25-59 år', min: 25, max: 59 },
+    { label: '60+ år', min: 60, max: Number.POSITIVE_INFINITY },
+  ];
+
+  const todayBuckets = bucketDefinitions.map(bucket => ({
+    label: bucket.label,
+    total: 0,
+    paid: 0,
+    unpaid: 0,
+  }));
+  const jan1Buckets = bucketDefinitions.map(bucket => ({
+    label: bucket.label,
+    total: 0,
+    paid: 0,
+    unpaid: 0,
+  }));
+
+  const unknownToday: AgeFeeBucket = { label: 'Ukendt', total: 0, paid: 0, unpaid: 0 };
+  const unknownJan1: AgeFeeBucket = { label: 'Ukendt', total: 0, paid: 0, unpaid: 0 };
+
+  const addToBucket = (buckets: AgeFeeBucket[], age: number, hasPaidFee: boolean) => {
+    const index = bucketDefinitions.findIndex((bucket) => age >= bucket.min && age <= bucket.max);
+    if (index < 0) return;
+    buckets[index].total += 1;
+    if (hasPaidFee) buckets[index].paid += 1;
+    else buckets[index].unpaid += 1;
+  };
+
+  for (const member of activeMembers) {
+    const hasPaidFee = hasMemberPaidFee(member.internalId);
+    if (member.birthDate) {
+      const ageToday = calculateAge(member.birthDate, today);
+      const ageJan1 = calculateAge(member.birthDate, jan1);
+      addToBucket(todayBuckets, ageToday, hasPaidFee);
+      addToBucket(jan1Buckets, ageJan1, hasPaidFee);
+    } else {
+      unknownToday.total += 1;
+      unknownJan1.total += 1;
+      if (hasPaidFee) {
+        unknownToday.paid += 1;
+        unknownJan1.paid += 1;
+      } else {
+        unknownToday.unpaid += 1;
+        unknownJan1.unpaid += 1;
+      }
+    }
+  }
+
+  const todayRows = unknownToday.total > 0 ? [...todayBuckets, unknownToday] : todayBuckets;
+  const jan1Rows = unknownJan1.total > 0 ? [...jan1Buckets, unknownJan1] : jan1Buckets;
+
+  return { today: todayRows, jan1: jan1Rows };
+}
+
 function calculateDetailedDemographics(members: Member[]): DetailedDemographics {
   const today = new Date();
   const jan1 = new Date(today.getFullYear(), 0, 1);
 
-  // Only count active full members
-  const activeMembers = members.filter(m => m.status === 'ACTIVE' && m.memberLifecycleStage === 'FULL');
+  // Only count active members
+  const activeMembers = members.filter(m => m.status === 'ACTIVE');
 
   const result: DetailedDemographics = {
     adultsToday: { male: 0, female: 0, other: 0, unspecified: 0, total: 0 },
@@ -80,30 +156,53 @@ function calculateDetailedDemographics(members: Member[]): DetailedDemographics 
   return result;
 }
 
-interface StatRowProps {
-  label: string;
-  data: { male: number; female: number; other: number; unspecified: number; total: number };
+interface AgeFeeRowProps {
+  row: AgeFeeBucket;
   highlight?: boolean;
 }
 
-function StatRow({ label, data, highlight }: StatRowProps) {
+function AgeFeeRow({ row, highlight }: AgeFeeRowProps) {
   return (
     <tr className={highlight ? 'bg-gray-50 font-semibold' : ''}>
-      <td className="px-4 py-3 text-gray-900">{label}</td>
-      <td className="px-4 py-3 text-center text-gray-700">{data.male}</td>
-      <td className="px-4 py-3 text-center text-gray-700">{data.female}</td>
-      {data.other > 0 && <td className="px-4 py-3 text-center text-gray-700">{data.other}</td>}
-      {data.unspecified > 0 && <td className="px-4 py-3 text-center text-gray-500">{data.unspecified}</td>}
-      <td className="px-4 py-3 text-center font-semibold text-gray-900">{data.total}</td>
+      <td className="px-4 py-3 text-gray-900">{row.label}</td>
+      <td className="px-4 py-3 text-center text-gray-700">{row.paid}</td>
+      <td className="px-4 py-3 text-center text-gray-700">{row.unpaid}</td>
+      <td className="px-4 py-3 text-center font-semibold text-gray-900">{row.total}</td>
     </tr>
   );
 }
 
 export function StatisticsPage() {
-  const demographics = useMemo(() => {
-    const allMembers = getAllMembers();
-    return calculateDetailedDemographics(allMembers);
-  }, []);
+  const allMembers = useMemo(() => getAllMembers(), []);
+  const demographics = useMemo(() => calculateDetailedDemographics(allMembers), [allMembers]);
+  const ageFeeBuckets = useMemo(() => calculateAgeFeeBuckets(allMembers), [allMembers]);
+  const membersMissingBirthDate = useMemo(() => {
+    return allMembers
+      .filter((member) => member.status === 'ACTIVE' && !member.birthDate)
+      .sort((a, b) => {
+        const lastNameCompare = (a.lastName || '').localeCompare(b.lastName || '', 'da');
+        if (lastNameCompare !== 0) return lastNameCompare;
+        return (a.firstName || '').localeCompare(b.firstName || '', 'da');
+      });
+  }, [allMembers]);
+
+  const todayTotals = ageFeeBuckets.today.reduce(
+    (acc, row) => ({
+      paid: acc.paid + row.paid,
+      unpaid: acc.unpaid + row.unpaid,
+      total: acc.total + row.total,
+    }),
+    { paid: 0, unpaid: 0, total: 0 }
+  );
+
+  const jan1Totals = ageFeeBuckets.jan1.reduce(
+    (acc, row) => ({
+      paid: acc.paid + row.paid,
+      unpaid: acc.unpaid + row.unpaid,
+      total: acc.total + row.total,
+    }),
+    { paid: 0, unpaid: 0, total: 0 }
+  );
 
   const hasOther = demographics.totalByGender.other > 0;
   const hasUnspecified = demographics.totalByGender.unspecified > 0;
@@ -118,7 +217,7 @@ export function StatisticsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Medlemsstatistik</h1>
           <p className="text-gray-600 mt-1">
-            Oversigt over {demographics.grandTotal} aktive fuldgyldige medlemmer
+            Oversigt over {demographics.grandTotal} aktive medlemmer
           </p>
         </div>
         <button
@@ -137,7 +236,7 @@ export function StatisticsPage() {
         <p className="text-gray-600">
           Udskrevet: {new Date().toLocaleDateString('da-DK', { year: 'numeric', month: 'long', day: 'numeric' })}
         </p>
-        <p className="text-gray-600">{demographics.grandTotal} aktive fuldgyldige medlemmer</p>
+        <p className="text-gray-600">{demographics.grandTotal} aktive medlemmer</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -149,7 +248,7 @@ export function StatisticsPage() {
               Aldersfordeling i dag
             </h2>
             <p className="text-sm text-gray-600 mt-1">
-              Baseret på faktisk alder pr. dags dato
+              Baseret på faktisk alder pr. dags dato - inkl. betalt kontingent
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -157,25 +256,17 @@ export function StatisticsPage() {
               <thead className="bg-gray-100">
                 <tr>
                   <th scope="col" className="px-4 py-3 text-left text-sm font-medium text-gray-600">Kategori</th>
-                  <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Mand</th>
-                  <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Kvinde</th>
-                  {hasOther && <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Andet</th>}
-                  {hasUnspecified && <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-500">Ukendt</th>}
+                  <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Betalt</th>
+                  <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Ikke betalt</th>
                   <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-900">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                <StatRow label="Voksne (18+)" data={demographics.adultsToday} />
-                <StatRow label="Børn (<18)" data={demographics.childrenToday} />
-                <StatRow
-                  label="I alt"
-                  data={{
-                    male: demographics.adultsToday.male + demographics.childrenToday.male,
-                    female: demographics.adultsToday.female + demographics.childrenToday.female,
-                    other: demographics.adultsToday.other + demographics.childrenToday.other,
-                    unspecified: demographics.adultsToday.unspecified + demographics.childrenToday.unspecified,
-                    total: demographics.grandTotal,
-                  }}
+                {ageFeeBuckets.today.map((row) => (
+                  <AgeFeeRow key={row.label} row={row} />
+                ))}
+                <AgeFeeRow
+                  row={{ label: 'I alt', ...todayTotals }}
                   highlight
                 />
               </tbody>
@@ -191,7 +282,7 @@ export function StatisticsPage() {
               Aldersfordeling pr. 1. januar {new Date().getFullYear()}
             </h2>
             <p className="text-sm text-gray-600 mt-1">
-              Bruges til sæsonbestemmelse (idrætsaktiviteter)
+              Bruges til sæsonbestemmelse (idrætsaktiviteter) - inkl. betalt kontingent
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -199,25 +290,17 @@ export function StatisticsPage() {
               <thead className="bg-gray-100">
                 <tr>
                   <th scope="col" className="px-4 py-3 text-left text-sm font-medium text-gray-600">Kategori</th>
-                  <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Mand</th>
-                  <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Kvinde</th>
-                  {hasOther && <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Andet</th>}
-                  {hasUnspecified && <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-500">Ukendt</th>}
+                  <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Betalt</th>
+                  <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-600">Ikke betalt</th>
                   <th scope="col" className="px-4 py-3 text-center text-sm font-medium text-gray-900">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                <StatRow label="Voksne (18+)" data={demographics.adultsJan1} />
-                <StatRow label="Børn (<18)" data={demographics.childrenJan1} />
-                <StatRow
-                  label="I alt"
-                  data={{
-                    male: demographics.adultsJan1.male + demographics.childrenJan1.male,
-                    female: demographics.adultsJan1.female + demographics.childrenJan1.female,
-                    other: demographics.adultsJan1.other + demographics.childrenJan1.other,
-                    unspecified: demographics.adultsJan1.unspecified + demographics.childrenJan1.unspecified,
-                    total: demographics.grandTotal,
-                  }}
+                {ageFeeBuckets.jan1.map((row) => (
+                  <AgeFeeRow key={row.label} row={row} />
+                ))}
+                <AgeFeeRow
+                  row={{ label: 'I alt', ...jan1Totals }}
                   highlight
                 />
               </tbody>
@@ -263,6 +346,34 @@ export function StatisticsPage() {
                   {demographics.grandTotal > 0 ? Math.round((demographics.totalByGender.unspecified / demographics.grandTotal) * 100) : 0}%
                 </p>
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* Missing birthdate list */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden lg:col-span-2">
+          <div className="p-4 bg-gray-50 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">Medlemmer uden fødselsdato</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              {membersMissingBirthDate.length} aktive medlemmer mangler fødselsdato
+            </p>
+          </div>
+          <div className="p-4">
+            {membersMissingBirthDate.length === 0 ? (
+              <p className="text-sm text-gray-600">Alle aktive medlemmer har fødselsdato registreret.</p>
+            ) : (
+              <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-sm text-gray-700">
+                {membersMissingBirthDate.map((member) => {
+                  const firstName = member.firstName?.trim() || '';
+                  const lastName = member.lastName?.trim() || '';
+                  const name = [lastName, firstName].filter(Boolean).join(', ') || 'Ukendt navn';
+                  return (
+                    <li key={member.internalId} className="bg-gray-50 rounded-md px-3 py-2">
+                      {name}
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         </div>

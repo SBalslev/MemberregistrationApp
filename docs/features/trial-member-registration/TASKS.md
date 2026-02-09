@@ -325,6 +325,12 @@ This document tracks implementation tasks for the Trial Member Registration feat
   - File: Badge component, dashboard
   - Acceptance: Warnings visible for old trials
 
+- [x] **6.6** Allow laptop add member to create trial members
+  - Add member type selector in add member modal
+  - Allow saving without membershipId when trial is selected
+  - File: `laptop/src/pages/MembersPage.tsx`
+  - Acceptance: Trial member can be created from laptop form
+
 ---
 
 ## Phase 7: Cleanup and Deprecation ✅

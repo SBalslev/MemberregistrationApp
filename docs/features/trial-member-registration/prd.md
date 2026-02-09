@@ -2,7 +2,7 @@
 
 **Feature:** Trial Member Registration and Workflow Simplification
 **Version:** 1.5
-**Last Updated:** 2026-01-20
+**Last Updated:** 2026-02-09
 **Updated By:** sbalslev
 **Status:** ✅ COMPLETED
 
@@ -108,6 +108,18 @@ This feature refactors the current member registration workflow by eliminating t
 - Member profile shows complete history
 - No manual data migration required
 
+### US-6: Create trial member on laptop
+
+**As a** club administrator using the laptop  
+**I want** to create a trial member without a membership ID  
+**So that** I can register walk-ins when an ID is not yet assigned
+
+**Acceptance Criteria:**
+
+- Laptop add member form allows trial creation without membershipId
+- Trial member is saved with `memberType = TRIAL` and `membershipId = null`
+- Trial member appears in the trial member list immediately
+
 ## Functional Requirements
 
 ### FR-1: Member Entity Changes
@@ -160,6 +172,8 @@ This feature refactors the current member registration workflow by eliminating t
 **FR-3.4** Laptop SHALL validate `membershipId` uniqueness before saving.
 
 **FR-3.5** Laptop SHALL display warning if trial member has been active >30 days without ID assignment.
+
+**FR-3.6** Laptop add member form SHALL allow creating a trial member without a membershipId.
 
 ### FR-4: Synchronization Protocol Updates
 
