@@ -137,6 +137,7 @@ class SyncOutboxManager @Inject constructor(
         val outboxIds = mutableListOf<String>()
         val checkIns = mutableListOf<SyncableCheckIn>()
         val practiceSessions = mutableListOf<SyncablePracticeSession>()
+        val practiceSessionDeletions = mutableListOf<SyncablePracticeSessionDeletion>()
         val scanEvents = mutableListOf<SyncableScanEvent>()
         val members = mutableListOf<SyncableMember>()
         val equipmentCheckouts = mutableListOf<SyncableEquipmentCheckout>()
@@ -150,7 +151,13 @@ class SyncOutboxManager @Inject constructor(
                         outboxIds.add(entry.id)
                     }
                     "PracticeSession" -> {
-                        practiceSessions.add(json.decodeFromString<SyncablePracticeSession>(entry.payload))
+                        if (entry.operation == OutboxOperation.DELETE.name) {
+                            // For deletions, extract ID and add to deletions list
+                            val session = json.decodeFromString<SyncablePracticeSession>(entry.payload)
+                            practiceSessionDeletions.add(SyncablePracticeSessionDeletion(id = session.id))
+                        } else {
+                            practiceSessions.add(json.decodeFromString<SyncablePracticeSession>(entry.payload))
+                        }
                         outboxIds.add(entry.id)
                     }
                     "ScanEvent" -> {
@@ -187,6 +194,7 @@ class SyncOutboxManager @Inject constructor(
         val entities = SyncEntities(
             checkIns = checkIns,
             practiceSessions = practiceSessions,
+            practiceSessionDeletions = practiceSessionDeletions,
             scanEvents = scanEvents,
             members = members,
             equipmentCheckouts = equipmentCheckouts,
@@ -195,6 +203,7 @@ class SyncOutboxManager @Inject constructor(
 
         Log.d(TAG, "Collected ${outboxIds.size} outbox entries for $deviceId: " +
             "${checkIns.size} check-ins, ${practiceSessions.size} sessions, " +
+            "${practiceSessionDeletions.size} session deletions, " +
             "${members.size} members, ${equipmentCheckouts.size} checkouts")
 
         return Pair(entities, outboxIds)

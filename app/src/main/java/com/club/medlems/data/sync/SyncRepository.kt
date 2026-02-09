@@ -1,6 +1,8 @@
 package com.club.medlems.data.sync
 
+import android.content.Context
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.club.medlems.data.dao.CheckInDao
 import com.club.medlems.data.dao.EquipmentCheckoutDao
 import com.club.medlems.data.dao.EquipmentItemDao
@@ -45,6 +47,7 @@ import com.club.medlems.data.entity.EquipmentItem as EntityEquipmentItem
  */
 @Singleton
 class SyncRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val memberDao: MemberDao,
     private val checkInDao: CheckInDao,
     private val practiceSessionDao: PracticeSessionDao,
@@ -151,7 +154,9 @@ class SyncRepository @Inject constructor(
             try {
                 val existing = memberDao.getByInternalId(syncMember.internalId)
                 if (existing == null || shouldAcceptMemberUpdate(existing, syncMember, payload.deviceType)) {
-                    memberDao.upsert(syncMember.toEntity())
+                    // Save photos from base64 if present
+                    val memberWithPhotos = saveMemberPhotosFromSync(syncMember)
+                    memberDao.upsert(memberWithPhotos.toEntity())
                     membersProcessed++
                 } else {
                     // Conflict - keep existing (laptop wins rule)
@@ -538,7 +543,7 @@ class SyncRepository @Inject constructor(
     // Extension functions to convert between entity and syncable types
     
     private fun Member.toSyncable(deviceId: String): SyncableMember {
-        // Encode photo to base64 for trial members (they may have registration photos)
+        // Encode photos to base64 for trial members
         val photoBase64 = if (memberType == MemberType.TRIAL && !registrationPhotoPath.isNullOrEmpty()) {
             try {
                 val photoFile = java.io.File(registrationPhotoPath)
@@ -550,7 +555,20 @@ class SyncRepository @Inject constructor(
                 null
             }
         } else null
-        
+
+        // Encode ID photo for adult trial members
+        val idPhotoBase64 = if (memberType == MemberType.TRIAL && !idPhotoPath.isNullOrEmpty()) {
+            try {
+                val idPhotoFile = java.io.File(idPhotoPath)
+                if (idPhotoFile.exists()) {
+                    android.util.Base64.encodeToString(idPhotoFile.readBytes(), android.util.Base64.NO_WRAP)
+                } else null
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to encode member ID photo for sync: ${e.message}")
+                null
+            }
+        } else null
+
         return SyncableMember(
             internalId = internalId,
             membershipId = membershipId,
@@ -571,6 +589,8 @@ class SyncRepository @Inject constructor(
             expiresOn = expiresOn,
             registrationPhotoPath = registrationPhotoPath,
             photoBase64 = photoBase64,
+            idPhotoPath = idPhotoPath,
+            idPhotoBase64 = idPhotoBase64,
             mergedIntoId = mergedIntoId,
             deviceId = deviceId,
             syncVersion = syncVersion,
@@ -599,6 +619,7 @@ class SyncRepository @Inject constructor(
         guardianEmail = guardianEmail,
         expiresOn = expiresOn,
         registrationPhotoPath = registrationPhotoPath,
+        idPhotoPath = idPhotoPath,
         mergedIntoId = mergedIntoId,
         createdAtUtc = createdAtUtc,
         updatedAtUtc = modifiedAtUtc,
@@ -886,6 +907,46 @@ class SyncRepository @Inject constructor(
         syncVersion = syncVersion,
         syncedAtUtc = syncedAtUtc
     )
+
+    /**
+     * Saves member photos from base64 encoded data received via sync.
+     * Returns the SyncableMember with updated photo paths pointing to local files.
+     */
+    private fun saveMemberPhotosFromSync(syncMember: SyncableMember): SyncableMember {
+        var updatedMember = syncMember
+        val photosDir = java.io.File(context.filesDir, "member_photos")
+        if (!photosDir.exists()) {
+            photosDir.mkdirs()
+        }
+
+        // Save registration/profile photo if base64 data is present
+        if (!syncMember.photoBase64.isNullOrEmpty()) {
+            try {
+                val photoBytes = android.util.Base64.decode(syncMember.photoBase64, android.util.Base64.NO_WRAP)
+                val photoFile = java.io.File(photosDir, "${syncMember.internalId}_profile.jpg")
+                photoFile.writeBytes(photoBytes)
+                updatedMember = updatedMember.copy(registrationPhotoPath = photoFile.absolutePath)
+                Log.d(TAG, "Saved profile photo for member ${syncMember.internalId}: ${photoFile.absolutePath}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save profile photo for member ${syncMember.internalId}: ${e.message}")
+            }
+        }
+
+        // Save ID photo if base64 data is present (for adult trial members)
+        if (!syncMember.idPhotoBase64.isNullOrEmpty()) {
+            try {
+                val idPhotoBytes = android.util.Base64.decode(syncMember.idPhotoBase64, android.util.Base64.NO_WRAP)
+                val idPhotoFile = java.io.File(photosDir, "${syncMember.internalId}_id.jpg")
+                idPhotoFile.writeBytes(idPhotoBytes)
+                updatedMember = updatedMember.copy(idPhotoPath = idPhotoFile.absolutePath)
+                Log.d(TAG, "Saved ID photo for member ${syncMember.internalId}: ${idPhotoFile.absolutePath}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save ID photo for member ${syncMember.internalId}: ${e.message}")
+            }
+        }
+
+        return updatedMember
+    }
 }
 
 /**

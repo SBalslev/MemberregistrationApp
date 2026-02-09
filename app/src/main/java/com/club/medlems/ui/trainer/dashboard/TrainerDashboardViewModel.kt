@@ -141,27 +141,127 @@ class TrainerDashboardViewModel @Inject constructor(
     )
 
     init {
-        // Load initial data
-        loadData()
+        // Observe database changes directly for reactive updates
+        observeDatabaseChanges()
 
-        // Start auto-refresh
+        // Load trial members (not yet reactive)
+        loadTrialMembers()
+
+        // Start auto-refresh for trial members only (they don't have Flow query yet)
         startAutoRefresh()
-
-        // Refresh when sync completes (new data from other devices)
-        observeSyncUpdates()
     }
 
     /**
-     * Observes sync completions to refresh data when new data arrives from other devices.
+     * Observes check-ins and sessions directly from the database.
+     * This provides automatic UI updates when data changes locally or from sync.
      */
-    private fun observeSyncUpdates() {
+    private fun observeDatabaseChanges() {
+        val today = getToday()
+
         viewModelScope.launch {
-            syncManager.lastSyncTime.collect { syncTime ->
-                if (syncTime != null && trainerSessionManager.isSessionActive) {
-                    // Sync completed - refresh to show new data
-                    loadDataInternal()
-                }
+            // Combine check-ins and sessions flows
+            combine(
+                checkInDao.observeCheckInsForDate(today),
+                practiceSessionDao.observeSessionsForDate(today)
+            ) { checkIns, sessions ->
+                Pair(checkIns, sessions)
+            }.collect { (checkIns, sessions) ->
+                processDataUpdate(checkIns, sessions)
             }
+        }
+    }
+
+    /**
+     * Processes data updates from the database flows.
+     */
+    private suspend fun processDataUpdate(checkIns: List<CheckIn>, sessions: List<PracticeSession>) {
+        // Collect unique member IDs
+        val memberIds = (checkIns.map { it.internalMemberId } + sessions.map { it.internalMemberId }).distinct()
+
+        // Fetch member names
+        val memberNames = if (memberIds.isNotEmpty()) {
+            memberDao.getMemberNames(memberIds)
+        } else {
+            emptyList()
+        }
+        val nameMap = memberNames.associateBy { it.internalId }
+
+        // Map check-ins with member names
+        val checkInsWithMembers = checkIns.map { checkIn ->
+            val member = nameMap[checkIn.internalMemberId]
+            CheckInWithMember(
+                checkIn = checkIn,
+                memberName = member?.displayName ?: "Ukendt medlem",
+                memberId = member?.membershipId ?: checkIn.internalMemberId,
+                internalMemberId = checkIn.internalMemberId
+            )
+        }.sortedByDescending { it.checkIn.createdAtUtc }
+
+        // Map sessions with member names
+        val sessionsWithMembers = sessions.map { session ->
+            val member = nameMap[session.internalMemberId]
+            PracticeSessionWithMember(
+                session = session,
+                memberName = member?.displayName ?: "Ukendt medlem",
+                memberId = member?.membershipId ?: session.internalMemberId
+            )
+        }.sortedByDescending { it.session.createdAtUtc }
+
+        // Update time
+        val now = Clock.System.now()
+        val nowLocal = now.toLocalDateTime(TimeZone.currentSystemDefault())
+        val timeStr = String.format("%02d:%02d", nowLocal.hour, nowLocal.minute)
+
+        _state.value = _state.value.copy(
+            allCheckIns = checkInsWithMembers,
+            allSessions = sessionsWithMembers,
+            stats = DashboardStats(
+                totalCheckIns = checkInsWithMembers.size,
+                totalSessions = sessionsWithMembers.size
+            ),
+            lastUpdated = timeStr,
+            isLoading = false
+        )
+
+        // Apply any existing filter
+        applyFilter()
+    }
+
+    /**
+     * Loads trial members (not yet using Flow-based observation).
+     */
+    private fun loadTrialMembers() {
+        viewModelScope.launch {
+            val now = Clock.System.now()
+            val sevenDaysAgo = now - 7.days
+            val recentTrialMembers = memberDao.getRecentTrialMembers(sevenDaysAgo)
+
+            val trialMemberItems = recentTrialMembers.map { member ->
+                val birthDateStr = member.birthDate?.toString()
+                val validationResult = if (birthDateStr != null) {
+                    BirthDateValidator.validate(birthDateStr)
+                } else null
+                val age = when (validationResult) {
+                    is com.club.medlems.util.BirthDateValidationResult.Valid -> validationResult.age
+                    else -> null
+                }
+                val isAdult = age != null && age >= 18
+
+                val createdAt = member.createdAtUtc.toLocalDateTime(TimeZone.currentSystemDefault())
+                val dateStr = String.format("%02d/%02d", createdAt.dayOfMonth, createdAt.monthNumber)
+
+                TrialMemberListItem(
+                    member = member,
+                    displayName = listOfNotNull(member.firstName, member.lastName).joinToString(" "),
+                    registrationDate = dateStr,
+                    age = age,
+                    isAdult = isAdult,
+                    hasIdPhoto = member.idPhotoPath != null,
+                    hasProfilePhoto = member.registrationPhotoPath != null
+                )
+            }
+
+            _state.value = _state.value.copy(trialMembers = trialMemberItems)
         }
     }
 
@@ -176,11 +276,13 @@ class TrainerDashboardViewModel @Inject constructor(
     /**
      * Manually refreshes the dashboard data.
      * Used for pull-to-refresh functionality.
+     * Note: Check-ins and sessions update automatically via Flow observation.
+     * This method refreshes trial members which don't have Flow queries yet.
      */
     fun refresh() {
         viewModelScope.launch {
             _state.value = _state.value.copy(isRefreshing = true)
-            loadDataInternal()
+            loadTrialMembers()
             _state.value = _state.value.copy(isRefreshing = false)
         }
     }
@@ -218,103 +320,6 @@ class TrainerDashboardViewModel @Inject constructor(
      */
     fun clearSessionSelection() {
         _state.value = _state.value.copy(selectedMemberForSession = null)
-    }
-
-    private fun loadData() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(isLoading = true)
-            loadDataInternal()
-            _state.value = _state.value.copy(isLoading = false)
-        }
-    }
-
-    private suspend fun loadDataInternal() {
-        val today = getToday()
-        val now = Clock.System.now()
-
-        // Fetch today's check-ins and sessions
-        val checkIns = checkInDao.allCheckInsForDate(today)
-        val sessions = practiceSessionDao.allSessionsForDate(today)
-
-        // Fetch recent trial members (last 7 days)
-        val sevenDaysAgo = now - 7.days
-        val recentTrialMembers = memberDao.getRecentTrialMembers(sevenDaysAgo)
-
-        // Collect unique member IDs
-        val memberIds = (checkIns.map { it.internalMemberId } + sessions.map { it.internalMemberId }).distinct()
-
-        // Fetch member names
-        val memberNames = if (memberIds.isNotEmpty()) {
-            memberDao.getMemberNames(memberIds)
-        } else {
-            emptyList()
-        }
-        val nameMap = memberNames.associateBy { it.internalId }
-
-        // Map check-ins with member names
-        val checkInsWithMembers = checkIns.map { checkIn ->
-            val member = nameMap[checkIn.internalMemberId]
-            CheckInWithMember(
-                checkIn = checkIn,
-                memberName = member?.displayName ?: "Ukendt medlem",
-                memberId = member?.membershipId ?: checkIn.internalMemberId,
-                internalMemberId = checkIn.internalMemberId
-            )
-        }.sortedByDescending { it.checkIn.createdAtUtc }
-
-        // Map sessions with member names
-        val sessionsWithMembers = sessions.map { session ->
-            val member = nameMap[session.internalMemberId]
-            PracticeSessionWithMember(
-                session = session,
-                memberName = member?.displayName ?: "Ukendt medlem",
-                memberId = member?.membershipId ?: session.internalMemberId
-            )
-        }.sortedByDescending { it.session.createdAtUtc }
-
-        // Map trial members for display
-        val trialMemberItems = recentTrialMembers.map { member ->
-            val birthDateStr = member.birthDate?.toString()
-            val validationResult = if (birthDateStr != null) {
-                BirthDateValidator.validate(birthDateStr)
-            } else null
-            val age = when (validationResult) {
-                is com.club.medlems.util.BirthDateValidationResult.Valid -> validationResult.age
-                else -> null
-            }
-            val isAdult = age != null && age >= 18
-
-            val createdAt = member.createdAtUtc.toLocalDateTime(TimeZone.currentSystemDefault())
-            val dateStr = String.format("%02d/%02d", createdAt.dayOfMonth, createdAt.monthNumber)
-
-            TrialMemberListItem(
-                member = member,
-                displayName = listOfNotNull(member.firstName, member.lastName).joinToString(" "),
-                registrationDate = dateStr,
-                age = age,
-                isAdult = isAdult,
-                hasIdPhoto = member.idPhotoPath != null,
-                hasProfilePhoto = member.registrationPhotoPath != null
-            )
-        }
-
-        // Update time
-        val nowLocal = now.toLocalDateTime(TimeZone.currentSystemDefault())
-        val timeStr = String.format("%02d:%02d", nowLocal.hour, nowLocal.minute)
-
-        _state.value = _state.value.copy(
-            allCheckIns = checkInsWithMembers,
-            allSessions = sessionsWithMembers,
-            trialMembers = trialMemberItems,
-            stats = DashboardStats(
-                totalCheckIns = checkInsWithMembers.size,
-                totalSessions = sessionsWithMembers.size
-            ),
-            lastUpdated = timeStr
-        )
-
-        // Apply any existing filter
-        applyFilter()
     }
 
     /**
@@ -356,7 +361,8 @@ class TrainerDashboardViewModel @Inject constructor(
             while (isActive) {
                 delay(AUTO_REFRESH_INTERVAL_MS)
                 if (trainerSessionManager.isSessionActive) {
-                    loadDataInternal()
+                    // Only refresh trial members - check-ins and sessions update via Flow
+                    loadTrialMembers()
                 }
             }
         }

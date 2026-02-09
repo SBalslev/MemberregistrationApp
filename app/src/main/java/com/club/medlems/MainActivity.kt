@@ -26,6 +26,7 @@ import com.club.medlems.ui.display.EquipmentDisplayScreen
 import com.club.medlems.ui.display.PracticeSessionDisplayScreen
 import com.club.medlems.ui.trainer.TrainerAuthScreen
 import com.club.medlems.ui.trainer.dashboard.TrainerDashboardScreen
+import com.club.medlems.ui.trainer.dashboard.TrialMemberDetailScreen
 import com.club.medlems.domain.security.AttendantModeManager
 import com.club.medlems.domain.prefs.DeviceConfigPreferences
 import javax.inject.Inject
@@ -106,6 +107,9 @@ sealed class NavRoute(val route: String) {
     // Trainer authentication flow
     data object TrainerAuth: NavRoute("trainer/auth")
     data object TrainerDashboard: NavRoute("trainer/dashboard")
+    data object TrialMemberDetail: NavRoute("trainer/trial/{internalId}") {
+        fun build(internalId: String) = "trainer/trial/$internalId"
+    }
 }
 
 @Composable
@@ -314,7 +318,19 @@ fun AppRoot(
                     },
                     onNavigateToMinIdraetSearch = {
                         navController.navigate(NavRoute.MinIdraetSearch.route)
+                    },
+                    onNavigateToTrialMemberDetail = { internalId ->
+                        navController.navigate(NavRoute.TrialMemberDetail.build(internalId))
                     }
+                )
+            }
+
+            // Trial member detail screen (for viewing/editing trial member info and photos)
+            composable(NavRoute.TrialMemberDetail.route) { backStackEntry ->
+                val internalId = backStackEntry.arguments?.getString("internalId") ?: return@composable
+                TrialMemberDetailScreen(
+                    memberId = internalId,
+                    onBack = { navController.popBackStack() }
                 )
             }
         }

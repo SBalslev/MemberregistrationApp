@@ -138,6 +138,10 @@ interface CheckInDao {
     @Query("SELECT * FROM CheckIn WHERE localDate = :date")
     suspend fun allCheckInsForDate(date: LocalDate): List<CheckIn>
 
+    /** Flow-based query for reactive UI updates when check-ins change */
+    @Query("SELECT * FROM CheckIn WHERE localDate = :date ORDER BY createdAtUtc DESC")
+    fun observeCheckInsForDate(date: LocalDate): kotlinx.coroutines.flow.Flow<List<CheckIn>>
+
     @Query("SELECT * FROM CheckIn WHERE createdAtUtc > :since ORDER BY createdAtUtc ASC")
     suspend fun checkInsCreatedAfter(since: Instant): List<CheckIn>
 
@@ -220,6 +224,10 @@ interface PracticeSessionDao {
 
     @Query("SELECT * FROM PracticeSession WHERE localDate = :date")
     suspend fun allSessionsForDate(date: LocalDate): List<PracticeSession>
+
+    /** Flow-based query for reactive UI updates when sessions change */
+    @Query("SELECT * FROM PracticeSession WHERE localDate = :date ORDER BY createdAtUtc DESC")
+    fun observeSessionsForDate(date: LocalDate): kotlinx.coroutines.flow.Flow<List<PracticeSession>>
 
     @Query("SELECT * FROM PracticeSession WHERE createdAtUtc > :since ORDER BY createdAtUtc ASC")
     suspend fun sessionsCreatedAfter(since: Instant): List<PracticeSession>
