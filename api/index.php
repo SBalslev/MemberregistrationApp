@@ -91,6 +91,13 @@ $routes = [
 
     // Diagnostic (public, for deployment verification)
     'GET /diagnostic' => 'handlers/diagnostic.php:handleDiagnostic',
+
+    // Cloud Admin (for comparing and managing cloud data)
+    'GET /admin/entities/{type}' => 'handlers/cloud_admin.php:handleListEntityIds',
+    'POST /admin/entities/{type}/compare' => 'handlers/cloud_admin.php:handleCompareEntityIds',
+    'GET /admin/entities/{type}/{id}' => 'handlers/cloud_admin.php:handleGetEntityDetails',
+    'DELETE /admin/entities/{type}/{id}' => 'handlers/cloud_admin.php:handleDeleteEntity',
+    'POST /admin/entities/{type}/delete-batch' => 'handlers/cloud_admin.php:handleDeleteEntityBatch',
 ];
 
 // Simple health check handler (inline)

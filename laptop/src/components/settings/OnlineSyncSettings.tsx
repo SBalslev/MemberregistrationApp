@@ -22,6 +22,8 @@ import {
   WifiOff,
   LogOut,
   AlertTriangle,
+  Trash2,
+  Database,
 } from 'lucide-react';
 import {
   onlineApiService,
@@ -40,6 +42,7 @@ import { isElectron, getElectronAPI } from '../../types/electron';
 import { SYNC_SCHEMA_VERSION } from '../../database/syncService';
 import { getMemberByInternalId } from '../../database/memberRepository';
 import { buildPendingDeleteSummary, type PendingDeleteSummary } from './pendingDeleteUtils';
+import { query } from '../../database/db';
 
 type PendingDeleteItem = {
   pending: PendingDelete;
@@ -84,6 +87,20 @@ export function OnlineSyncSettings() {
   // Verification state
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<SyncVerificationResult | null>(null);
+
+  // Cloud data management state
+  const [showCloudDataModal, setShowCloudDataModal] = useState(false);
+  const [selectedEntityType, setSelectedEntityType] = useState<string | null>(null);
+  const [cloudComparison, setCloudComparison] = useState<{
+    entityType: string;
+    localCount: number;
+    cloudCount: number;
+    onlyInCloud: string[];
+    onlyInLocal: string[];
+  } | null>(null);
+  const [isLoadingComparison, setIsLoadingComparison] = useState(false);
+  const [isDeletingCloudRecords, setIsDeletingCloudRecords] = useState(false);
+  const [cloudDeleteResult, setCloudDeleteResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Load saved connection state and check status on mount
   useEffect(() => {
@@ -375,6 +392,100 @@ export function OnlineSyncSettings() {
     if (diff <= 0) return 'Udlobet';
     if (hours > 0) return `${hours}t ${minutes}m`;
     return `${minutes}m`;
+  };
+
+  // Map entity types to local database queries
+  const getLocalIdsForEntity = (entityType: string): string[] => {
+    const entityQueries: Record<string, { sql: string; idField: string }> = {
+      members: { sql: 'SELECT internalId FROM Member', idField: 'internalId' },
+      check_ins: { sql: 'SELECT id FROM CheckIn', idField: 'id' },
+      practice_sessions: { sql: 'SELECT id FROM PracticeSession', idField: 'id' },
+      equipment_items: { sql: 'SELECT id FROM EquipmentItem', idField: 'id' },
+      equipment_checkouts: { sql: 'SELECT id FROM EquipmentCheckout', idField: 'id' },
+      trainer_info: { sql: 'SELECT memberId FROM TrainerInfo', idField: 'memberId' },
+      trainer_disciplines: { sql: 'SELECT id FROM TrainerDiscipline', idField: 'id' },
+      posting_categories: { sql: 'SELECT id FROM PostingCategory', idField: 'id' },
+      fiscal_years: { sql: 'SELECT year FROM FiscalYear', idField: 'year' },
+      fee_rates: { sql: 'SELECT id FROM FeeRate', idField: 'id' },
+      financial_transactions: { sql: 'SELECT id FROM FinancialTransaction', idField: 'id' },
+      transaction_lines: { sql: 'SELECT id FROM TransactionLine', idField: 'id' },
+      pending_fee_payments: { sql: 'SELECT id FROM PendingFeePayment', idField: 'id' },
+      scan_events: { sql: 'SELECT id FROM ScanEvent', idField: 'id' },
+      member_preferences: { sql: 'SELECT memberId FROM MemberPreference', idField: 'memberId' },
+      new_member_registrations: { sql: 'SELECT id FROM NewMemberRegistration', idField: 'id' },
+      skv_registrations: { sql: 'SELECT id FROM SkvRegistration', idField: 'id' },
+      skv_weapons: { sql: 'SELECT id FROM SkvWeapon', idField: 'id' },
+    };
+
+    const config = entityQueries[entityType];
+    if (!config) return [];
+
+    try {
+      const results = query<Record<string, string | number>>(config.sql);
+      return results.map((r) => String(r[config.idField]));
+    } catch (e) {
+      console.error(`Error fetching local IDs for ${entityType}:`, e);
+      return [];
+    }
+  };
+
+  const handleCompareEntityData = async (entityType: string) => {
+    if (!connectionStatus.authenticated) return;
+
+    setSelectedEntityType(entityType);
+    setIsLoadingComparison(true);
+    setCloudComparison(null);
+    setCloudDeleteResult(null);
+
+    try {
+      const localIds = getLocalIdsForEntity(entityType);
+      const result = await onlineApiService.compareEntityIds(entityType, localIds);
+      setCloudComparison(result);
+    } catch (error) {
+      console.error('Error comparing entity data:', error);
+      setCloudComparison(null);
+    } finally {
+      setIsLoadingComparison(false);
+    }
+  };
+
+  const handleDeleteCloudOnlyRecords = async () => {
+    if (!cloudComparison || cloudComparison.onlyInCloud.length === 0) return;
+
+    setIsDeletingCloudRecords(true);
+    setCloudDeleteResult(null);
+
+    try {
+      const result = await onlineApiService.deleteCloudEntityBatch(
+        cloudComparison.entityType,
+        cloudComparison.onlyInCloud
+      );
+      setCloudDeleteResult({
+        success: result.success,
+        message: `${result.deleted} poster slettet fra cloud`,
+      });
+
+      // Refresh the comparison
+      if (result.success) {
+        await handleCompareEntityData(cloudComparison.entityType);
+        // Also refresh verification result if it exists
+        if (verificationResult) {
+          handleVerifySync();
+        }
+      }
+    } catch (error) {
+      setCloudDeleteResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Sletning fejlede',
+      });
+    } finally {
+      setIsDeletingCloudRecords(false);
+    }
+  };
+
+  const handleOpenCloudDataModal = (entityType: string) => {
+    setShowCloudDataModal(true);
+    handleCompareEntityData(entityType);
   };
 
   return (
@@ -793,7 +904,8 @@ export function OnlineSyncSettings() {
                                   <th className="pr-2">Tabel</th>
                                   <th className="pr-2 text-right">Lokal</th>
                                   <th className="pr-2 text-right">Online</th>
-                                  <th className="text-right">Forskel</th>
+                                  <th className="pr-2 text-right">Forskel</th>
+                                  <th></th>
                                 </tr>
                               </thead>
                               <tbody className="text-yellow-700">
@@ -802,9 +914,19 @@ export function OnlineSyncSettings() {
                                     <td className="pr-2">{d.table}</td>
                                     <td className="pr-2 text-right">{d.localCount}</td>
                                     <td className="pr-2 text-right">{d.remoteCount}</td>
-                                    <td className="text-right">
+                                    <td className="pr-2 text-right">
                                       {d.difference > 0 ? '+' : ''}
                                       {d.difference}
+                                    </td>
+                                    <td className="text-right">
+                                      <button
+                                        onClick={() => handleOpenCloudDataModal(d.table)}
+                                        className="text-xs px-2 py-1 bg-yellow-200 hover:bg-yellow-300 text-yellow-800 rounded transition-colors"
+                                        title="Administrer cloud data"
+                                      >
+                                        <Database className="w-3 h-3 inline mr-1" />
+                                        Administrer
+                                      </button>
                                     </td>
                                   </tr>
                                 ))}
@@ -954,6 +1076,186 @@ export function OnlineSyncSettings() {
               <p className="text-xs text-gray-500">
                 Adgangskoden gemmes ikke lokalt. Du skal logge ind igen efter 24 timer.
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cloud Data Management Modal */}
+      {showCloudDataModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-purple-100 rounded-full">
+                  <Database className="w-6 h-6 text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Administrer Cloud Data</h2>
+                  <p className="text-sm text-gray-500">
+                    {selectedEntityType && `Tabel: ${selectedEntityType}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowCloudDataModal(false);
+                  setCloudComparison(null);
+                  setCloudDeleteResult(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Loading state */}
+            {isLoadingComparison && (
+              <div className="flex items-center justify-center py-12">
+                <RefreshCw className="w-8 h-8 text-purple-600 animate-spin" />
+                <span className="ml-3 text-gray-600">Sammenligner data...</span>
+              </div>
+            )}
+
+            {/* Comparison results */}
+            {cloudComparison && !isLoadingComparison && (
+              <div className="space-y-6">
+                {/* Summary */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-blue-50 rounded-lg">
+                    <div className="text-sm text-blue-600 mb-1">Lokale poster</div>
+                    <div className="text-2xl font-bold text-blue-700">{cloudComparison.localCount}</div>
+                  </div>
+                  <div className="p-4 bg-purple-50 rounded-lg">
+                    <div className="text-sm text-purple-600 mb-1">Cloud poster</div>
+                    <div className="text-2xl font-bold text-purple-700">{cloudComparison.cloudCount}</div>
+                  </div>
+                </div>
+
+                {/* Only in cloud */}
+                {cloudComparison.onlyInCloud.length > 0 && (
+                  <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                        <span className="font-medium text-yellow-800">
+                          {cloudComparison.onlyInCloud.length} poster kun i cloud
+                        </span>
+                      </div>
+                      <button
+                        onClick={handleDeleteCloudOnlyRecords}
+                        disabled={isDeletingCloudRecords}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {isDeletingCloudRecords ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Sletter...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="w-4 h-4" />
+                            Slet alle fra cloud
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-sm text-yellow-700 mb-3">
+                      Disse poster findes i cloud men ikke lokalt. Slet dem fra cloud for at synkronisere.
+                    </p>
+                    <div className="max-h-40 overflow-y-auto bg-white rounded border border-yellow-200 p-2">
+                      <div className="text-xs font-mono text-gray-600 space-y-1">
+                        {cloudComparison.onlyInCloud.slice(0, 50).map((id) => (
+                          <div key={id} className="truncate">{id}</div>
+                        ))}
+                        {cloudComparison.onlyInCloud.length > 50 && (
+                          <div className="text-gray-400">
+                            ... og {cloudComparison.onlyInCloud.length - 50} flere
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Only in local */}
+                {cloudComparison.onlyInLocal.length > 0 && (
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <AlertCircle className="w-5 h-5 text-blue-600" />
+                      <span className="font-medium text-blue-800">
+                        {cloudComparison.onlyInLocal.length} poster kun lokalt
+                      </span>
+                    </div>
+                    <p className="text-sm text-blue-700 mb-3">
+                      Disse poster findes lokalt men ikke i cloud. Kor en fuld synkronisering for at uploade dem.
+                    </p>
+                    <div className="max-h-40 overflow-y-auto bg-white rounded border border-blue-200 p-2">
+                      <div className="text-xs font-mono text-gray-600 space-y-1">
+                        {cloudComparison.onlyInLocal.slice(0, 50).map((id) => (
+                          <div key={id} className="truncate">{id}</div>
+                        ))}
+                        {cloudComparison.onlyInLocal.length > 50 && (
+                          <div className="text-gray-400">
+                            ... og {cloudComparison.onlyInLocal.length - 50} flere
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* All synced message */}
+                {cloudComparison.onlyInCloud.length === 0 && cloudComparison.onlyInLocal.length === 0 && (
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-200 flex items-center gap-3">
+                    <CheckCircle className="w-6 h-6 text-green-600" />
+                    <div>
+                      <div className="font-medium text-green-800">Alle poster er synkroniseret!</div>
+                      <div className="text-sm text-green-700">
+                        Lokale og cloud data matcher for denne tabel.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Delete result */}
+                {cloudDeleteResult && (
+                  <div className={`p-4 rounded-lg ${cloudDeleteResult.success ? 'bg-green-50' : 'bg-red-50'}`}>
+                    <div className="flex items-center gap-2">
+                      {cloudDeleteResult.success ? (
+                        <CheckCircle className="w-5 h-5 text-green-600" />
+                      ) : (
+                        <AlertCircle className="w-5 h-5 text-red-600" />
+                      )}
+                      <span className={cloudDeleteResult.success ? 'text-green-800' : 'text-red-800'}>
+                        {cloudDeleteResult.message}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => selectedEntityType && handleCompareEntityData(selectedEntityType)}
+                disabled={isLoadingComparison || !selectedEntityType}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoadingComparison ? 'animate-spin' : ''}`} />
+                Opdater
+              </button>
+              <button
+                onClick={() => {
+                  setShowCloudDataModal(false);
+                  setCloudComparison(null);
+                  setCloudDeleteResult(null);
+                }}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                Luk
+              </button>
             </div>
           </div>
         </div>

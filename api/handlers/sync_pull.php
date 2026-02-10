@@ -52,17 +52,19 @@ function handleSyncPull(): void
         'deleted' => [],
     ];
 
+    // Track the earliest cursor for pagination across all entity types
+    $earliestCursor = null;
+
     foreach ($entities as $entity) {
         switch ($entity) {
             case 'members':
                 $data = pullMembers($sinceDate, $limit);
                 $result['entities']['members'] = $data['records'];
                 $result['deleted']['members'] = $data['deleted'];
-                if (count($data['records']) >= $limit) {
-                    $result['has_more'] = true;
-                    if (!empty($data['records'])) {
-                        $lastRecord = end($data['records']);
-                        $result['next_cursor'] = $lastRecord['modified_at_utc'];
+                if (count($data['records']) >= $limit && !empty($data['records'])) {
+                    $lastRecord = end($data['records']);
+                    if ($earliestCursor === null || $lastRecord['modified_at_utc'] < $earliestCursor) {
+                        $earliestCursor = $lastRecord['modified_at_utc'];
                     }
                 }
                 break;
@@ -114,7 +116,14 @@ function handleSyncPull(): void
                 break;
 
             case 'pending_fee_payments':
-                $result['entities']['pending_fee_payments'] = pullPendingFeePayments($sinceDate, $limit);
+                $pendingPayments = pullPendingFeePayments($sinceDate, $limit);
+                $result['entities']['pending_fee_payments'] = $pendingPayments;
+                if (count($pendingPayments) >= $limit && !empty($pendingPayments)) {
+                    $lastRecord = end($pendingPayments);
+                    if ($earliestCursor === null || $lastRecord['modified_at_utc'] < $earliestCursor) {
+                        $earliestCursor = $lastRecord['modified_at_utc'];
+                    }
+                }
                 break;
 
             case 'scan_events':
@@ -137,6 +146,23 @@ function handleSyncPull(): void
                 $result['entities']['skv_weapons'] = pullSkvWeapons($sinceDate, $limit);
                 break;
         }
+    }
+
+    // Check if any entity type reached the limit - if so, there might be more data
+    foreach ($result['entities'] as $entityType => $records) {
+        if (is_array($records) && count($records) >= $limit) {
+            $result['has_more'] = true;
+            break;
+        }
+    }
+
+    // Use the earliest cursor if we have more data
+    if ($result['has_more'] && $earliestCursor !== null) {
+        $result['next_cursor'] = $earliestCursor;
+    } elseif ($result['has_more']) {
+        // Fallback: use the since date if no cursor was computed
+        // This ensures we re-pull with the same cursor to get remaining records
+        $result['next_cursor'] = $since;
     }
 
     jsonResponse($result);
@@ -540,7 +566,7 @@ function pullPendingFeePayments(string $since, int $limit): array
         "SELECT id, fiscal_year, member_id, amount, payment_date, payment_method, notes, is_consolidated, consolidated_transaction_id, device_id, sync_version, created_at_utc, modified_at_utc
          FROM pending_fee_payments
          WHERE modified_at_utc > ?
-         ORDER BY payment_date ASC
+         ORDER BY modified_at_utc ASC
          LIMIT ?",
         [$since, $limit]
     );

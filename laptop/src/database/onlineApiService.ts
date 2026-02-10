@@ -1291,6 +1291,140 @@ class OnlineApiService {
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
+
+  // ===== Cloud Admin Methods =====
+
+  /**
+   * List all record IDs for a specific entity type in the cloud.
+   */
+  async listCloudEntityIds(
+    entityType: string,
+    limit: number = 10000,
+    offset: number = 0
+  ): Promise<{
+    entityType: string;
+    ids: string[];
+    count: number;
+    total: number;
+    hasMore: boolean;
+  }> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+
+    const response = await this.request<{
+      entity_type: string;
+      ids: string[];
+      count: number;
+      total: number;
+      has_more: boolean;
+    }>('GET', `/admin/entities/${entityType}?${params}`);
+
+    return {
+      entityType: response.entity_type,
+      ids: response.ids,
+      count: response.count,
+      total: response.total,
+      hasMore: response.has_more,
+    };
+  }
+
+  /**
+   * Compare local IDs with cloud IDs for a specific entity type.
+   */
+  async compareEntityIds(
+    entityType: string,
+    localIds: string[]
+  ): Promise<{
+    entityType: string;
+    localCount: number;
+    cloudCount: number;
+    onlyInCloud: string[];
+    onlyInLocal: string[];
+  }> {
+    const response = await this.request<{
+      entity_type: string;
+      local_count: number;
+      cloud_count: number;
+      only_in_cloud: string[];
+      only_in_local: string[];
+    }>('POST', `/admin/entities/${entityType}/compare`, {
+      local_ids: localIds,
+    });
+
+    return {
+      entityType: response.entity_type,
+      localCount: response.local_count,
+      cloudCount: response.cloud_count,
+      onlyInCloud: response.only_in_cloud,
+      onlyInLocal: response.only_in_local,
+    };
+  }
+
+  /**
+   * Get details for a specific entity record in the cloud.
+   */
+  async getCloudEntityDetails(
+    entityType: string,
+    entityId: string
+  ): Promise<{
+    entityType: string;
+    id: string;
+    record: Record<string, unknown>;
+  }> {
+    const response = await this.request<{
+      entity_type: string;
+      id: string;
+      record: Record<string, unknown>;
+    }>('GET', `/admin/entities/${entityType}/${encodeURIComponent(entityId)}`);
+
+    return {
+      entityType: response.entity_type,
+      id: response.id,
+      record: response.record,
+    };
+  }
+
+  /**
+   * Delete a specific entity record from the cloud.
+   */
+  async deleteCloudEntity(
+    entityType: string,
+    entityId: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await this.request<{
+      success: boolean;
+      message: string;
+    }>('DELETE', `/admin/entities/${entityType}/${encodeURIComponent(entityId)}`);
+
+    return {
+      success: response.success,
+      message: response.message,
+    };
+  }
+
+  /**
+   * Delete multiple entity records from the cloud.
+   */
+  async deleteCloudEntityBatch(
+    entityType: string,
+    ids: string[]
+  ): Promise<{ success: boolean; deleted: number; message: string }> {
+    const response = await this.request<{
+      success: boolean;
+      deleted: number;
+      message: string;
+    }>('POST', `/admin/entities/${entityType}/delete-batch`, {
+      ids,
+    });
+
+    return {
+      success: response.success,
+      deleted: response.deleted,
+      message: response.message,
+    };
+  }
 }
 
 // ===== Conversion Helpers =====

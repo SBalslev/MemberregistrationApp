@@ -78,6 +78,7 @@ import {
   type EntityCounts,
   SchemaVersionError,
   ConflictError,
+  RateLimitError,
 } from './onlineApiService';
 import { SYNC_SCHEMA_VERSION } from './syncService';
 import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout, ScanEvent, MemberPreference, NewMemberRegistration } from '../types/entities';
@@ -111,6 +112,46 @@ function toSqlValue(value: unknown): SqlValue {
 
 const DEFAULT_BATCH_SIZE = 50;
 const SYNC_STATE_KEY = 'onlineSyncState';
+const INTER_BATCH_DELAY_MS = 100; // Delay between batches to avoid rate limiting
+const MAX_RATE_LIMIT_RETRIES = 3;
+
+// ===== Rate Limit Helper =====
+
+/**
+ * Executes an async operation with rate limit retry handling.
+ * If a RateLimitError is thrown, waits for the specified retry-after time and retries.
+ */
+async function withRateLimitRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = MAX_RATE_LIMIT_RETRIES,
+  onRetry?: (retryAfterSeconds: number, attempt: number) => void
+): Promise<T> {
+  let lastError: RateLimitError | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        lastError = error;
+        if (attempt < maxRetries) {
+          const waitMs = (error.retryAfterSeconds || 60) * 1000;
+          console.log(`[OnlineSyncService] Rate limited, waiting ${error.retryAfterSeconds}s before retry ${attempt}/${maxRetries}...`);
+          onRetry?.(error.retryAfterSeconds || 60, attempt);
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+          continue;
+        }
+      }
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 // ===== Types =====
 
@@ -511,7 +552,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.members += result.processed?.members?.inserted || 0;
         pushed.members += result.processed?.members?.updated || 0;
         conflicts += result.conflicts?.length || 0;
@@ -524,6 +576,7 @@ class OnlineSyncService {
       }
 
       processedCount += batch.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push check-ins
@@ -552,7 +605,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.checkIns += result.processed.check_ins?.inserted || 0;
         pushed.checkIns += result.processed.check_ins?.updated || 0;
       } catch (error) {
@@ -564,6 +628,7 @@ class OnlineSyncService {
       }
 
       processedCount += batch.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push practice sessions
@@ -592,7 +657,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.practiceSessions += result.processed.practice_sessions?.inserted || 0;
         pushed.practiceSessions += result.processed.practice_sessions?.updated || 0;
       } catch (error) {
@@ -604,6 +680,7 @@ class OnlineSyncService {
       }
 
       processedCount += batch.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push financial transactions
@@ -632,7 +709,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.financialTransactions += result.processed.financial_transactions?.inserted || 0;
         pushed.financialTransactions += result.processed.financial_transactions?.updated || 0;
       } catch (error) {
@@ -644,6 +732,7 @@ class OnlineSyncService {
       }
 
       processedCount += batch.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push fiscal years (with fee rates embedded)
@@ -671,7 +760,18 @@ class OnlineSyncService {
       };
 
       try {
-        await onlineApiService.push(payload);
+        await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
       } catch (error) {
         if (!(error instanceof ConflictError)) {
           throw error;
@@ -679,6 +779,7 @@ class OnlineSyncService {
       }
 
       processedCount += fiscalYears.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push posting categories
@@ -701,7 +802,18 @@ class OnlineSyncService {
       };
 
       try {
-        await onlineApiService.push(payload);
+        await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
       } catch (error) {
         if (!(error instanceof ConflictError)) {
           throw error;
@@ -709,6 +821,7 @@ class OnlineSyncService {
       }
 
       processedCount += postingCategories.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push transaction lines
@@ -737,7 +850,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.transactionLines += result.processed.transaction_lines?.inserted || 0;
         pushed.transactionLines += result.processed.transaction_lines?.updated || 0;
       } catch (error) {
@@ -747,6 +871,7 @@ class OnlineSyncService {
       }
 
       processedCount += batch.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push pending fee payments
@@ -769,7 +894,18 @@ class OnlineSyncService {
       };
 
       try {
-        await onlineApiService.push(payload);
+        await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
       } catch (error) {
         if (!(error instanceof ConflictError)) {
           throw error;
@@ -777,6 +913,7 @@ class OnlineSyncService {
       }
 
       processedCount += pendingFeePayments.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push equipment items
@@ -805,7 +942,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.equipmentItems += result.processed.equipment_items?.inserted || 0;
         pushed.equipmentItems += result.processed.equipment_items?.updated || 0;
       } catch (error) {
@@ -815,6 +963,7 @@ class OnlineSyncService {
       }
 
       processedCount += batch.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push equipment checkouts
@@ -843,7 +992,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.equipmentCheckouts += result.processed.equipment_checkouts?.inserted || 0;
         pushed.equipmentCheckouts += result.processed.equipment_checkouts?.updated || 0;
       } catch (error) {
@@ -853,6 +1013,7 @@ class OnlineSyncService {
       }
 
       processedCount += batch.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push trainer infos
@@ -875,7 +1036,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.trainerInfos += result.processed.trainer_infos?.inserted || 0;
         pushed.trainerInfos += result.processed.trainer_infos?.updated || 0;
       } catch (error) {
@@ -885,6 +1057,7 @@ class OnlineSyncService {
       }
 
       processedCount += trainerInfos.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push trainer disciplines
@@ -907,7 +1080,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.trainerDisciplines += result.processed.trainer_disciplines?.inserted || 0;
         pushed.trainerDisciplines += result.processed.trainer_disciplines?.updated || 0;
       } catch (error) {
@@ -917,6 +1101,7 @@ class OnlineSyncService {
       }
 
       processedCount += trainerDisciplines.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push scan events
@@ -940,7 +1125,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.scanEvents = (pushed.scanEvents || 0) + (result.processed.scan_events?.inserted || 0);
         pushed.scanEvents = (pushed.scanEvents || 0) + (result.processed.scan_events?.updated || 0);
       } catch (error) {
@@ -950,6 +1146,7 @@ class OnlineSyncService {
       }
 
       processedCount += scanEvents.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push member preferences
@@ -973,7 +1170,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.memberPreferences = (pushed.memberPreferences || 0) + (result.processed.member_preferences?.inserted || 0);
         pushed.memberPreferences = (pushed.memberPreferences || 0) + (result.processed.member_preferences?.updated || 0);
       } catch (error) {
@@ -983,6 +1191,7 @@ class OnlineSyncService {
       }
 
       processedCount += memberPreferences.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push new member registrations
@@ -1006,7 +1215,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.newMemberRegistrations = (pushed.newMemberRegistrations || 0) + (result.processed.new_member_registrations?.inserted || 0);
         pushed.newMemberRegistrations = (pushed.newMemberRegistrations || 0) + (result.processed.new_member_registrations?.updated || 0);
       } catch (error) {
@@ -1016,6 +1236,7 @@ class OnlineSyncService {
       }
 
       processedCount += newMemberRegistrations.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push SKV registrations
@@ -1039,7 +1260,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.skvRegistrations = (pushed.skvRegistrations || 0) + (result.processed.skv_registrations?.inserted || 0);
         pushed.skvRegistrations = (pushed.skvRegistrations || 0) + (result.processed.skv_registrations?.updated || 0);
       } catch (error) {
@@ -1049,6 +1281,7 @@ class OnlineSyncService {
       }
 
       processedCount += skvRegistrations.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push SKV weapons
@@ -1072,7 +1305,18 @@ class OnlineSyncService {
       };
 
       try {
-        const result = await onlineApiService.push(payload);
+        const result = await withRateLimitRetry(
+          () => onlineApiService.push(payload),
+          MAX_RATE_LIMIT_RETRIES,
+          (retryAfterSeconds) => {
+            onProgress?.({
+              phase: 'pushing',
+              message: `Rate limited, venter ${retryAfterSeconds}s...`,
+              current: processedCount,
+              total: totalEntities,
+            });
+          }
+        );
         pushed.skvWeapons = (pushed.skvWeapons || 0) + (result.processed.skv_weapons?.inserted || 0);
         pushed.skvWeapons = (pushed.skvWeapons || 0) + (result.processed.skv_weapons?.updated || 0);
       } catch (error) {
@@ -1082,6 +1326,7 @@ class OnlineSyncService {
       }
 
       processedCount += skvWeapons.length;
+      await delay(INTER_BATCH_DELAY_MS);
     }
 
     // Push photos
@@ -3093,7 +3338,7 @@ class OnlineSyncService {
         },
       };
 
-      await onlineApiService.push(payload);
+      await withRateLimitRetry(() => onlineApiService.push(payload));
       console.log(`[OnlineSync] Updated pending fee payment ${paymentId} in online database`);
       return true;
     } catch (error) {
@@ -3125,7 +3370,7 @@ class OnlineSyncService {
         },
       };
 
-      await onlineApiService.push(payload);
+      await withRateLimitRetry(() => onlineApiService.push(payload));
       console.log(`[OnlineSync] Deleted pending fee payment ${paymentId} from online database`);
       return true;
     } catch (error) {
@@ -3232,7 +3477,7 @@ class OnlineSyncService {
         } as OnlineTrainerDiscipline));
       }
 
-      await onlineApiService.push(payload);
+      await withRateLimitRetry(() => onlineApiService.push(payload));
       console.log(`[OnlineSync] Deleted member ${internalId} and related entities from online database`);
       return true;
     } catch (error) {
