@@ -35,6 +35,8 @@ export interface IdPhotoEligibilityCheck {
   reason: string;
 }
 
+export type MemberFeePaymentStatus = 'PAID' | 'PARTIAL' | 'UNPAID';
+
 // ===== Configuration =====
 
 /**
@@ -50,14 +52,21 @@ function getCurrentFiscalYear(): number {
 /**
  * Check if a member has paid their membership fee for the current fiscal year.
  * Checks both:
- * - Pending fee payments (not yet consolidated)
  * - Consolidated transaction lines with category 'FEES'
+ * - Payments marked as paid externally (count toward current year)
  */
 export function hasMemberPaidFee(internalId: string): boolean {
+  return getMemberFeePaymentStatus(internalId) === 'PAID';
+}
+
+/**
+ * Get the current fee payment status for a member.
+ */
+export function getMemberFeePaymentStatus(internalId: string): MemberFeePaymentStatus {
   const year = getCurrentFiscalYear();
   const member = getMemberByInternalId(internalId);
 
-  if (!member) return false;
+  if (!member) return 'UNPAID';
 
   // Get expected fee for member type
   const feeRates = getFeeRatesForYear(year);
@@ -65,10 +74,7 @@ export function hasMemberPaidFee(internalId: string): boolean {
   const expectedFee = feeRates.find((r) => r.memberType === memberType)?.feeAmount ?? 0;
 
   // Honorary members have 0 fee, so they are always "paid"
-  if (expectedFee === 0) return true;
-
-  // Get pending (unconsolidated) payments
-  const pendingTotal = getPendingFeeTotal(internalId, year);
+  if (expectedFee === 0) return 'PAID';
 
   // Get consolidated payments from transaction lines
   const consolidatedResult = query<{ total: number | null }>(
@@ -84,8 +90,27 @@ export function hasMemberPaidFee(internalId: string): boolean {
   );
   const consolidatedTotal = consolidatedResult[0]?.total ?? 0;
 
-  const totalPaid = pendingTotal + consolidatedTotal;
-  return totalPaid >= expectedFee;
+  const externalResult = query<{ total: number | null }>(
+    `SELECT SUM(p.amount) as total
+     FROM PendingFeePayment p
+     WHERE p.memberId = ?
+       AND p.fiscalYear = ?
+       AND p.isConsolidated = 1
+       AND p.consolidatedTransactionId IS NULL`,
+    [internalId, year]
+  );
+  const externallyPaidTotal = externalResult[0]?.total ?? 0;
+
+  // Get pending (unconsolidated) payments
+  const pendingTotal = getPendingFeeTotal(internalId, year);
+
+  const totalPaid = consolidatedTotal + externallyPaidTotal;
+
+  if (pendingTotal > 0) return 'PARTIAL';
+  if (totalPaid === expectedFee) return 'PAID';
+  if (totalPaid > 0) return 'PARTIAL';
+
+  return 'UNPAID';
 }
 
 /**

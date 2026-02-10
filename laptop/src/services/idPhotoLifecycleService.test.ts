@@ -30,6 +30,7 @@ let mockMembers: Map<string, {
 let mockFeeRates: Array<{ memberType: string; feeAmount: number }>;
 let mockPendingPayments: Map<string, number>; // memberId -> total pending amount
 let mockConsolidatedPayments: Map<string, number>; // memberId -> total consolidated amount
+let mockExternallyPaidPayments: Map<string, number>; // memberId -> total externally paid amount
 let mockExecutedQueries: string[];
 
 // Mock the database module
@@ -42,6 +43,13 @@ vi.mock('../database/db', () => ({
     // Get fee rates for year
     if (sql.includes('FROM FeeRate')) {
       return mockFeeRates as T[];
+    }
+
+    // Get externally paid fee total
+    if (sql.includes('FROM PendingFeePayment') && sql.includes('isConsolidated = 1')) {
+      const memberId = params?.[0] as string;
+      const total = mockExternallyPaidPayments.get(memberId) ?? 0;
+      return [{ total }] as T[];
     }
 
     // Get pending fee total
@@ -98,6 +106,7 @@ describe('IdPhotoLifecycleService', () => {
     ];
     mockPendingPayments = new Map();
     mockConsolidatedPayments = new Map();
+    mockExternallyPaidPayments = new Map();
     mockExecutedQueries = [];
 
     vi.clearAllMocks();
@@ -127,7 +136,7 @@ describe('IdPhotoLifecycleService', () => {
       expect(hasMemberPaidFee('honorary-1')).toBe(true);
     });
 
-    it('returns true when pending payments cover full fee', () => {
+    it('returns false when pending payments cover full fee', () => {
       mockMembers.set('adult-1', {
         internalId: 'adult-1',
         membershipId: 'M002',
@@ -140,7 +149,7 @@ describe('IdPhotoLifecycleService', () => {
       });
       mockPendingPayments.set('adult-1', 600); // Full fee paid
 
-      expect(hasMemberPaidFee('adult-1')).toBe(true);
+      expect(hasMemberPaidFee('adult-1')).toBe(false);
     });
 
     it('returns true when consolidated payments cover full fee', () => {
@@ -159,7 +168,23 @@ describe('IdPhotoLifecycleService', () => {
       expect(hasMemberPaidFee('adult-2')).toBe(true);
     });
 
-    it('returns true when pending + consolidated cover full fee', () => {
+    it('returns true when externally paid amount matches full fee', () => {
+      mockMembers.set('adult-external', {
+        internalId: 'adult-external',
+        membershipId: 'M003A',
+        memberLifecycleStage: 'FULL',
+        memberType: 'ADULT',
+        idPhotoPath: '/photos/id.jpg',
+        idPhotoThumbnail: null,
+        firstName: 'External',
+        lastName: 'Paid',
+      });
+      mockExternallyPaidPayments.set('adult-external', 600);
+
+      expect(hasMemberPaidFee('adult-external')).toBe(true);
+    });
+
+    it('returns false when pending exists even if consolidated covers full fee', () => {
       mockMembers.set('adult-3', {
         internalId: 'adult-3',
         membershipId: 'M004',
@@ -171,9 +196,9 @@ describe('IdPhotoLifecycleService', () => {
         lastName: 'Adult3',
       });
       mockPendingPayments.set('adult-3', 300);
-      mockConsolidatedPayments.set('adult-3', 300); // 300 + 300 = 600
+      mockConsolidatedPayments.set('adult-3', 600); // Full fee consolidated
 
-      expect(hasMemberPaidFee('adult-3')).toBe(true);
+      expect(hasMemberPaidFee('adult-3')).toBe(false);
     });
 
     it('returns false when payments are insufficient', () => {
@@ -203,9 +228,25 @@ describe('IdPhotoLifecycleService', () => {
         firstName: 'Test',
         lastName: 'Child',
       });
-      mockPendingPayments.set('child-1', 300); // Child fee is 300
+      mockConsolidatedPayments.set('child-1', 300); // Child fee is 300
 
       expect(hasMemberPaidFee('child-1')).toBe(true);
+    });
+
+    it('returns false when consolidated amount differs from expected fee', () => {
+      mockMembers.set('adult-5', {
+        internalId: 'adult-5',
+        membershipId: 'M007',
+        memberLifecycleStage: 'FULL',
+        memberType: 'ADULT',
+        idPhotoPath: '/photos/id.jpg',
+        idPhotoThumbnail: null,
+        firstName: 'Test',
+        lastName: 'Adult5',
+      });
+      mockConsolidatedPayments.set('adult-5', 200); // Not equal to 600
+
+      expect(hasMemberPaidFee('adult-5')).toBe(false);
     });
   });
 
@@ -289,7 +330,7 @@ describe('IdPhotoLifecycleService', () => {
         firstName: 'Eligible',
         lastName: 'Member',
       });
-      mockPendingPayments.set('eligible-1', 600);
+      mockConsolidatedPayments.set('eligible-1', 600);
 
       const result = checkIdPhotoEligibility('eligible-1');
 
@@ -338,7 +379,7 @@ describe('IdPhotoLifecycleService', () => {
         firstName: 'Delete',
         lastName: 'Me',
       });
-      mockPendingPayments.set('eligible-delete', 600);
+      mockConsolidatedPayments.set('eligible-delete', 600);
 
       const result = deleteIdPhotoIfEligible('eligible-delete');
 
@@ -370,7 +411,7 @@ describe('IdPhotoLifecycleService', () => {
         firstName: 'Batch',
         lastName: 'Eligible',
       });
-      mockPendingPayments.set('batch-eligible', 600);
+      mockConsolidatedPayments.set('batch-eligible', 600);
 
       // Add ineligible member (no payment)
       mockMembers.set('batch-ineligible', {
@@ -421,7 +462,7 @@ describe('IdPhotoLifecycleService', () => {
       expect(result.hasFeePaid).toBe(false);
 
       // Pay fee
-      mockPendingPayments.set('scenario-1', 600);
+      mockConsolidatedPayments.set('scenario-1', 600);
 
       // Check - now eligible
       result = checkIdPhotoEligibility('scenario-1');
@@ -442,7 +483,7 @@ describe('IdPhotoLifecycleService', () => {
       });
 
       // Pay fee first
-      mockPendingPayments.set('scenario-2', 600);
+      mockConsolidatedPayments.set('scenario-2', 600);
 
       // Check - not eligible (no membershipId)
       let result = checkIdPhotoEligibility('scenario-2');
@@ -470,7 +511,7 @@ describe('IdPhotoLifecycleService', () => {
       });
 
       // Partial payment
-      mockPendingPayments.set('scenario-3', 300);
+      mockConsolidatedPayments.set('scenario-3', 300);
 
       // Not eligible - partial payment
       let result = checkIdPhotoEligibility('scenario-3');
@@ -478,7 +519,7 @@ describe('IdPhotoLifecycleService', () => {
       expect(result.hasFeePaid).toBe(false);
 
       // Complete payment
-      mockPendingPayments.set('scenario-3', 600);
+      mockConsolidatedPayments.set('scenario-3', 600);
 
       // Now eligible
       result = checkIdPhotoEligibility('scenario-3');

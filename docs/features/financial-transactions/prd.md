@@ -2,7 +2,7 @@
 
 **Feature:** Club Financial Transaction Recording and Reporting
 **Version:** 1.1
-**Last Updated:** 2026-01-28
+**Last Updated:** 2026-02-10
 **Updated By:** sbalslev
 
 ---
@@ -118,10 +118,12 @@ Each transaction contains one or more lines. Lines allow itemization with option
 | lineDescription | string | No | Line-specific description (e.g., "Kontingent 2025") |
 
 **Example 1:** Simple expense (no member link)
+
 - Transaction: Date=2025-01-15, Description="Indkøb patroner", bankOut=1500
 - Line 1: categoryId=AMMO, amount=1500, isIncome=false
 
 **Example 2:** MobilePay with multiple member payments
+
 - Transaction: Date=2025-02-01, Description="MobilePay Februar", bankIn=3.475
 - Line 1: categoryId=FEES, amount=400, isIncome=true, memberId="m-123", lineDescription="Kontingent 2025"
 - Line 2: categoryId=FEES, amount=400, isIncome=true, memberId="m-456", lineDescription="Kontingent 2025"
@@ -133,6 +135,16 @@ Each transaction contains one or more lines. Lines allow itemization with option
 - Line 8: categoryId=AMMO, amount=350, isIncome=true, memberId="m-222", lineDescription="Klippekort"
 - Line 9: categoryId=AMMO, amount=350, isIncome=true, memberId="m-333", lineDescription="Klippekort"
 - Line 10: categoryId=AMMO, amount=350, isIncome=true, memberId="m-444", lineDescription="Klippekort"
+
+### 3.1.2 Member fee status rules
+
+Use these rules across the app for kontingent status:
+
+- If the member fee is 0 for the member type, the member is paid in full.
+- If there is a kontingent transaction in the current year for the exact member fee amount and linked to the member, the member is paid in full.
+- If there is a kontingent transaction in the current year with an amount different from the member fee and linked to the member, the member is partially paid.
+- If there is a pending consolidation linked to the member, the member is partially paid.
+- All other cases are not paid.
 
 ### 3.2 Posting Categories (Kontogrupper)
 

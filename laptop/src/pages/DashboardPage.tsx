@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { getMemberCountByStatus, getTrialMemberCount, getRecentTrialMembers, getAllMembers, query, type TrialMemberWithActivity } from '../database';
 import { useAppStore } from '../store';
-import { hasMemberPaidFee } from '../services/idPhotoLifecycleService';
+import { getMemberFeePaymentStatus } from '../services/idPhotoLifecycleService';
 
 interface Stats {
   activeMembers: number;
@@ -28,7 +28,7 @@ interface Stats {
 function getInitialStats(): Stats {
   const memberCounts = getMemberCountByStatus();
   const activeMembers = getAllMembers().filter((member) => member.status === 'ACTIVE');
-  const unpaidMembers = activeMembers.filter((member) => !hasMemberPaidFee(member.internalId)).length;
+  const unpaidMembers = activeMembers.filter((member) => getMemberFeePaymentStatus(member.internalId) === 'UNPAID').length;
   const missingBirthdates = activeMembers.filter((member) => !member.birthDate).length;
 
   // Count pending sync conflicts
