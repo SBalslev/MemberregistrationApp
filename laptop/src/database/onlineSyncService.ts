@@ -2126,6 +2126,7 @@ class OnlineSyncService {
   private upsertEquipmentCheckoutFromOnline(online: OnlineEquipmentCheckout): void {
     const local = equipmentCheckoutFromOnline(online);
     const now = new Date().toISOString();
+    const modifiedAtUtc = local.modifiedAtUtc || local.createdAtUtc || now;
 
     // Check if equipment checkout exists
     const existing = query<{ id: string; modifiedAtUtc: string }>(
@@ -2154,7 +2155,7 @@ class OnlineSyncService {
           toSqlValue(local.checkedInByDeviceId),
           toSqlValue(local.checkinNotes),
           toSqlValue(local.conflictStatus),
-          toSqlValue(local.modifiedAtUtc),
+          toSqlValue(modifiedAtUtc),
           now,
           toSqlValue(local.syncVersion),
           toSqlValue(local.id),
@@ -2182,7 +2183,7 @@ class OnlineSyncService {
           toSqlValue(local.conflictStatus),
           toSqlValue(local.deviceId),
           toSqlValue(local.createdAtUtc),
-          toSqlValue(local.modifiedAtUtc),
+          toSqlValue(modifiedAtUtc),
           now,
           toSqlValue(local.syncVersion),
         ]
