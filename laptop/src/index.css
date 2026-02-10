@@ -84,11 +84,28 @@ tr:hover td {
   
   .print-only {
     display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
   }
   
   body {
     background: white !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    overflow: visible !important;
+  }
+
+  html, body, #root {
+    height: auto !important;
+  }
+
+  .h-screen {
+    height: auto !important;
+  }
+
+  .overflow-hidden {
+    overflow: visible !important;
   }
 }

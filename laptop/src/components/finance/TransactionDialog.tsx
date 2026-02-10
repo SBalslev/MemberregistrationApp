@@ -59,6 +59,21 @@ function createEmptyLine(): TransactionLineFormData {
 }
 
 /**
+ * Create an empty transaction line with defaults from a previous line.
+ */
+function createEmptyLineWithDefaults(
+  lastLine?: TransactionLineFormData
+): TransactionLineFormData {
+  if (!lastLine) return createEmptyLine();
+  return {
+    ...createEmptyLine(),
+    categoryId: lastLine.categoryId || '',
+    isIncome: lastLine.isIncome,
+    source: lastLine.source,
+  };
+}
+
+/**
  * Create empty form data for a new transaction.
  */
 function createEmptyFormData(): TransactionFormData {
@@ -235,6 +250,27 @@ export function TransactionDialog({
     [pendingPayments, importedPaymentIds]
   );
 
+  const lineTotals = useMemo(() => {
+    const totals = { cashIn: 0, cashOut: 0, bankIn: 0, bankOut: 0 };
+    formData.lines.forEach((line) => {
+      if (line.source === 'CASH' && line.isIncome) totals.cashIn += line.amount;
+      if (line.source === 'CASH' && !line.isIncome) totals.cashOut += line.amount;
+      if (line.source === 'BANK' && line.isIncome) totals.bankIn += line.amount;
+      if (line.source === 'BANK' && !line.isIncome) totals.bankOut += line.amount;
+    });
+    return totals;
+  }, [formData.lines]);
+
+  const headerTotals = useMemo(
+    () => ({
+      cashIn: formData.cashIn ?? 0,
+      cashOut: formData.cashOut ?? 0,
+      bankIn: formData.bankIn ?? 0,
+      bankOut: formData.bankOut ?? 0,
+    }),
+    [formData.cashIn, formData.cashOut, formData.bankIn, formData.bankOut]
+  );
+
   // Reset form when dialog opens
   if (isOpen && !wasOpen) {
     setWasOpen(true);
@@ -345,8 +381,22 @@ export function TransactionDialog({
   function handleAddLine() {
     setFormData((prev) => ({
       ...prev,
-      lines: [...prev.lines, createEmptyLine()],
+      lines: [...prev.lines, createEmptyLineWithDefaults(prev.lines.at(-1))],
     }));
+  }
+
+  function handleDuplicateLastLine() {
+    setFormData((prev) => {
+      if (prev.lines.length === 0) {
+        return { ...prev, lines: [createEmptyLine()] };
+      }
+      const lastLine = prev.lines[prev.lines.length - 1];
+      const duplicatedLine: TransactionLineFormData = {
+        ...lastLine,
+        id: crypto.randomUUID(),
+      };
+      return { ...prev, lines: [...prev.lines, duplicatedLine] };
+    });
   }
 
   function handleRemoveLine(index: number) {
@@ -464,9 +514,17 @@ export function TransactionDialog({
     [members]
   );
 
+  const epsilon = 0.001;
+  const lineMismatches = {
+    cashIn: Math.abs(lineTotals.cashIn - headerTotals.cashIn) > epsilon,
+    cashOut: Math.abs(lineTotals.cashOut - headerTotals.cashOut) > epsilon,
+    bankIn: Math.abs(lineTotals.bankIn - headerTotals.bankIn) > epsilon,
+    bankOut: Math.abs(lineTotals.bankOut - headerTotals.bankOut) > epsilon,
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div>
@@ -647,52 +705,69 @@ export function TransactionDialog({
 
             {/* Transaction Lines */}
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-gray-700">
-                  Posteringslinjer <span className="text-red-500">*</span>
-                </h3>
-                <button
-                  type="button"
-                  onClick={handleAddLine}
-                  className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  <Plus className="w-4 h-4" />
-                  Tilføj linje
-                </button>
-              </div>
-
               {shouldShowError('lines') && errors.lines && (
                 <p className="text-sm text-red-500 mb-2">{errors.lines}</p>
               )}
 
-              <div className="space-y-3">
-                {formData.lines.map((line, index) => {
-                  const lineError = errors.lineErrors?.[index];
-
-                  return (
-                    <div
-                      key={line.id ?? index}
-                      className="bg-gray-50 rounded-lg p-4 border border-gray-200"
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+                  <div className="text-sm font-medium text-gray-700">
+                    Posteringslinjer <span className="text-red-500">*</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Linjer: {formData.lines.length}</span>
+                    <button
+                      type="button"
+                      onClick={handleDuplicateLastLine}
+                      className="px-2.5 py-1.5 text-xs font-medium border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100"
                     >
-                      <div className="flex items-start gap-3">
-                        {/* Line Number */}
-                        <div className="flex-shrink-0 w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center text-xs font-medium text-gray-600">
-                          {index + 1}
-                        </div>
+                      Duplikér seneste
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddLine}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Tilføj linje
+                    </button>
+                  </div>
+                </div>
 
-                        {/* Line Fields */}
-                        <div className="flex-1 grid grid-cols-2 gap-3">
+                <div className="h-80 overflow-y-auto p-3 space-y-2">
+                  <div className="hidden md:grid grid-cols-12 gap-2 text-[11px] uppercase tracking-wide text-gray-400 px-2">
+                    <span className="col-span-1">#</span>
+                    <span className="col-span-2">Kategori</span>
+                    <span className="col-span-2">Beløb</span>
+                    <span className="col-span-1">Type</span>
+                    <span className="col-span-1">Kilde</span>
+                    <span className="col-span-2">Medlem</span>
+                    <span className="col-span-2">Beskrivelse</span>
+                    <span className="col-span-1"></span>
+                  </div>
+                  {formData.lines.map((line, index) => {
+                    const lineError = errors.lineErrors?.[index];
+
+                    return (
+                      <div
+                        key={line.id ?? index}
+                        className="bg-white rounded-lg p-2 border border-gray-200 hover:border-gray-300 transition-colors"
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-2 items-start">
+                          {/* Line Number */}
+                          <div className="hidden md:flex md:col-span-1 w-5 h-5 bg-gray-200 rounded-full items-center justify-center text-[10px] font-medium text-gray-600 mt-1">
+                            {index + 1}
+                          </div>
+
                           {/* Category */}
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">
-                              Kategori
-                            </label>
+                          <div className="md:col-span-2">
+                            <label className="sr-only">Kategori</label>
                             <select
                               value={line.categoryId}
                               onChange={(e) =>
                                 handleLineChange(index, 'categoryId', e.target.value)
                               }
-                              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm ${
+                              className={`w-full h-8 px-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white ${
                                 touched && lineError?.categoryId
                                   ? 'border-red-500'
                                   : 'border-gray-300'
@@ -713,10 +788,8 @@ export function TransactionDialog({
                           </div>
 
                           {/* Amount */}
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">
-                              Beløb
-                            </label>
+                          <div className="md:col-span-2">
+                            <label className="sr-only">Beløb</label>
                             <div className="relative">
                               <input
                                 type="number"
@@ -731,13 +804,13 @@ export function TransactionDialog({
                                   )
                                 }
                                 placeholder="0,00"
-                                className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm ${
+                                className={`w-full h-8 px-2 pr-7 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white ${
                                   touched && lineError?.amount
                                     ? 'border-red-500'
                                     : 'border-gray-300'
                                 }`}
                               />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-[11px]">
                                 kr
                               </span>
                             </div>
@@ -748,81 +821,47 @@ export function TransactionDialog({
                             )}
                           </div>
 
-                          {/* Income/Expense Toggle */}
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">
-                              Type
-                            </label>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleLineChange(index, 'isIncome', true)
-                                }
-                                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                  line.isIncome
-                                    ? 'bg-green-100 text-green-700 border-2 border-green-500'
-                                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
-                                }`}
-                              >
-                                Indtægt
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleLineChange(index, 'isIncome', false)
-                                }
-                                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                  !line.isIncome
-                                    ? 'bg-red-100 text-red-700 border-2 border-red-500'
-                                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
-                                }`}
-                              >
-                                Udgift
-                              </button>
-                            </div>
+                          {/* Type */}
+                          <div className="md:col-span-1">
+                            <label className="sr-only">Type</label>
+                            <select
+                              value={line.isIncome ? 'INCOME' : 'EXPENSE'}
+                              onChange={(e) =>
+                                handleLineChange(index, 'isIncome', e.target.value === 'INCOME')
+                              }
+                              className={`w-full h-8 px-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm ${
+                                line.isIncome
+                                  ? 'border-green-200 bg-green-50 text-green-700'
+                                  : 'border-red-200 bg-red-50 text-red-700'
+                              }`}
+                            >
+                              <option value="INCOME">Indtægt</option>
+                              <option value="EXPENSE">Udgift</option>
+                            </select>
                           </div>
 
-                          {/* Cash/Bank Toggle */}
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">
-                              Kilde
-                            </label>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleLineChange(index, 'source', 'CASH')
-                                }
-                                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                  line.source === 'CASH'
-                                    ? 'bg-amber-100 text-amber-700 border-2 border-amber-500'
-                                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
-                                }`}
-                              >
-                                Kasse
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleLineChange(index, 'source', 'BANK')
-                                }
-                                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                  line.source === 'BANK'
-                                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
-                                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
-                                }`}
-                              >
-                                Bank
-                              </button>
-                            </div>
+                          {/* Source */}
+                          <div className="md:col-span-1">
+                            <label className="sr-only">Kilde</label>
+                            <select
+                              value={line.source}
+                              onChange={(e) =>
+                                handleLineChange(index, 'source', e.target.value as 'CASH' | 'BANK')
+                              }
+                              className={`w-full h-8 px-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm ${
+                                line.source === 'CASH'
+                                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                  : 'border-blue-200 bg-blue-50 text-blue-700'
+                              }`}
+                            >
+                              <option value="CASH">Kasse</option>
+                              <option value="BANK">Bank</option>
+                            </select>
                           </div>
 
                           {/* Member */}
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">
-                              Medlem (valgfri)
-                            </label>
+                          <div className="md:col-span-2">
+                            <label className="sr-only">Medlem</label>
                             <select
                               value={line.memberId ?? ''}
                               onChange={(e) =>
@@ -832,7 +871,7 @@ export function TransactionDialog({
                                   e.target.value || null
                                 )
                               }
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                              className="w-full h-8 px-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white"
                             >
                               <option value="">Ingen medlem</option>
                               {activeMembers.map((member) => (
@@ -848,10 +887,8 @@ export function TransactionDialog({
                           </div>
 
                           {/* Line Description */}
-                          <div className="col-span-2">
-                            <label className="block text-xs text-gray-500 mb-1">
-                              Linjebeskrivelse (valgfri)
-                            </label>
+                          <div className="md:col-span-2">
+                            <label className="sr-only">Linjebeskrivelse</label>
                             <input
                               type="text"
                               value={line.lineDescription ?? ''}
@@ -862,34 +899,59 @@ export function TransactionDialog({
                                   e.target.value || null
                                 )
                               }
-                              placeholder="Yderligere detaljer..."
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                              placeholder="Beskrivelse..."
+                              className="w-full h-8 px-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white"
                             />
                           </div>
-                        </div>
 
-                        {/* Remove Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveLine(index)}
-                          disabled={formData.lines.length <= 1}
-                          className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
-                            formData.lines.length <= 1
-                              ? 'text-gray-300 cursor-not-allowed'
-                              : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                          }`}
-                          title={
-                            formData.lines.length <= 1
-                              ? 'Mindst én linje er påkrævet'
-                              : 'Fjern linje'
-                          }
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                          {/* Remove Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLine(index)}
+                            disabled={formData.lines.length <= 1}
+                            className={`md:col-span-1 h-8 w-8 flex items-center justify-center rounded-md transition-colors ${
+                              formData.lines.length <= 1
+                                ? 'text-gray-300 cursor-not-allowed'
+                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
+                            title={
+                              formData.lines.length <= 1
+                                ? 'Mindst én linje er påkrævet'
+                                : 'Fjern linje'
+                            }
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 bg-gray-50 border-t border-gray-200">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                    <span className={lineMismatches.cashIn ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                      Kasse ind: {formatAmount(lineTotals.cashIn)} / {formatAmount(headerTotals.cashIn)}
+                    </span>
+                    <span className={lineMismatches.cashOut ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                      Kasse ud: {formatAmount(lineTotals.cashOut)} / {formatAmount(headerTotals.cashOut)}
+                    </span>
+                    <span className={lineMismatches.bankIn ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                      Bank ind: {formatAmount(lineTotals.bankIn)} / {formatAmount(headerTotals.bankIn)}
+                    </span>
+                    <span className={lineMismatches.bankOut ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                      Bank ud: {formatAmount(lineTotals.bankOut)} / {formatAmount(headerTotals.bankOut)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddLine}
+                    className="flex items-center gap-1 px-3 py-2 text-xs font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Tilføj linje
+                  </button>
+                </div>
               </div>
 
               {shouldShowError('lineBalance') && errors.lineBalance && (

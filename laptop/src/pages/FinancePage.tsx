@@ -7,7 +7,7 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Wallet, Plus, Download, ChevronDown, Settings, Printer, BarChart3 } from 'lucide-react';
-import { TransactionTable, TransactionDialog, YearSettingsDialog, CategoryTotals, MemberFeeStatusTable, MemberHistoryDialog, TransactionFilterBar, applyTransactionFilters, DEFAULT_FILTERS, PrintView, FinanceCharts, QuickFeePaymentDialog, ConsolidateFeePaymentsDialog } from '../components/finance';
+import { TransactionTable, TransactionDialog, YearSettingsDialog, CategoryTotals, MemberFeeStatusTable, MemberHistoryDialog, TransactionFilterBar, applyTransactionFilters, DEFAULT_FILTERS, PrintView, TransactionPrintView, FinanceCharts, QuickFeePaymentDialog, ConsolidateFeePaymentsDialog } from '../components/finance';
 import type { TransactionFilters } from '../components/finance';
 import { ConfirmDialog } from '../components';
 import { showSuccess, showWarning } from '../store/toastStore';
@@ -93,6 +93,7 @@ export function FinancePage() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [filters, setFilters] = useState<TransactionFilters>(DEFAULT_FILTERS);
   const printRef = useRef<HTMLDivElement>(null);
+  const [printTransactionId, setPrintTransactionId] = useState<string | null>(null);
   
   const [isQuickPaymentOpen, setIsQuickPaymentOpen] = useState(false);
   const [isConsolidateOpen, setIsConsolidateOpen] = useState(false);
@@ -100,7 +101,12 @@ export function FinancePage() {
 
   // Print handler
   const handlePrint = useCallback(() => {
+    setPrintTransactionId(null);
     window.print();
+  }, []);
+
+  const handlePrintTransaction = useCallback((id: string) => {
+    setPrintTransactionId(id);
   }, []);
 
   useEffect(() => {
@@ -111,6 +117,18 @@ export function FinancePage() {
       HONORARY: String(feeRates.find((r) => r.memberType === 'HONORARY')?.feeAmount ?? '0'),
     });
   }, [feeRates]);
+
+  useEffect(() => {
+    if (!printTransactionId) return;
+    const timer = window.setTimeout(() => window.print(), 0);
+    return () => window.clearTimeout(timer);
+  }, [printTransactionId]);
+
+  useEffect(() => {
+    const handleAfterPrint = () => setPrintTransactionId(null);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
 
   // Reload data when year changes (after initial render)
   if (loadedYear !== null && loadedYear !== selectedYear) {
@@ -220,6 +238,11 @@ export function FinancePage() {
   const filteredDisplayRows = useMemo(() => {
     return applyTransactionFilters(displayRows, filters);
   }, [displayRows, filters]);
+
+  const printTransaction = useMemo(() => {
+    if (!printTransactionId) return null;
+    return transactions.find((txn) => txn.id === printTransactionId) ?? null;
+  }, [transactions, printTransactionId]);
 
   // Available years (from fiscal years or generate defaults)
   const years = useMemo(() => {
@@ -658,6 +681,7 @@ export function FinancePage() {
               categories={categories}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              onPrint={handlePrintTransaction}
             />
           </div>
         )}
@@ -818,13 +842,22 @@ export function FinancePage() {
 
       {/* Print View (hidden on screen, shown only when printing) */}
       <div className="print-only">
-        <PrintView
-          ref={printRef}
-          fiscalYear={currentFiscalYear}
-          transactions={displayRows}
-          categories={categories}
-          balances={balances}
-        />
+        {printTransaction ? (
+          <TransactionPrintView
+            transaction={printTransaction}
+            categories={categories}
+            members={members}
+            fiscalYear={selectedYear}
+          />
+        ) : (
+          <PrintView
+            ref={printRef}
+            fiscalYear={currentFiscalYear}
+            transactions={displayRows}
+            categories={categories}
+            balances={balances}
+          />
+        )}
       </div>
 
       {/* Add/Edit Dialog */}

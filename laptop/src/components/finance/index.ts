@@ -22,6 +22,8 @@ export type { TransactionFilters } from './transactionFilterUtils';
 
 export { PrintView } from './PrintView';
 
+export { TransactionPrintView } from './TransactionPrintView';
+
 export { FinanceCharts } from './FinanceCharts';
 
 export { QuickFeePaymentDialog } from './QuickFeePaymentDialog';

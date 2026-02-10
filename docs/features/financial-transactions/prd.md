@@ -136,6 +136,15 @@ Each transaction contains one or more lines. Lines allow itemization with option
 - Line 9: categoryId=AMMO, amount=350, isIncome=true, memberId="m-333", lineDescription="Klippekort"
 - Line 10: categoryId=AMMO, amount=350, isIncome=true, memberId="m-444", lineDescription="Klippekort"
 
+#### Transaction line entry UX
+
+The transaction dialog is optimized for fast entry when there are many lines.
+
+- The line list scrolls inside the dialog, so header fields and actions stay visible.
+- Adding a new line keeps the previous line's category, type, and source as defaults.
+- A duplicate action copies the last line to speed up repetitive entries.
+- A summary row compares line totals to header totals for cash and bank, highlighting mismatches.
+
 ### 3.1.2 Member fee status rules
 
 Use these rules across the app for kontingent status:
@@ -215,6 +224,13 @@ Categories are fixed in the initial release. Future versions may allow customiza
 - Include category columns with income/expense pairs
 - Include running balance calculations
 - Include annual summary sheet (Årsresultat)
+
+#### 3.4.7 Print single transaction
+
+- Print a single transaction from the transaction list.
+- Show transaction header with ID, date, description, and totals.
+- Split line details into income and expense sections.
+- Sort lines by category.
 
 ### 3.5 Calculated Fields
 

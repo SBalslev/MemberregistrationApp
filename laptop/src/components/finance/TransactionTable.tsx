@@ -5,7 +5,7 @@
  * @see [prd.md] - Financial Transactions Management
  */
 
-import { Pencil, Trash2, Wallet } from 'lucide-react';
+import { Pencil, Trash2, Wallet, Printer } from 'lucide-react';
 import type { TransactionDisplayRow, PostingCategory } from '../../types/finance';
 
 export interface TransactionTableProps {
@@ -13,6 +13,7 @@ export interface TransactionTableProps {
   categories: PostingCategory[];
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onPrint: (id: string) => void;
 }
 
 /**
@@ -97,6 +98,7 @@ export function TransactionTable({
   categories,
   onEdit,
   onDelete,
+  onPrint,
 }: TransactionTableProps) {
   // Empty state
   if (transactions.length === 0) {
@@ -115,8 +117,8 @@ export function TransactionTable({
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <div className="overflow-x-auto -mx-px">
-        <table className="min-w-full divide-y divide-gray-200">
+      <div className="overflow-auto max-h-[70vh] -mx-px">
+        <table className="min-w-[900px] w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th
@@ -237,6 +239,13 @@ export function TransactionTable({
                   {/* Actions */}
                   <td className="px-2 md:px-3 py-3 whitespace-nowrap text-center">
                     <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => onPrint(transaction.id)}
+                        className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                        title="Udskriv"
+                      >
+                        <Printer className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => onEdit(transaction.id)}
                         className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"

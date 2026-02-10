@@ -303,7 +303,9 @@ function App() {
 
   return (
     <div className="h-screen flex overflow-hidden">
-      <Sidebar />
+      <div className="no-print">
+        <Sidebar />
+      </div>
       <main className="flex-1 overflow-hidden bg-gray-50 relative">
         <PageRouter currentPage={currentPage} />
       </main>
