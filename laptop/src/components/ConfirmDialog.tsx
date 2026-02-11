@@ -9,7 +9,8 @@
 
 import { AlertTriangle, X } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useKeyboardShortcuts } from '../hooks';
+import { useKeyboardShortcuts, useFocusTrap } from '../hooks';
+import { KeyboardHint, SHORTCUTS } from './KeyboardHint';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -42,6 +43,9 @@ export function ConfirmDialog({
     enabled: isOpen,
   });
 
+  // Focus trap to keep keyboard navigation within the dialog
+  const dialogRef = useFocusTrap<HTMLDivElement>({ enabled: isOpen });
+
   if (!isOpen) return null;
 
   const variantStyles = {
@@ -71,7 +75,13 @@ export function ConfirmDialog({
 
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-dialog-title"
+          className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+        >
           {/* Close button */}
           <button
             onClick={onClose}
@@ -90,7 +100,7 @@ export function ConfirmDialog({
 
             {/* Text */}
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+              <h3 id="confirm-dialog-title" className="text-lg font-semibold text-gray-900">{title}</h3>
               <div className="mt-2 text-sm text-gray-600">{message}</div>
             </div>
           </div>
@@ -103,6 +113,7 @@ export function ConfirmDialog({
               className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
             >
               {cancelText}
+              <KeyboardHint keys={SHORTCUTS.CLOSE} />
             </button>
             <button
               type="button"
@@ -113,6 +124,7 @@ export function ConfirmDialog({
               className={`px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 ${styles.button}`}
             >
               {confirmText}
+              <KeyboardHint keys={SHORTCUTS.CONFIRM} />
             </button>
           </div>
         </div>

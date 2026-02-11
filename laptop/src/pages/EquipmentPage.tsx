@@ -252,12 +252,12 @@ export function EquipmentPage() {
                 <div className="flex items-center gap-2">
                   {selectedItem.currentCheckout ? (
                     <>
-                      <div className="w-3 h-3 bg-blue-500 rounded-full" />
+                      <div className="w-3 h-3 bg-blue-500 rounded-full" aria-hidden="true" />
                       <span className="font-medium text-blue-700">Udlånt</span>
                     </>
                   ) : (
                     <>
-                      <div className="w-3 h-3 bg-green-500 rounded-full" />
+                      <div className="w-3 h-3 bg-green-500 rounded-full" aria-hidden="true" />
                       <span className="font-medium text-green-700">Tilgængelig</span>
                     </>
                   )}

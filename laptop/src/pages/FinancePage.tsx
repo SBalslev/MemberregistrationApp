@@ -675,6 +675,8 @@ export function FinancePage() {
               categories={categories}
               filters={filters}
               onFiltersChange={setFilters}
+              totalCount={displayRows.length}
+              filteredCount={filteredDisplayRows.length}
             />
             <TransactionTable
               transactions={filteredDisplayRows}

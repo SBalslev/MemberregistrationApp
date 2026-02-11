@@ -12,12 +12,18 @@ interface TransactionFilterBarProps {
   categories: PostingCategory[];
   filters: TransactionFilters;
   onFiltersChange: (filters: TransactionFilters) => void;
+  /** Total number of items before filtering */
+  totalCount?: number;
+  /** Number of items after filtering */
+  filteredCount?: number;
 }
 
 export function TransactionFilterBar({
   categories,
   filters,
   onFiltersChange,
+  totalCount,
+  filteredCount,
 }: TransactionFilterBarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -80,7 +86,67 @@ export function TransactionFilterBar({
             Ryd
           </button>
         )}
+
+        {/* Result Count */}
+        {totalCount !== undefined && filteredCount !== undefined && (
+          <span className="text-sm text-gray-500 whitespace-nowrap">
+            {hasActiveFilters ? (
+              <>
+                <span className="font-medium text-gray-700">{filteredCount}</span>
+                {' af '}
+                {totalCount}
+              </>
+            ) : (
+              <>{totalCount} transaktioner</>
+            )}
+          </span>
+        )}
       </div>
+
+      {/* Active Filter Chips (shown when collapsed) */}
+      {!isExpanded && hasActiveFilters && (
+        <div className="px-3 pb-3 flex flex-wrap gap-2">
+          {filters.dateFrom && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs">
+              <Calendar className="w-3 h-3" />
+              Fra: {filters.dateFrom}
+              <button
+                onClick={() => updateFilter('dateFrom', null)}
+                className="ml-1 hover:text-blue-900"
+                aria-label="Fjern fra-dato filter"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+          {filters.dateTo && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs">
+              <Calendar className="w-3 h-3" />
+              Til: {filters.dateTo}
+              <button
+                onClick={() => updateFilter('dateTo', null)}
+                className="ml-1 hover:text-blue-900"
+                aria-label="Fjern til-dato filter"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+          {filters.categoryId && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs">
+              <Tag className="w-3 h-3" />
+              {categories.find(c => c.id === filters.categoryId)?.name || 'Kategori'}
+              <button
+                onClick={() => updateFilter('categoryId', null)}
+                className="ml-1 hover:text-blue-900"
+                aria-label="Fjern kategori filter"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Expanded Filters */}
       {isExpanded && (

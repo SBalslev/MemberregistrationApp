@@ -16,6 +16,8 @@ import type {
 } from '../../types/finance';
 import { PAYMENT_METHOD_LABELS } from '../../types/finance';
 import { useDialogKeyboard } from '../../hooks';
+import { SearchableSelect, type SelectOption } from '../SearchableSelect';
+import { KeyboardHint, SHORTCUTS } from '../KeyboardHint';
 
 // ===== Props Interface =====
 
@@ -514,6 +516,17 @@ export function TransactionDialog({
     [members]
   );
 
+  // Convert members to SelectOption format for searchable dropdown
+  const memberOptions: SelectOption[] = useMemo(
+    () =>
+      activeMembers.map((member) => ({
+        value: member.internalId,
+        label: `${member.firstName} ${member.lastName}`.trim(),
+        sublabel: member.membershipId ? `#${member.membershipId}` : 'Prøvemedlem',
+      })),
+    [activeMembers]
+  );
+
   const epsilon = 0.001;
   const lineMismatches = {
     cashIn: Math.abs(lineTotals.cashIn - headerTotals.cashIn) > epsilon,
@@ -524,7 +537,7 @@ export function TransactionDialog({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div>
@@ -862,28 +875,13 @@ export function TransactionDialog({
                           {/* Member */}
                           <div className="md:col-span-2">
                             <label className="sr-only">Medlem</label>
-                            <select
-                              value={line.memberId ?? ''}
-                              onChange={(e) =>
-                                handleLineChange(
-                                  index,
-                                  'memberId',
-                                  e.target.value || null
-                                )
-                              }
-                              className="w-full h-8 px-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm bg-white"
-                            >
-                              <option value="">Ingen medlem</option>
-                              {activeMembers.map((member) => (
-                                <option
-                                  key={member.internalId}
-                                  value={member.internalId}
-                                >
-                                  {member.firstName} {member.lastName}
-                                  {member.membershipId ? ` (${member.membershipId})` : ' (Prøvemedlem)'}
-                                </option>
-                              ))}
-                            </select>
+                            <SearchableSelect
+                              options={memberOptions}
+                              value={line.memberId}
+                              onChange={(value) => handleLineChange(index, 'memberId', value)}
+                              placeholder="Søg medlem..."
+                              emptyOption="Ingen medlem"
+                            />
                           </div>
 
                           {/* Line Description */}
@@ -1071,6 +1069,7 @@ export function TransactionDialog({
             className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-medium"
           >
             Annuller
+            <KeyboardHint keys={SHORTCUTS.CLOSE} />
           </button>
           <button
             type="submit"
@@ -1078,6 +1077,7 @@ export function TransactionDialog({
             className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
           >
             {isEditMode ? 'Gem ændringer' : 'Opret transaktion'}
+            <KeyboardHint keys={SHORTCUTS.SAVE} />
           </button>
         </div>
       </div>

@@ -37,15 +37,24 @@ interface NavItem {
 
 // NOTE: 'registrations' page removed - approval workflow deprecated per FR-7.2
 // Trial members are now created directly on tablets and synced as Member entities
+
+// Navigation items grouped by function
+// Dividers are inserted after these item IDs
+const NAV_DIVIDER_AFTER = new Set(['member-activity', 'minidraet-search', 'finance']);
+
 const navItems: NavItem[] = [
+  // Core member functions
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'members', label: 'Medlemmer', icon: Users },
   { id: 'statistics', label: 'Statistik', icon: BarChart3 },
   { id: 'member-activity', label: 'Aktivitet', icon: Activity },
+  // People & search
   { id: 'trainers', label: 'Trænere', icon: GraduationCap },
   { id: 'minidraet-search', label: 'DGI søgning', icon: Search },
+  // Resources
   { id: 'equipment', label: 'Udstyr', icon: Package },
   { id: 'finance', label: 'Økonomi', icon: Wallet },
+  // System & administration
   { id: 'devices', label: 'Enheder', icon: Laptop },
   { id: 'conflicts', label: 'Konflikter', icon: AlertTriangle },
   { id: 'import', label: 'Importer CSV', icon: Upload },
@@ -220,6 +229,7 @@ export function Sidebar() {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
             const badgeCount = getBadgeCount(item.badgeKey);
+            const showDivider = NAV_DIVIDER_AFTER.has(item.id);
 
             return (
               <li key={item.id}>
@@ -240,6 +250,9 @@ export function Sidebar() {
                     </span>
                   )}
                 </button>
+                {showDivider && (
+                  <div className="my-2 border-t border-gray-200" role="separator" aria-hidden="true" />
+                )}
               </li>
             );
           })}

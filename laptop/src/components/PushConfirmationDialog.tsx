@@ -121,7 +121,7 @@ export function PushConfirmationDialog({ isOpen, onClose, devices }: Props) {
       />
       
       {/* Dialog */}
-      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
@@ -267,7 +267,7 @@ export function PushConfirmationDialog({ isOpen, onClose, devices }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+        <div className="flex justify-end gap-3 p-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
           {syncComplete ? (
             <button
               onClick={handleClose}

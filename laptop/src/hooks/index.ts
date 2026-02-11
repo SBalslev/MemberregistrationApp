@@ -3,3 +3,4 @@
  */
 
 export { useKeyboardShortcuts, useDialogKeyboard } from './useKeyboardShortcuts';
+export { useFocusTrap } from './useFocusTrap';

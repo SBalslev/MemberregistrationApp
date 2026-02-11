@@ -7,13 +7,15 @@
  * - Ctrl+S: Save payment
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { X, CreditCard, Banknote, Building2 } from 'lucide-react';
 import type { Member } from '../../types/entities';
 import type { PaymentMethod, FeeRate } from '../../types';
 import { PAYMENT_METHOD_LABELS, MEMBER_TYPE_LABELS } from '../../types';
 import { getEffectiveMemberType } from '../../utils/feeCategory';
 import { useDialogKeyboard } from '../../hooks';
+import { SearchableSelect, type SelectOption } from '../SearchableSelect';
+import { KeyboardHint, SHORTCUTS } from '../KeyboardHint';
 
 interface QuickFeePaymentDialogProps {
   isOpen: boolean;
@@ -88,6 +90,20 @@ export function QuickFeePaymentDialog({
     setAmount(getDefaultAmount(newMemberId));
   };
 
+  // Convert members to SelectOption format for searchable dropdown
+  const memberOptions: SelectOption[] = useMemo(
+    () =>
+      members
+        .filter((m) => m.status === 'ACTIVE')
+        .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`, 'da'))
+        .map((member) => ({
+          value: member.internalId,
+          label: `${member.firstName} ${member.lastName}`.trim(),
+          sublabel: member.memberLifecycleStage === 'TRIAL' ? 'Prøvemedlem' : member.membershipId ? `#${member.membershipId}` : undefined,
+        })),
+    [members]
+  );
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -142,23 +158,14 @@ export function QuickFeePaymentDialog({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Medlem
               </label>
-              <select
-                value={memberId}
-                onChange={(e) => handleMemberChange(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">Vælg medlem...</option>
-                {members
-                  .filter(m => m.status === 'ACTIVE')
-                  .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
-                  .map((member) => (
-                    <option key={member.internalId} value={member.internalId}>
-                      {member.firstName} {member.lastName}
-                      {member.memberLifecycleStage === 'TRIAL' ? ' (Prøvemedlem)' : ''}
-                    </option>
-                  ))}
-              </select>
+              <SearchableSelect
+                options={memberOptions}
+                value={memberId || null}
+                onChange={(value) => handleMemberChange(value || '')}
+                placeholder="Søg medlem..."
+                emptyOption="Vælg medlem..."
+                className="h-10"
+              />
               {selectedMember && (
                 <p className="mt-1 text-xs text-gray-500">
                   Type: {MEMBER_TYPE_LABELS[selectedMemberType]}
@@ -263,6 +270,7 @@ export function QuickFeePaymentDialog({
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Annuller
+                <KeyboardHint keys={SHORTCUTS.CLOSE} />
               </button>
               <button
                 type="submit"
@@ -270,6 +278,7 @@ export function QuickFeePaymentDialog({
                 className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 Registrer betaling
+                <KeyboardHint keys={SHORTCUTS.SAVE} />
               </button>
             </div>
           </form>

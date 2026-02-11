@@ -207,9 +207,12 @@ export function DashboardPage() {
                 {pairedDevices.map((device) => (
                   <div key={device.id} className="py-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${
-                        device.isOnline ? 'bg-green-500' : 'bg-gray-300'
-                      }`} />
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          device.isOnline ? 'bg-green-500' : 'bg-gray-300'
+                        }`}
+                        aria-hidden="true"
+                      />
                       <div>
                         <p className="font-medium text-gray-900">{device.name}</p>
                         <p className="text-sm text-gray-500">{device.type}</p>
