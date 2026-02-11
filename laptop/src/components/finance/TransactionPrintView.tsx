@@ -195,31 +195,31 @@ export function TransactionPrintView({
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-        <div className="border border-gray-200 rounded-lg p-3">
-          <div className="font-medium text-gray-700 mb-2">Indtægter pr. kategori</div>
+        <div className="border border-blue-200 rounded-lg p-3 bg-blue-50">
+          <div className="font-medium text-blue-800 mb-2">Indtægter pr. kategori</div>
           <div className="space-y-1">
             {incomeCategoryTotals.length === 0 ? (
               <div className="text-gray-500">Ingen indtægter</div>
             ) : (
               incomeCategoryTotals.map((item) => (
                 <div key={item.categoryId} className="flex items-center justify-between">
-                  <span className="text-gray-600">{item.categoryName}</span>
-                  <span className="font-medium">{formatAmount(item.amount)}</span>
+                  <span className="text-blue-700">{item.categoryName}</span>
+                  <span className="font-medium text-blue-900">{formatAmount(item.amount)}</span>
                 </div>
               ))
             )}
           </div>
         </div>
-        <div className="border border-gray-200 rounded-lg p-3">
-          <div className="font-medium text-gray-700 mb-2">Udgifter pr. kategori</div>
+        <div className="border border-red-200 rounded-lg p-3 bg-red-50">
+          <div className="font-medium text-red-800 mb-2">Udgifter pr. kategori</div>
           <div className="space-y-1">
             {expenseCategoryTotals.length === 0 ? (
               <div className="text-gray-500">Ingen udgifter</div>
             ) : (
               expenseCategoryTotals.map((item) => (
                 <div key={item.categoryId} className="flex items-center justify-between">
-                  <span className="text-gray-600">{item.categoryName}</span>
-                  <span className="font-medium">{formatAmount(item.amount)}</span>
+                  <span className="text-red-700">{item.categoryName}</span>
+                  <span className="font-medium text-red-900">{formatAmount(item.amount)}</span>
                 </div>
               ))
             )}
