@@ -12,10 +12,8 @@ import {
   Laptop,
   Package,
   Wallet,
-  AlertTriangle,
   Settings,
   RefreshCw,
-  Upload,
   GraduationCap,
   Activity,
   BarChart3,
@@ -32,7 +30,6 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  badgeKey?: 'conflicts'; // Key to look up badge count from store
 }
 
 // NOTE: 'registrations' page removed - approval workflow deprecated per FR-7.2
@@ -40,25 +37,23 @@ interface NavItem {
 
 // Navigation items grouped by function
 // Dividers are inserted after these item IDs
-const NAV_DIVIDER_AFTER = new Set(['member-activity', 'minidraet-search', 'finance']);
+const NAV_DIVIDER_AFTER = new Set(['minidraet-search', 'equipment', 'finance']);
 
-const navItems: NavItem[] = [
+const navItems: (NavItem & { shortcutKey?: string })[] = [
   // Core member functions
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'members', label: 'Medlemmer', icon: Users },
-  { id: 'statistics', label: 'Statistik', icon: BarChart3 },
-  { id: 'member-activity', label: 'Aktivitet', icon: Activity },
-  // People & search
-  { id: 'trainers', label: 'Trænere', icon: GraduationCap },
-  { id: 'minidraet-search', label: 'DGI søgning', icon: Search },
-  // Resources
-  { id: 'equipment', label: 'Udstyr', icon: Package },
-  { id: 'finance', label: 'Økonomi', icon: Wallet },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, shortcutKey: '1' },
+  { id: 'members', label: 'Medlemmer', icon: Users, shortcutKey: '2' },
+  { id: 'statistics', label: 'Statistik', icon: BarChart3, shortcutKey: '3' },
+  { id: 'member-activity', label: 'Aktivitet', icon: Activity, shortcutKey: '4' },
+  { id: 'minidraet-search', label: 'DGI søgning', icon: Search, shortcutKey: '5' },
+  // People & resources
+  { id: 'trainers', label: 'Trænere', icon: GraduationCap, shortcutKey: '6' },
+  { id: 'equipment', label: 'Udstyr', icon: Package, shortcutKey: '7' },
+  // Finance
+  { id: 'finance', label: 'Økonomi', icon: Wallet, shortcutKey: '8' },
   // System & administration
-  { id: 'devices', label: 'Enheder', icon: Laptop },
-  { id: 'conflicts', label: 'Konflikter', icon: AlertTriangle },
-  { id: 'import', label: 'Importer CSV', icon: Upload },
-  { id: 'settings', label: 'Indstillinger', icon: Settings },
+  { id: 'devices', label: 'Enheder', icon: Laptop, shortcutKey: '9' },
+  { id: 'settings', label: 'Indstillinger', icon: Settings, shortcutKey: '0' },
 ];
 
 export function Sidebar() {
@@ -196,12 +191,6 @@ export function Sidebar() {
     return () => clearInterval(interval);
   }, []);
 
-  // Get badge count for a nav item
-  // NOTE: 'registrations' badge removed - approval workflow deprecated per FR-7.2
-  function getBadgeCount(_badgeKey?: string): number {
-    return 0;
-  }
-
   function handleSyncClick() {
     setShowPushDialog(true);
   }
@@ -228,7 +217,6 @@ export function Sidebar() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
-            const badgeCount = getBadgeCount(item.badgeKey);
             const showDivider = NAV_DIVIDER_AFTER.has(item.id);
 
             return (
@@ -236,7 +224,8 @@ export function Sidebar() {
                 <button
                   onClick={() => setCurrentPage(item.id)}
                   aria-current={isActive ? 'page' : undefined}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  title={item.shortcutKey ? `${item.label} (Ctrl+${item.shortcutKey})` : item.label}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group ${
                     isActive
                       ? 'bg-blue-50 text-blue-700'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
@@ -244,10 +233,10 @@ export function Sidebar() {
                 >
                   <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} aria-hidden="true" />
                   <span className="flex-1 text-left">{item.label}</span>
-                  {badgeCount > 0 && (
-                    <span className="bg-red-500 text-white text-xs font-medium px-2 py-0.5 rounded-full" aria-label={`${badgeCount} afventende`}>
-                      {badgeCount}
-                    </span>
+                  {item.shortcutKey && (
+                    <kbd className="hidden group-hover:inline-block px-1.5 py-0.5 text-[10px] text-gray-400 bg-gray-100 rounded font-mono">
+                      {item.shortcutKey}
+                    </kbd>
                   )}
                 </button>
                 {showDivider && (

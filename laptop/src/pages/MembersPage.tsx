@@ -4,7 +4,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
-import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, getDefaultSkvRegistration, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, getMemberDeletePreview, deleteMemberPermanently, type ActivityType } from '../database';
+import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, getMemberDeletePreview, deleteMemberPermanently, type ActivityType } from '../database';
 import type { Member, Gender } from '../types';
 import { getIdPhotoStatus } from '../types/entities';
 import { onMembershipIdAssigned } from '../services/idPhotoLifecycleService';
@@ -14,6 +14,10 @@ import { useAppStore } from '../store';
 import { showSuccess, showError } from '../store/toastStore';
 import { getPhotoSrc } from '../utils/photoStorage';
 import { ConfirmDialog } from '../components';
+import { QuickFeePaymentDialog } from '../components/finance';
+import { getFeeRatesForYear, createPendingFeePayment, consolidatePendingFeePayments } from '../database';
+import { onFeePaymentRecorded } from '../services/idPhotoLifecycleService';
+import type { FeeRate } from '../types';
 
 export function MembersPage() {
   const [members, setMembers] = useState<Member[]>(() => getAllMembers());
@@ -515,14 +519,41 @@ export function MembersPage() {
 }
 
 function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }: { member: Member; onMemberUpdated: () => void; onEnlargePhoto: (photo: { src: string; title: string }) => void; onClose: () => void }) {
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showAssignIdModal, setShowAssignIdModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    firstName: '', lastName: '', email: '', phone: '', birthday: '',
+    gender: '' as Gender | '', address: '', zipCode: '', city: '',
+    guardianName: '', guardianPhone: '', guardianEmail: '',
+    status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE',
+    membershipId: '', feeCategory: 'ADULT' as Member['memberType'],
+    photoPath: null as string | null,
+    showMembershipIdEdit: false, membershipIdError: null as string | null,
+  });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [skvRegistration, setSkvRegistration] = useState<SkvRegistration | null>(null);
   const [skvWeapons, setSkvWeapons] = useState<SkvWeapon[]>([]);
-  const [showSkvModal, setShowSkvModal] = useState(false);
   const [showWeaponModal, setShowWeaponModal] = useState(false);
-  const [editingWeapon, setEditingWeapon] = useState<SkvWeapon | null>(null);
+
+  // Inline assign membership ID state (replaces modal)
+  const [isAssigningId, setIsAssigningId] = useState(false);
+  const [assignIdValue, setAssignIdValue] = useState('');
+  const [assignIdError, setAssignIdError] = useState<string | null>(null);
+
+  // Inline SKV editing state (replaces modal)
+  const [isEditingSkv, setIsEditingSkv] = useState(false);
+  const [skvEditStatus, setSkvEditStatus] = useState<SkvStatus>('not_started');
+  const [skvEditLevel, setSkvEditLevel] = useState(6);
+  const [skvEditDate, setSkvEditDate] = useState('');
+  const [skvEditError, setSkvEditError] = useState<string | null>(null);
+
+  // Inline weapon editing state (replaces modal for editing existing weapons)
+  const [editingWeaponInline, setEditingWeaponInline] = useState<string | null>(null);
+  const [weaponEditForm, setWeaponEditForm] = useState({ model: '', type: '', caliber: '', serial: '' });
+
+  // Fee payment dialog state
+  const [showFeePaymentDialog, setShowFeePaymentDialog] = useState(false);
+  const [feeRates] = useState<FeeRate[]>(() => getFeeRatesForYear(new Date().getFullYear()));
+  const [allMembers] = useState(() => getAllMembers());
   const [weaponToDelete, setWeaponToDelete] = useState<SkvWeapon | null>(null);
   const season = getSeasonDateRange();
   const [activityStartDate, setActivityStartDate] = useState(season.startDate);
@@ -603,6 +634,180 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
     { value: 'EQUIPMENT_RETURN', label: 'Returnering' }
   ];
 
+  function startEditingSkv() {
+    setSkvEditStatus(skvRegistration?.status ?? 'not_started');
+    setSkvEditLevel(skvRegistration?.skvLevel ?? 6);
+    setSkvEditDate(skvRegistration?.lastApprovedDate ?? '');
+    setSkvEditError(null);
+    setIsEditingSkv(true);
+  }
+
+  function handleSaveSkv() {
+    if (skvEditStatus === 'approved' && !skvEditDate) {
+      setSkvEditError('Senest godkendt dato er påkrævet ved godkendt status.');
+      return;
+    }
+    const values = {
+      memberId: member.internalId,
+      skvLevel: skvEditLevel,
+      status: skvEditStatus,
+      lastApprovedDate: skvEditDate || null,
+    };
+    const previousSkv = skvRegistration ? { ...skvRegistration } : null;
+    const saved = upsertSkvRegistration(values);
+    setSkvRegistration(saved);
+    refreshSkv();
+    setIsEditingSkv(false);
+    showSuccess('SKV registrering opdateret', {
+      onUndo: previousSkv ? () => {
+        upsertSkvRegistration({
+          memberId: member.internalId,
+          skvLevel: previousSkv.skvLevel,
+          status: previousSkv.status,
+          lastApprovedDate: previousSkv.lastApprovedDate,
+        });
+        refreshSkv();
+      } : undefined,
+    });
+  }
+
+  function startEditingWeaponInline(weapon: SkvWeapon) {
+    setEditingWeaponInline(weapon.id);
+    setWeaponEditForm({
+      model: weapon.model,
+      type: weapon.type,
+      caliber: weapon.caliber || '',
+      serial: weapon.serial,
+    });
+  }
+
+  function handleSaveWeaponInline(weapon: SkvWeapon) {
+    if (!weaponEditForm.model.trim() || !weaponEditForm.serial.trim() || !weaponEditForm.type.trim()) {
+      showError('Model, serienummer og type er påkrævet.');
+      return;
+    }
+    updateSkvWeapon({
+      ...weapon,
+      model: weaponEditForm.model.trim().slice(0, 100),
+      type: weaponEditForm.type.trim().slice(0, 50),
+      caliber: weaponEditForm.caliber.trim().slice(0, 50) || null,
+      serial: weaponEditForm.serial.trim().slice(0, 100),
+    });
+    refreshSkv();
+    setEditingWeaponInline(null);
+    showSuccess('Våben opdateret');
+  }
+
+  function startEditing() {
+    const isUnder18 = member.birthDate ? calculateAge(member.birthDate) < 18 : false;
+    let feeCategory: Member['memberType'] = 'ADULT';
+    if (member.memberType === 'HONORARY') feeCategory = 'HONORARY';
+    else if (isUnder18 && (member.memberType === 'CHILD_PLUS' || member.memberType === 'CHILD')) feeCategory = member.memberType;
+    else if (isUnder18) feeCategory = 'CHILD';
+
+    setEditForm({
+      firstName: member.firstName, lastName: member.lastName,
+      email: member.email || '', phone: member.phone || '',
+      birthday: member.birthDate || '', gender: member.gender || '',
+      address: member.address || '', zipCode: member.zipCode || '', city: member.city || '',
+      guardianName: member.guardianName || '', guardianPhone: member.guardianPhone || '', guardianEmail: member.guardianEmail || '',
+      status: member.status, membershipId: member.membershipId || '',
+      feeCategory, photoPath: member.photoPath || null,
+      showMembershipIdEdit: false, membershipIdError: null,
+    });
+    setIsEditing(true);
+  }
+
+  function handleEditPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditForm((f) => ({ ...f, photoPath: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  function handleSaveEdit() {
+    if (!editForm.firstName.trim() || !editForm.lastName.trim()) return;
+
+    const newMembershipId = editForm.membershipId.trim() || null;
+    if (newMembershipId && newMembershipId !== member.membershipId) {
+      const existingMember = getMemberByMembershipId(newMembershipId);
+      if (existingMember && existingMember.internalId !== member.internalId) {
+        setEditForm((f) => ({ ...f, membershipIdError: `Medlemsnummer ${newMembershipId} er allerede i brug af ${existingMember.firstName} ${existingMember.lastName}` }));
+        return;
+      }
+    }
+
+    const isUnder18 = editForm.birthday ? calculateAge(editForm.birthday) < 18 : false;
+    const effectiveFeeCategory: Member['memberType'] = editForm.feeCategory === 'HONORARY' ? 'HONORARY' : (isUnder18 ? editForm.feeCategory : 'ADULT');
+    const newLifecycleStage = newMembershipId ? 'FULL' : 'TRIAL';
+
+    const updatedMember: Member = {
+      ...member,
+      firstName: editForm.firstName.trim(), lastName: editForm.lastName.trim(),
+      birthDate: editForm.birthday || null, gender: editForm.gender || null,
+      email: editForm.email.trim() || null, phone: editForm.phone.trim() || null,
+      address: editForm.address.trim() || null, zipCode: editForm.zipCode.trim() || null, city: editForm.city.trim() || null,
+      guardianName: isUnder18 ? editForm.guardianName.trim() || null : null,
+      guardianPhone: isUnder18 ? editForm.guardianPhone.trim() || null : null,
+      guardianEmail: isUnder18 ? editForm.guardianEmail.trim() || null : null,
+      memberType: effectiveFeeCategory, membershipId: newMembershipId,
+      memberLifecycleStage: newLifecycleStage, status: editForm.status,
+      photoPath: editForm.photoPath, updatedAtUtc: new Date().toISOString(),
+    };
+
+    try {
+      const previousMember = { ...member };
+      upsertMember(updatedMember);
+      onMemberUpdated();
+      setIsEditing(false);
+      setSelectedMember(updatedMember);
+      showSuccess('Medlem opdateret', {
+        onUndo: () => {
+          upsertMember(previousMember);
+          onMemberUpdated();
+          setSelectedMember(previousMember);
+        },
+      });
+    } catch (error) {
+      console.error('Failed to update member:', error);
+      showError('Kunne ikke opdatere medlem. Prøv igen.');
+    }
+  }
+
+  // Derived values for edit mode
+  const editIsUnder18 = editForm.birthday ? calculateAge(editForm.birthday) < 18 : false;
+
+  function handleAssignId() {
+    const trimmed = assignIdValue.trim();
+    if (!trimmed) {
+      setAssignIdError('Medlemsnummer er påkrævet');
+      return;
+    }
+    const existing = getMemberByMembershipId(trimmed);
+    if (existing && existing.internalId !== member.internalId) {
+      setAssignIdError(`Medlemsnummer '${trimmed}' er allerede i brug af ${existing.firstName} ${existing.lastName}`);
+      return;
+    }
+    try {
+      assignMembershipId(member.internalId, trimmed);
+      onMembershipIdAssigned(member.internalId);
+      onMemberUpdated();
+      setIsAssigningId(false);
+      setAssignIdValue('');
+      setAssignIdError(null);
+      const updatedMember = { ...member, membershipId: trimmed, memberLifecycleStage: 'FULL' as const };
+      setSelectedMember(updatedMember);
+      showSuccess(`Medlemsnummer ${trimmed} tildelt`);
+    } catch (error) {
+      console.error('Failed to assign member ID:', error);
+      showError('Kunne ikke tildele medlemsnummer. Prøv igen.');
+    }
+  }
+
   return (
     <div className="p-6">
       {/* Close button */}
@@ -619,29 +824,50 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
 
       {/* Header */}
       <div className="text-center mb-6">
-        <div
-          className={`w-20 h-20 bg-gray-200 rounded-full mx-auto mb-4 flex items-center justify-center overflow-hidden ${photoSrc ? 'cursor-pointer hover:ring-2 hover:ring-blue-400' : ''}`}
-          onClick={() => photoSrc && onEnlargePhoto({ src: photoSrc, title: `${member.firstName} ${member.lastName} - Profilbillede` })}
-        >
-          {photoSrc ? (
-            <img
-              src={photoSrc}
-              alt=""
-              className="w-20 h-20 rounded-full object-cover"
-              onError={(e) => {
-                // Hide image on error, show initials
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          ) : null}
-          <span className={`text-gray-600 font-bold text-2xl ${photoSrc ? 'hidden' : ''}`}>
-            {member.firstName?.[0]}
-            {member.lastName?.[0]}
-          </span>
+        <div className="relative inline-block">
+          <div
+            className={`w-20 h-20 bg-gray-200 rounded-full mx-auto mb-4 flex items-center justify-center overflow-hidden ${!isEditing && photoSrc ? 'cursor-pointer hover:ring-2 hover:ring-blue-400' : ''}`}
+            onClick={() => !isEditing && photoSrc && onEnlargePhoto({ src: photoSrc, title: `${member.firstName} ${member.lastName} - Profilbillede` })}
+          >
+            {isEditing ? (
+              editForm.photoPath ? (
+                <img src={editForm.photoPath.startsWith('data:') || editForm.photoPath.startsWith('http') ? editForm.photoPath : `file://${editForm.photoPath}`} alt="" className="w-20 h-20 rounded-full object-cover" />
+              ) : (
+                <span className="text-gray-600 font-bold text-2xl">{editForm.firstName?.[0]}{editForm.lastName?.[0]}</span>
+              )
+            ) : (
+              <>
+                {photoSrc ? (
+                  <img src={photoSrc} alt="" className="w-20 h-20 rounded-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                ) : null}
+                <span className={`text-gray-600 font-bold text-2xl ${photoSrc ? 'hidden' : ''}`}>{member.firstName?.[0]}{member.lastName?.[0]}</span>
+              </>
+            )}
+          </div>
+          {isEditing && (
+            <>
+              <label className="absolute bottom-3 right-0 w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors shadow-md">
+                <Camera className="w-3.5 h-3.5 text-white" />
+                <input type="file" accept="image/*" onChange={handleEditPhotoChange} className="hidden" />
+              </label>
+              {editForm.photoPath && (
+                <button type="button" onClick={() => setEditForm((f) => ({ ...f, photoPath: null }))} className="absolute top-0 right-0 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-md">
+                  <Trash2 className="w-3 h-3 text-white" />
+                </button>
+              )}
+            </>
+          )}
         </div>
-        <h2 className="text-xl font-bold text-gray-900">
-          {member.firstName} {member.lastName}
-        </h2>
+        {isEditing ? (
+          <div className="flex gap-2 justify-center mb-2">
+            <input type="text" value={editForm.firstName} onChange={(e) => setEditForm((f) => ({ ...f, firstName: e.target.value }))} placeholder="Fornavn" className="w-32 px-2 py-1 border border-gray-300 rounded-lg text-center font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+            <input type="text" value={editForm.lastName} onChange={(e) => setEditForm((f) => ({ ...f, lastName: e.target.value }))} placeholder="Efternavn" className="w-32 px-2 py-1 border border-gray-300 rounded-lg text-center font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+          </div>
+        ) : (
+          <h2 className="text-xl font-bold text-gray-900">
+            {member.firstName} {member.lastName}
+          </h2>
+        )}
         <p className="text-gray-600">{member.membershipId || `ID: ${member.internalId.slice(0, 8)}...`}</p>
         <div className="flex justify-center gap-2 mt-2">
           {member.memberLifecycleStage === 'TRIAL' && (
@@ -653,40 +879,102 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
               Prøvemedlem {daysSinceRegistration > 0 && `(${daysSinceRegistration} dage)`}
             </span>
           )}
-          <span
-            className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-              member.status === 'ACTIVE'
-                ? 'bg-green-100 text-green-700'
-                : 'bg-gray-100 text-gray-600'
-            }`}
-          >
-            {member.status === 'ACTIVE' ? 'Aktiv' : 'Inaktiv'}
-          </span>
+          {isEditing ? (
+            <select value={editForm.status} onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value as 'ACTIVE' | 'INACTIVE' }))} className="px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+              <option value="ACTIVE">Aktiv</option>
+              <option value="INACTIVE">Inaktiv</option>
+            </select>
+          ) : (
+            <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${member.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+              {member.status === 'ACTIVE' ? 'Aktiv' : 'Inaktiv'}
+            </span>
+          )}
         </div>
       </div>
 
       {/* Details - responsive two-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
-        <DetailRow label="Fødselsdag" value={member.birthDate ? `${member.birthDate} (${calculateAge(member.birthDate)} år)` : '-'} />
-        <DetailRow label="Køn" value={formatGender(member.gender)} />
-        <DetailRow label="Email" value={member.email || '-'} />
-        <DetailRow label="Telefon" value={member.phone || '-'} />
-        <DetailRow label="Adresse" value={member.address || '-'} />
-        <DetailRow label="Postnummer/By" value={member.zipCode && member.city ? `${member.zipCode} ${member.city}` : member.zipCode || member.city || '-'} />
-        <DetailRow label="Oprettet" value={formatDate(member.createdAtUtc)} />
-        <DetailRow label="Opdateret" value={formatDate(member.updatedAtUtc)} />
-      </div>
-
-      {/* Guardian info if under 18 */}
-      {member.birthDate && calculateAge(member.birthDate) < 18 && (member.guardianName || member.guardianPhone || member.guardianEmail) && (
-        <div className="mt-6 pt-4 border-t border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Forælder/værge</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
-            {member.guardianName && <DetailRow label="Navn" value={member.guardianName} />}
-            {member.guardianPhone && <DetailRow label="Telefon" value={member.guardianPhone} />}
-            {member.guardianEmail && <DetailRow label="Email" value={member.guardianEmail} />}
+      {isEditing ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3">
+          <EditField label="Email" type="email" value={editForm.email} onChange={(v) => setEditForm((f) => ({ ...f, email: v }))} />
+          <EditField label="Telefon" type="tel" value={editForm.phone} onChange={(v) => setEditForm((f) => ({ ...f, phone: v }))} />
+          <EditField label="Fødselsdag" type="date" value={editForm.birthday} onChange={(v) => setEditForm((f) => ({ ...f, birthday: v }))} />
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Køn</label>
+            <select value={editForm.gender} onChange={(e) => setEditForm((f) => ({ ...f, gender: e.target.value as Gender | '' }))} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+              <option value="">Vælg køn</option>
+              <option value="MALE">Mand</option>
+              <option value="FEMALE">Kvinde</option>
+              <option value="OTHER">Andet</option>
+            </select>
           </div>
+          <EditField label="Adresse" value={editForm.address} onChange={(v) => setEditForm((f) => ({ ...f, address: v }))} />
+          <div className="grid grid-cols-2 gap-2">
+            <EditField label="Postnummer" value={editForm.zipCode} onChange={(v) => setEditForm((f) => ({ ...f, zipCode: v }))} />
+            <EditField label="By" value={editForm.city} onChange={(v) => setEditForm((f) => ({ ...f, city: v }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Kontingenttype</label>
+            <select value={editForm.feeCategory} onChange={(e) => setEditForm((f) => ({ ...f, feeCategory: e.target.value as Member['memberType'] }))} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+              <option value="ADULT">Voksen</option>
+              <option value="CHILD" disabled={!editIsUnder18}>Barn</option>
+              <option value="CHILD_PLUS" disabled={!editIsUnder18}>Barn+</option>
+              <option value="HONORARY">Æresmedlem</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Medlemsnummer</label>
+            {!editForm.showMembershipIdEdit ? (
+              <div className="flex gap-2">
+                <input type="text" value={editForm.membershipId || '(ikke tildelt)'} disabled className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-500" />
+                <button type="button" onClick={() => setEditForm((f) => ({ ...f, showMembershipIdEdit: true }))} className="px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">Ændre</button>
+              </div>
+            ) : (
+              <div>
+                <input type="text" value={editForm.membershipId} onChange={(e) => setEditForm((f) => ({ ...f, membershipId: e.target.value, membershipIdError: null }))} placeholder="Indtast medlemsnummer" className={`w-full px-2 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${editForm.membershipIdError ? 'border-red-500' : 'border-gray-300'}`} />
+                {editForm.membershipIdError && <p className="mt-1 text-xs text-red-600">{editForm.membershipIdError}</p>}
+                <p className="mt-1 text-xs text-amber-600">Ændring af medlemsnummer påvirker check-in og QR-koder.</p>
+              </div>
+            )}
+          </div>
+          <DetailRow label="Oprettet" value={formatDate(member.createdAtUtc)} />
+          <DetailRow label="Opdateret" value={formatDate(member.updatedAtUtc)} />
         </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
+          <DetailRow label="Fødselsdag" value={member.birthDate ? `${member.birthDate} (${calculateAge(member.birthDate)} år)` : '-'} />
+          <DetailRow label="Køn" value={formatGender(member.gender)} />
+          <DetailRow label="Email" value={member.email || '-'} />
+          <DetailRow label="Telefon" value={member.phone || '-'} />
+          <DetailRow label="Adresse" value={member.address || '-'} />
+          <DetailRow label="Postnummer/By" value={member.zipCode && member.city ? `${member.zipCode} ${member.city}` : member.zipCode || member.city || '-'} />
+          <DetailRow label="Oprettet" value={formatDate(member.createdAtUtc)} />
+          <DetailRow label="Opdateret" value={formatDate(member.updatedAtUtc)} />
+        </div>
+      )}
+
+      {/* Guardian info */}
+      {isEditing ? (
+        editIsUnder18 && (
+          <div className="mt-6 pt-4 border-t border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Forælder/værge (medlem under 18)</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <EditField label="Navn" value={editForm.guardianName} onChange={(v) => setEditForm((f) => ({ ...f, guardianName: v }))} />
+              <EditField label="Telefon" type="tel" value={editForm.guardianPhone} onChange={(v) => setEditForm((f) => ({ ...f, guardianPhone: v }))} />
+              <EditField label="Email" type="email" value={editForm.guardianEmail} onChange={(v) => setEditForm((f) => ({ ...f, guardianEmail: v }))} />
+            </div>
+          </div>
+        )
+      ) : (
+        member.birthDate && calculateAge(member.birthDate) < 18 && (member.guardianName || member.guardianPhone || member.guardianEmail) && (
+          <div className="mt-6 pt-4 border-t border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Forælder/værge</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
+              {member.guardianName && <DetailRow label="Navn" value={member.guardianName} />}
+              {member.guardianPhone && <DetailRow label="Telefon" value={member.guardianPhone} />}
+              {member.guardianEmail && <DetailRow label="Email" value={member.guardianEmail} />}
+            </div>
+          </div>
+        )
       )}
 
       {/* ID Photo section for TRIAL adults only */}
@@ -741,36 +1029,92 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
       <div className="mt-6 pt-4 border-t border-gray-200">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-gray-900">SKV</h3>
-          <button
-            onClick={() => setShowSkvModal(true)}
-            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-          >
-            Rediger SKV
-          </button>
+          {!isEditingSkv && (
+            <button
+              onClick={startEditingSkv}
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Rediger SKV
+            </button>
+          )}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-4">
-          <DetailRow
-            label="Status"
-            value={formatSkvStatus(skvRegistration?.status ?? 'not_started')}
-          />
-          <DetailRow
-            label="SKV niveau"
-            value={`${skvRegistration?.skvLevel ?? 6}`}
-          />
-          <DetailRow
-            label="Senest godkendt"
-            value={skvRegistration?.lastApprovedDate ? formatDate(skvRegistration.lastApprovedDate) : '-'}
-          />
-        </div>
+        {isEditingSkv ? (
+          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                <select
+                  value={skvEditStatus}
+                  onChange={(e) => { setSkvEditStatus(e.target.value as SkvStatus); setSkvEditError(null); }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  <option value="not_started">Ikke startet</option>
+                  <option value="requested">Anmodet</option>
+                  <option value="approved">Godkendt</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">SKV niveau</label>
+                <select
+                  value={skvEditLevel}
+                  onChange={(e) => setSkvEditLevel(Number(e.target.value))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  {[1, 2, 3, 4, 5, 6].map((level) => (
+                    <option key={level} value={level}>SKV {level}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Senest godkendt</label>
+                <input
+                  type="date"
+                  value={skvEditDate}
+                  onChange={(e) => { setSkvEditDate(e.target.value); setSkvEditError(null); }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+            </div>
+            {skvEditError && (
+              <p className="text-sm text-red-600">{skvEditError}</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setIsEditingSkv(false)}
+                className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Annuller
+              </button>
+              <button
+                onClick={handleSaveSkv}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Gem
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-4">
+            <DetailRow
+              label="Status"
+              value={formatSkvStatus(skvRegistration?.status ?? 'not_started')}
+            />
+            <DetailRow
+              label="SKV niveau"
+              value={`${skvRegistration?.skvLevel ?? 6}`}
+            />
+            <DetailRow
+              label="Senest godkendt"
+              value={skvRegistration?.lastApprovedDate ? formatDate(skvRegistration.lastApprovedDate) : '-'}
+            />
+          </div>
+        )}
 
         <div className="mt-4">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-gray-900">Våben</h4>
             <button
-              onClick={() => {
-                setEditingWeapon(null);
-                setShowWeaponModal(true);
-              }}
+              onClick={() => setShowWeaponModal(true)}
               className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
             >
               <Plus className="w-4 h-4" />
@@ -794,29 +1138,57 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
                 </thead>
                 <tbody>
                   {skvWeapons.map((weapon) => (
-                    <tr key={weapon.id} className="border-t border-gray-200">
-                      <td className="px-3 py-2 text-gray-900">{weapon.model}</td>
-                      <td className="px-3 py-2 text-gray-700">{weapon.type}</td>
-                      <td className="px-3 py-2 text-gray-700">{weapon.caliber || '-'}</td>
-                      <td className="px-3 py-2 text-gray-700">{weapon.serial}</td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          onClick={() => {
-                            setEditingWeapon(weapon);
-                            setShowWeaponModal(true);
-                          }}
-                          className="p-1 text-gray-500 hover:text-gray-700"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setWeaponToDelete(weapon)}
-                          className="p-1 text-gray-500 hover:text-red-600"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
+                    editingWeaponInline === weapon.id ? (
+                      <tr key={weapon.id} className="border-t border-gray-200 bg-blue-50">
+                        <td className="px-2 py-1.5">
+                          <input type="text" value={weaponEditForm.model} onChange={(e) => setWeaponEditForm(f => ({ ...f, model: e.target.value }))}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="text" value={weaponEditForm.type} onChange={(e) => setWeaponEditForm(f => ({ ...f, type: e.target.value }))}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="text" value={weaponEditForm.caliber} onChange={(e) => setWeaponEditForm(f => ({ ...f, caliber: e.target.value }))}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="text" value={weaponEditForm.serial} onChange={(e) => setWeaponEditForm(f => ({ ...f, serial: e.target.value }))}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none" />
+                        </td>
+                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                          <button onClick={() => handleSaveWeaponInline(weapon)} className="p-1 text-green-600 hover:text-green-700" aria-label="Gem">
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => setEditingWeaponInline(null)} className="p-1 text-gray-500 hover:text-gray-700" aria-label="Annuller">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={weapon.id} className="border-t border-gray-200">
+                        <td className="px-3 py-2 text-gray-900">{weapon.model}</td>
+                        <td className="px-3 py-2 text-gray-700">{weapon.type}</td>
+                        <td className="px-3 py-2 text-gray-700">{weapon.caliber || '-'}</td>
+                        <td className="px-3 py-2 text-gray-700">{weapon.serial}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            onClick={() => startEditingWeaponInline(weapon)}
+                            className="p-1 text-gray-500 hover:text-gray-700"
+                            aria-label="Rediger våben"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setWeaponToDelete(weapon)}
+                            className="p-1 text-gray-500 hover:text-red-600"
+                            aria-label="Slet våben"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    )
                   ))}
                 </tbody>
               </table>
@@ -825,32 +1197,100 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
         </div>
       </div>
 
+      {/* Inline Assign Membership ID for trial members */}
+      {member.memberLifecycleStage === 'TRIAL' && (
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          {isAssigningId ? (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-purple-900 mb-2">Tildel medlemsnummer</h3>
+              <p className="text-xs text-purple-700 mb-3">
+                Når et medlemsnummer tildeles, opgraderes medlemmet fra prøve til fuldt medlem.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={assignIdValue}
+                  onChange={(e) => {
+                    setAssignIdValue(e.target.value);
+                    setAssignIdError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAssignId();
+                    if (e.key === 'Escape') { setIsAssigningId(false); setAssignIdValue(''); setAssignIdError(null); }
+                  }}
+                  placeholder="Indtast medlemsnummer"
+                  autoFocus
+                  className={`flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none ${
+                    assignIdError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                  }`}
+                />
+                <button
+                  onClick={handleAssignId}
+                  className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                >
+                  Tildel
+                </button>
+                <button
+                  onClick={() => { setIsAssigningId(false); setAssignIdValue(''); setAssignIdError(null); }}
+                  className="px-3 py-2 text-gray-600 text-sm hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Annuller
+                </button>
+              </div>
+              {assignIdError && (
+                <p className="mt-2 text-sm text-red-600">{assignIdError}</p>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsAssigningId(true)}
+              className="w-full px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+            >
+              Tildel medlemsnummer
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Actions */}
-      <div className="mt-8 space-y-3">
-        {/* Assign Member ID button for trial members */}
-        {member.memberLifecycleStage === 'TRIAL' && (
-          <button
-            onClick={() => setShowAssignIdModal(true)}
-            className="w-full px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
-          >
-            Tildel medlemsnummer
-          </button>
-        )}
-        <button
-          onClick={() => setShowEditModal(true)}
-          className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-        >
-          Rediger medlem
-        </button>
-        {/* Delete button - only for INACTIVE members */}
-        {member.status === 'INACTIVE' && (
-          <button
-            onClick={() => setShowDeleteModal(true)}
-            className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium inline-flex items-center justify-center gap-2"
-          >
-            <Trash2 className="w-4 h-4" />
-            Slet medlem permanent
-          </button>
+      <div className="mt-4 space-y-3">
+        {isEditing ? (
+          <div className="flex gap-2">
+            <button onClick={() => setIsEditing(false)} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-medium">
+              Annuller
+            </button>
+            <button onClick={handleSaveEdit} className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
+              Gem ændringer
+            </button>
+          </div>
+        ) : (
+          <>
+            {member.memberLifecycleStage === 'FULL' && (
+              <button
+                onClick={() => setShowFeePaymentDialog(true)}
+                className="w-full px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium inline-flex items-center justify-center gap-2"
+              >
+                <CreditCard className="w-4 h-4" />
+                Registrer kontingent
+              </button>
+            )}
+            <button
+              onClick={startEditing}
+              className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium inline-flex items-center justify-center gap-2"
+            >
+              <Edit2 className="w-4 h-4" />
+              Rediger medlem
+            </button>
+            {member.status === 'INACTIVE' && (
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium inline-flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Slet medlem permanent
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -923,90 +1363,19 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
         )}
       </div>
 
-      {/* Assign Member ID Modal */}
-      {showAssignIdModal && (
-        <AssignMemberIdModal
-          member={member}
-          onClose={() => setShowAssignIdModal(false)}
-          onAssigned={(membershipId) => {
-            try {
-              assignMembershipId(member.internalId, membershipId);
-              // Check if ID photo should be deleted (membership assigned + fee paid)
-              onMembershipIdAssigned(member.internalId);
-              onMemberUpdated();
-              setShowAssignIdModal(false);
-              // Reload member with new data
-              const updatedMember = { ...member, membershipId, memberLifecycleStage: 'FULL' as const };
-              setSelectedMember(updatedMember);
-              showSuccess(`Medlemsnummer ${membershipId} tildelt`);
-            } catch (error) {
-              console.error('Failed to assign member ID:', error);
-              showError('Kunne ikke tildele medlemsnummer. Prøv igen.');
-            }
-          }}
-        />
-      )}
-
-      {/* Edit Modal */}
-      {showEditModal && (
-        <EditMemberModal
-          member={member}
-          onClose={() => setShowEditModal(false)}
-          onSave={(updatedMember) => {
-            try {
-              upsertMember(updatedMember);
-              onMemberUpdated();
-              setShowEditModal(false);
-              setSelectedMember(updatedMember);
-              showSuccess('Medlem opdateret');
-            } catch (error) {
-              console.error('Failed to update member:', error);
-              showError('Kunne ikke opdatere medlem. Prøv igen.');
-            }
-          }}
-        />
-      )}
-
-      {showSkvModal && (
-        <SkvRegistrationModal
-          memberId={member.internalId}
-          registration={skvRegistration ?? getDefaultSkvRegistration(member.internalId)}
-          onClose={() => setShowSkvModal(false)}
-          onSave={(values) => {
-            const saved = upsertSkvRegistration(values);
-            setSkvRegistration(saved);
-            refreshSkv();
-            setShowSkvModal(false);
-            showSuccess('SKV registrering opdateret');
-          }}
-        />
-      )}
-
       {showWeaponModal && (
         <SkvWeaponModal
-          weapon={editingWeapon}
-          onClose={() => {
-            setShowWeaponModal(false);
-            setEditingWeapon(null);
-          }}
+          weapon={null}
+          onClose={() => setShowWeaponModal(false)}
           onSave={(values) => {
             const registration = ensureSkvRegistration(member.internalId);
-            if (editingWeapon) {
-              updateSkvWeapon({
-                ...editingWeapon,
-                ...values
-              });
-              showSuccess('Våben opdateret');
-            } else {
-              addSkvWeapon({
-                ...values,
-                skvRegistrationId: registration.id
-              });
-              showSuccess('Våben tilføjet');
-            }
+            addSkvWeapon({
+              ...values,
+              skvRegistrationId: registration.id
+            });
+            showSuccess('Våben tilføjet');
             refreshSkv();
             setShowWeaponModal(false);
-            setEditingWeapon(null);
           }}
         />
       )}
@@ -1041,6 +1410,37 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
         }}
         onClose={() => setWeaponToDelete(null)}
       />
+
+      {/* Quick Fee Payment Dialog */}
+      <QuickFeePaymentDialog
+        isOpen={showFeePaymentDialog}
+        onClose={() => setShowFeePaymentDialog(false)}
+        onSave={(payment) => {
+          const now = new Date().toISOString();
+          const paymentId = crypto.randomUUID();
+          createPendingFeePayment({
+            id: paymentId,
+            fiscalYear: new Date().getFullYear(),
+            memberId: payment.memberId,
+            amount: payment.amount,
+            paymentDate: payment.paymentDate,
+            paymentMethod: payment.paymentMethod,
+            notes: payment.notes,
+            createdAtUtc: now,
+            updatedAtUtc: now,
+          });
+          if (payment.directPost) {
+            consolidatePendingFeePayments(new Date().getFullYear(), [paymentId], 'Kontingentbetaling', payment.paymentDate, 'cat-kontingent');
+          }
+          onFeePaymentRecorded(payment.memberId);
+          setShowFeePaymentDialog(false);
+          showSuccess(payment.directPost ? 'Kontingent posteret som transaktion' : 'Kontingentbetaling registreret');
+        }}
+        members={allMembers}
+        feeRates={feeRates}
+        year={new Date().getFullYear()}
+        preselectedMemberId={member.internalId}
+      />
     </div>
   );
 }
@@ -1050,6 +1450,15 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-sm text-gray-600">{label}</dt>
       <dd className="text-gray-900 mt-0.5">{value}</dd>
+    </div>
+  );
+}
+
+function EditField({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+  return (
+    <div>
+      <label className="block text-xs text-gray-600 mb-1">{label}</label>
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
     </div>
   );
 }
@@ -1400,119 +1809,6 @@ function formatSkvStatus(status: SkvStatus): string {
   }
 }
 
-interface SkvRegistrationModalProps {
-  memberId: string;
-  registration: SkvRegistration;
-  onClose: () => void;
-  onSave: (values: { memberId: string; skvLevel: number; status: SkvStatus; lastApprovedDate: string | null }) => void;
-}
-
-function SkvRegistrationModal({ memberId, registration, onClose, onSave }: SkvRegistrationModalProps) {
-  const [skvLevel, setSkvLevel] = useState<number>(registration.skvLevel ?? 6);
-  const [status, setStatus] = useState<SkvStatus>(registration.status ?? 'not_started');
-  const [lastApprovedDate, setLastApprovedDate] = useState<string>(registration.lastApprovedDate ?? '');
-  const [error, setError] = useState<string | null>(null);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (status === 'approved' && !lastApprovedDate) {
-      setError('Senest godkendt dato er påkrævet ved godkendt status.');
-      return;
-    }
-    setError(null);
-    onSave({
-      memberId,
-      skvLevel,
-      status,
-      lastApprovedDate: lastApprovedDate || null
-    });
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900">SKV registrering</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
-              {error}
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Status
-            </label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as SkvStatus)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="not_started">Ikke startet</option>
-              <option value="requested">Anmodet</option>
-              <option value="approved">Godkendt</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              SKV niveau
-            </label>
-            <select
-              value={skvLevel}
-              onChange={(e) => setSkvLevel(Number(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              {[1, 2, 3, 4, 5, 6].map((level) => (
-                <option key={level} value={level}>SKV {level}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Senest godkendt
-            </label>
-            <input
-              type="date"
-              value={lastApprovedDate}
-              onChange={(e) => setLastApprovedDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-            {status === 'approved' && !lastApprovedDate && (
-              <p className="text-xs text-red-600 mt-1">Påkrævet ved godkendt status</p>
-            )}
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100"
-            >
-              Annuller
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Gem
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 interface SkvWeaponModalProps {
   weapon: SkvWeapon | null;
@@ -1859,111 +2155,6 @@ function MergeModal({ member1, member2, onClose, onMerged }: MergeModalProps) {
             </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// Modal for assigning a membershipId to a trial member
-interface AssignMemberIdModalProps {
-  member: Member;
-  onClose: () => void;
-  onAssigned: (membershipId: string) => void;
-}
-
-function AssignMemberIdModal({ member, onClose, onAssigned }: AssignMemberIdModalProps) {
-  const [membershipId, setMembershipId] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    const trimmedId = membershipId.trim();
-    if (!trimmedId) {
-      setError('Medlemsnummer er påkrævet');
-      return;
-    }
-
-    // Check for uniqueness
-    const existing = getMemberByMembershipId(trimmedId);
-    if (existing && existing.internalId !== member.internalId) {
-      setError(`Medlemsnummer "${trimmedId}" er allerede i brug af ${existing.firstName} ${existing.lastName}`);
-      return;
-    }
-
-    onAssigned(trimmedId);
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900">Tildel medlemsnummer</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="bg-purple-50 rounded-lg p-4">
-            <p className="text-sm text-purple-800">
-              <span className="font-semibold">Prøvemedlem:</span>{' '}
-              {member.firstName} {member.lastName}
-            </p>
-            <p className="text-xs text-purple-600 mt-1">
-              Registreret: {new Date(member.createdAtUtc).toLocaleDateString('da-DK')}
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Medlemsnummer <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={membershipId}
-              onChange={(e) => {
-                setMembershipId(e.target.value);
-                setError(null);
-              }}
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
-                error ? 'border-red-300 bg-red-50' : 'border-gray-300'
-              }`}
-              placeholder="Indtast medlemsnummer"
-              autoFocus
-            />
-            {error && (
-              <p className="mt-1 text-sm text-red-600">{error}</p>
-            )}
-          </div>
-
-          <p className="text-xs text-gray-500">
-            Dette vil opgradere medlemmet fra prøvemedlem til fuldt medlem.
-          </p>
-
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              Annuller
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Tildel nummer
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );
@@ -2359,435 +2550,3 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
   );
 }
 
-interface EditMemberModalProps {
-  member: Member;
-  onClose: () => void;
-  onSave: (member: Member) => void;
-}
-
-function EditMemberModal({ member, onClose, onSave }: EditMemberModalProps) {
-  const [firstName, setFirstName] = useState(member.firstName);
-  const [lastName, setLastName] = useState(member.lastName);
-  const [email, setEmail] = useState(member.email || '');
-  const [phone, setPhone] = useState(member.phone || '');
-  const [birthday, setBirthday] = useState(member.birthDate || '');
-  const [gender, setGender] = useState<Gender | ''>(member.gender || '');
-  const [address, setAddress] = useState(member.address || '');
-  const [zipCode, setZipCode] = useState(member.zipCode || '');
-  const [city, setCity] = useState(member.city || '');
-  const [guardianName, setGuardianName] = useState(member.guardianName || '');
-  const [guardianPhone, setGuardianPhone] = useState(member.guardianPhone || '');
-  const [guardianEmail, setGuardianEmail] = useState(member.guardianEmail || '');
-  const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>(member.status);
-  const [photoPath, setPhotoPath] = useState<string | null>(member.photoPath || null);
-  // Membership ID editing (advanced)
-  const [membershipId, setMembershipId] = useState(member.membershipId || '');
-  const [showMembershipIdEdit, setShowMembershipIdEdit] = useState(false);
-  const [membershipIdError, setMembershipIdError] = useState<string | null>(null);
-  const [feeCategory, setFeeCategory] = useState<Member['memberType']>(() => {
-    // Honorary members keep their status
-    if (member.memberType === 'HONORARY') return 'HONORARY';
-
-    const isUnder18Initial = member.birthDate ? calculateAge(member.birthDate) < 18 : false;
-    if (!isUnder18Initial) return 'ADULT';
-    if (member.memberType === 'CHILD_PLUS' || member.memberType === 'CHILD') {
-      return member.memberType;
-    }
-    return 'CHILD';
-  });
-
-  // Handle photo file selection
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPath(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  }
-
-  function removePhoto() {
-    setPhotoPath(null);
-  }
-
-  // Calculate if member is under 18
-  const isUnder18 = birthday ? calculateAge(birthday) < 18 : false;
-
-  useEffect(() => {
-    // Don't auto-change honorary members
-    if (feeCategory === 'HONORARY') return;
-
-    if (isUnder18 && feeCategory === 'ADULT') {
-      setFeeCategory('CHILD');
-    }
-    if (!isUnder18 && (feeCategory === 'CHILD' || feeCategory === 'CHILD_PLUS')) {
-      setFeeCategory('ADULT');
-    }
-  }, [isUnder18, feeCategory]);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setMembershipIdError(null);
-
-    if (!firstName.trim() || !lastName.trim()) {
-      return;
-    }
-
-    // Validate membershipId if changed
-    const newMembershipId = membershipId.trim() || null;
-    if (newMembershipId && newMembershipId !== member.membershipId) {
-      // Check if this membershipId is already used by another member
-      const existingMember = getMemberByMembershipId(newMembershipId);
-      if (existingMember && existingMember.internalId !== member.internalId) {
-        setMembershipIdError(`Medlemsnummer ${newMembershipId} er allerede i brug af ${existingMember.firstName} ${existingMember.lastName}`);
-        return;
-      }
-    }
-
-    // Honorary members keep their status; otherwise apply age-based logic
-    const effectiveFeeCategory: Member['memberType'] = feeCategory === 'HONORARY' ? 'HONORARY' : (isUnder18 ? feeCategory : 'ADULT');
-
-    // Determine lifecycle stage based on membershipId
-    const newLifecycleStage = newMembershipId ? 'FULL' : 'TRIAL';
-
-    const updatedMember: Member = {
-      ...member,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      birthDate: birthday || null,
-      gender: gender || null,
-      email: email.trim() || null,
-      phone: phone.trim() || null,
-      address: address.trim() || null,
-      zipCode: zipCode.trim() || null,
-      city: city.trim() || null,
-      guardianName: isUnder18 ? guardianName.trim() || null : null,
-      guardianPhone: isUnder18 ? guardianPhone.trim() || null : null,
-      guardianEmail: isUnder18 ? guardianEmail.trim() || null : null,
-      memberType: effectiveFeeCategory,
-      membershipId: newMembershipId,
-      memberLifecycleStage: newLifecycleStage,
-      status,
-      photoPath,
-      updatedAtUtc: new Date().toISOString(),
-    };
-
-    onSave(updatedMember);
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white">
-          <h2 className="text-xl font-bold text-gray-900">Rediger medlem</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
-          {/* Photo Upload */}
-          <div className="flex justify-center mb-6">
-            <div className="relative">
-              <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border-4 border-white shadow-lg">
-                {photoPath ? (
-                  <img
-                    src={photoPath.startsWith('data:') || photoPath.startsWith('http') ? photoPath : `file://${photoPath}`}
-                    alt="Medlemsfoto"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <User className="w-12 h-12 text-gray-400" />
-                )}
-              </div>
-              <label className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors shadow-md">
-                <Camera className="w-4 h-4 text-white" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoChange}
-                  className="hidden"
-                />
-              </label>
-              {photoPath && (
-                <button
-                  type="button"
-                  onClick={removePhoto}
-                  className="absolute top-0 right-0 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-md"
-                >
-                  <Trash2 className="w-3 h-3 text-white" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Two-column layout for form fields */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-            {/* Left column */}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Fornavn <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Efternavn <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Telefon
-                </label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Fødselsdag
-                </label>
-                <input
-                  type="date"
-                  value={birthday}
-                  onChange={(e) => setBirthday(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Køn
-                </label>
-                <select
-                  value={gender}
-                  onChange={(e) => setGender(e.target.value as Gender | '')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                >
-                  <option value="">Vælg køn</option>
-                  <option value="MALE">Mand</option>
-                  <option value="FEMALE">Kvinde</option>
-                  <option value="OTHER">Andet</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Right column */}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Medlemsnummer
-                </label>
-                {!showMembershipIdEdit ? (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={membershipId || '(ikke tildelt)'}
-                      disabled
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowMembershipIdEdit(true)}
-                      className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                    >
-                      Ændre
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <input
-                      type="text"
-                      value={membershipId}
-                      onChange={(e) => {
-                        setMembershipId(e.target.value);
-                        setMembershipIdError(null);
-                      }}
-                      placeholder="Indtast medlemsnummer"
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
-                        membershipIdError ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {membershipIdError && (
-                      <p className="mt-1 text-xs text-red-600">{membershipIdError}</p>
-                    )}
-                    <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-xs text-amber-800">
-                        <strong>Advarsel:</strong> Ændring af medlemsnummer påvirker check-in og QR-koder. Brug kun i særlige tilfælde.
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {member.memberLifecycleStage === 'TRIAL' && !showMembershipIdEdit && (
-                  <p className="mt-1 text-xs text-amber-600">Prøvemedlem - brug "Tildel medlemsnummer" knappen for at opgradere</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                >
-                  <option value="ACTIVE">Aktiv</option>
-                  <option value="INACTIVE">Inaktiv</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Kontingenttype
-                </label>
-                <select
-                  value={feeCategory}
-                  onChange={(e) => setFeeCategory(e.target.value as Member['memberType'])}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                >
-                  <option value="ADULT">Voksen</option>
-                  <option value="CHILD" disabled={!isUnder18}>Barn</option>
-                  <option value="CHILD_PLUS" disabled={!isUnder18}>Barn+</option>
-                  <option value="HONORARY">Æresmedlem</option>
-                </select>
-                {!isUnder18 && feeCategory !== 'HONORARY' && (
-                  <p className="mt-1 text-xs text-gray-500">Kun børn under 18 kan være Barn eller Barn+</p>
-                )}
-                {feeCategory === 'HONORARY' && (
-                  <p className="mt-1 text-xs text-amber-600">Æresmedlemmer betaler ikke kontingent</p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Adresse
-                </label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Postnummer
-                  </label>
-                  <input
-                    type="text"
-                    value={zipCode}
-                    onChange={(e) => setZipCode(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    By
-                  </label>
-                  <input
-                    type="text"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Guardian section for under-18 members - full width */}
-          {isUnder18 && (
-            <div className="border-t border-gray-200 pt-4 mt-6">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Forælder/værge (medlem under 18)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Navn på forælder/værge
-                  </label>
-                  <input
-                    type="text"
-                    value={guardianName}
-                    onChange={(e) => setGuardianName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Telefon (forælder/værge)
-                  </label>
-                  <input
-                    type="tel"
-                    value={guardianPhone}
-                    onChange={(e) => setGuardianPhone(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email (forælder/værge)
-                  </label>
-                  <input
-                    type="email"
-                    value={guardianEmail}
-                    onChange={(e) => setGuardianEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex gap-3 pt-6 mt-6 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-medium"
-            >
-              Annuller
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-            >
-              Gem ændringer
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}

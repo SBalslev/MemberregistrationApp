@@ -391,10 +391,12 @@ export function FinancePage() {
     paymentDate: string;
     paymentMethod: PaymentMethod;
     notes: string | null;
+    directPost: boolean;
   }) => {
     const now = new Date().toISOString();
+    const paymentId = crypto.randomUUID();
     createPendingFeePayment({
-      id: crypto.randomUUID(),
+      id: paymentId,
       fiscalYear: selectedYear,
       memberId: payment.memberId,
       amount: payment.amount,
@@ -404,12 +406,17 @@ export function FinancePage() {
       createdAtUtc: now,
       updatedAtUtc: now,
     });
+    // If direct posting is enabled, immediately consolidate this single payment
+    if (payment.directPost) {
+      const feeCategoryId = categories.find(c => c.id === 'cat-kontingent')?.id || categories[0]?.id || 'cat-kontingent';
+      consolidatePendingFeePayments(selectedYear, [paymentId], 'Kontingentbetaling', payment.paymentDate, feeCategoryId);
+    }
     // Check if ID photo should be deleted (membership assigned + fee paid)
     onFeePaymentRecorded(payment.memberId);
     setIsQuickPaymentOpen(false);
     setQuickPaymentMemberId(undefined);
     loadData();
-    showSuccess('Kontingentbetaling registreret');
+    showSuccess(payment.directPost ? 'Kontingent posteret som transaktion' : 'Kontingentbetaling registreret');
   };
 
   // Handle consolidate fee payments
@@ -548,6 +555,7 @@ export function FinancePage() {
               className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               onClick={() => setIsYearSettingsOpen(true)}
               title="Årsindstillinger"
+              aria-label="Årsindstillinger"
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -557,6 +565,7 @@ export function FinancePage() {
               className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               onClick={handlePrint}
               title="Udskriv"
+              aria-label="Udskriv"
             >
               <Printer className="w-4 h-4" />
             </button>

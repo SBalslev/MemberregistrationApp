@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Tablet, Laptop, Wifi, WifiOff, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, X, Shield, Trash2 } from 'lucide-react';
 import { ConfirmDialog } from '../components';
+import { ConflictsPage } from './ConflictsPage';
 import { showError } from '../store/toastStore';
 import { isElectron, getElectronAPI } from '../types/electron';
 import { query, execute, saveTrustedDevice, getTrustedDevices, getMemberDataForFullSync, processSyncPayload, SYNC_SCHEMA_VERSION, type SyncPayload } from '../database';
@@ -17,7 +18,18 @@ import { collectEntitiesForDevice, getRequiredOutboxTargets, hasDeliveredEntries
 import { onlineApiService } from '../database/onlineApiService';
 import type { DeviceInfo } from '../types/entities';
 
-export function DevicesPage() {
+const DEVICE_TYPE_LABELS: Record<string, string> = {
+  MEMBER_TABLET: 'Medlemstablet',
+  TRAINER_TABLET: 'Trænertablet',
+  LAPTOP: 'Laptop',
+};
+
+function getDeviceTypeLabel(type: string): string {
+  return DEVICE_TYPE_LABELS[type] || type;
+}
+
+export function DevicesPage({ initialTab }: { initialTab?: 'devices' | 'conflicts' } = {}) {
+  const [activeTab, setActiveTab] = useState<'devices' | 'conflicts'>(initialTab ?? 'devices');
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [serverStatus, setServerStatus] = useState<{ running: boolean; port: number } | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<DeviceInfo | null>(null);
@@ -299,16 +311,46 @@ export function DevicesPage() {
 
   const onlineCount = devices.filter(d => d.isOnline || isRecentlySeen(d.lastSeenUtc)).length;
 
-  if (isLoading) {
-    return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col">
+      {/* Tab bar */}
+      <div className="border-b border-gray-200 bg-white flex-shrink-0">
+        <nav className="flex px-6" aria-label="Enheder navigation">
+          <button
+            onClick={() => setActiveTab('devices')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'devices'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Enheder
+          </button>
+          <button
+            onClick={() => setActiveTab('conflicts')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'conflicts'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Konflikter
+          </button>
+        </nav>
+      </div>
+
+      {/* Content */}
+      {activeTab === 'conflicts' ? (
+        <div className="flex-1 overflow-hidden">
+          <ConflictsPage />
+        </div>
+      ) : isLoading ? (
+        <div className="p-8 flex items-center justify-center flex-1">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
+      <>
+      <div className="flex-1 flex overflow-hidden">
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
@@ -410,7 +452,7 @@ export function DevicesPage() {
                         </div>
                         <div>
                           <div className="font-medium text-gray-900">{device.name}</div>
-                          <div className="text-sm text-gray-500">{device.type}</div>
+                          <div className="text-sm text-gray-500">{getDeviceTypeLabel(device.type)}</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -459,7 +501,7 @@ export function DevicesPage() {
                     </div>
                     <div>
                       <h2 className="text-xl font-bold text-gray-900">{selectedDevice.name}</h2>
-                      <p className="text-gray-500">{selectedDevice.type}</p>
+                      <p className="text-gray-500">{getDeviceTypeLabel(selectedDevice.type)}</p>
                     </div>
                   </div>
 
@@ -753,6 +795,7 @@ export function DevicesPage() {
           </div>
         </div>
       )}
+      </div>{/* close flex-1 flex overflow-hidden wrapper */}
 
       {/* Pairing Modal */}
       {showPairingModal && pairingCode && (
@@ -827,6 +870,8 @@ export function DevicesPage() {
         onConfirm={() => deviceToRemove && executeDeviceRemoval(deviceToRemove)}
         onClose={() => setDeviceToRemove(null)}
       />
+      </>
+      )}
     </div>
   );
 }

@@ -57,7 +57,17 @@ export function ToastContainer() {
             className={`${style.bg} ${style.border} border rounded-lg shadow-lg p-4 flex items-start gap-3 animate-slide-in-right`}
           >
             <Icon className={`w-5 h-5 ${style.icon} flex-shrink-0 mt-0.5`} />
-            <p className={`${style.text} flex-1 text-sm`}>{toast.message}</p>
+            <div className="flex-1 min-w-0">
+              <p className={`${style.text} text-sm`}>{toast.message}</p>
+              {toast.onUndo && (
+                <button
+                  onClick={() => { toast.onUndo!(); removeToast(toast.id); }}
+                  className={`${style.text} text-sm font-medium underline hover:opacity-70 mt-1`}
+                >
+                  Fortryd
+                </button>
+              )}
+            </div>
             <button
               onClick={() => removeToast(toast.id)}
               className={`${style.icon} hover:opacity-70 flex-shrink-0`}

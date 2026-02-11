@@ -12,6 +12,7 @@ export interface Toast {
   type: ToastType;
   message: string;
   duration?: number;
+  onUndo?: () => void;
 }
 
 interface ToastState {
@@ -44,13 +45,21 @@ export const useToastStore = create<ToastState>((set) => ({
     })),
 }));
 
-// Convenience functions for showing toasts
-export function showToast(message: string, type: ToastType = 'info', duration?: number) {
-  useToastStore.getState().addToast({ message, type, duration });
+export interface ToastOptions {
+  duration?: number;
+  onUndo?: () => void;
 }
 
-export function showSuccess(message: string, duration?: number) {
-  showToast(message, 'success', duration);
+// Convenience functions for showing toasts
+export function showToast(message: string, type: ToastType = 'info', durationOrOptions?: number | ToastOptions) {
+  const opts = typeof durationOrOptions === 'number' ? { duration: durationOrOptions } : durationOrOptions;
+  // Undo-capable toasts get longer duration by default (8s)
+  const duration = opts?.duration ?? (opts?.onUndo ? 8000 : undefined);
+  useToastStore.getState().addToast({ message, type, duration, onUndo: opts?.onUndo });
+}
+
+export function showSuccess(message: string, durationOrOptions?: number | ToastOptions) {
+  showToast(message, 'success', durationOrOptions);
 }
 
 export function showError(message: string, duration?: number) {

@@ -11,6 +11,7 @@ import { exportDatabase, importDatabase, clearDatabase } from '../database';
 import { buildSkvExportWorkbook } from '../utils/skvExport';
 import { OnlineSyncSettings } from '../components/settings';
 import { ConfirmDialog } from '../components';
+import { ImportPage } from './ImportPage';
 import { showError } from '../store/toastStore';
 
 interface AppSettings {
@@ -38,7 +39,8 @@ function getInitialSettings(): AppSettings {
   };
 }
 
-export function SettingsPage() {
+export function SettingsPage({ initialTab }: { initialTab?: 'settings' | 'import' } = {}) {
+  const [activeTab, setActiveTab] = useState<'settings' | 'import'>(initialTab ?? 'settings');
   const [settings, setSettings] = useState<AppSettings>(getInitialSettings);
   const [deviceInfo, setDeviceInfo] = useState<{ deviceId: string; deviceName: string } | null>(null);
   const [serverStatus, setServerStatus] = useState<{ running: boolean; port: number } | null>(null);
@@ -222,7 +224,39 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full flex flex-col">
+      {/* Tab bar */}
+      <div className="border-b border-gray-200 bg-white flex-shrink-0">
+        <nav className="flex px-6" aria-label="Indstillinger navigation">
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'settings'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Indstillinger
+          </button>
+          <button
+            onClick={() => setActiveTab('import')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'import'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Importer CSV
+          </button>
+        </nav>
+      </div>
+
+      {activeTab === 'import' ? (
+        <div className="flex-1 overflow-y-auto">
+          <ImportPage />
+        </div>
+      ) : (
+      <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto p-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Indstillinger</h1>
         <p className="text-gray-600 mb-8">Konfigurer applikationen</p>
@@ -499,6 +533,8 @@ export function SettingsPage() {
         cancelText="Annuller"
         variant="danger"
       />
+      </div>
+      )}
     </div>
   );
 }

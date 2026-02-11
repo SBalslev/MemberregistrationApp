@@ -10,6 +10,10 @@ import {
   CheckCircle,
   AlertTriangle,
   WifiOff,
+  ArrowRight,
+  Plus,
+  CreditCard,
+  RefreshCw,
 } from 'lucide-react';
 import { getMemberCountByStatus, getTrialMemberCount, getRecentTrialMembers, getAllMembers, query, type TrialMemberWithActivity } from '../database';
 import { useAppStore } from '../store';
@@ -94,6 +98,8 @@ export function DashboardPage() {
           label="Aktive medlemmer"
           value={stats.activeMembers}
           color="blue"
+          actionLabel="Se medlemmer"
+          onAction={() => setCurrentPage('members')}
         />
         <StatCard
           icon={UserPlus}
@@ -101,6 +107,8 @@ export function DashboardPage() {
           value={stats.trialMemberCount}
           color={stats.trialMemberCount > 0 ? 'amber' : 'green'}
           highlight={stats.trialMemberCount > 0}
+          actionLabel={stats.trialMemberCount > 0 ? 'Administrer' : undefined}
+          onAction={stats.trialMemberCount > 0 ? () => setCurrentPage('members') : undefined}
         />
         <StatCard
           icon={AlertTriangle}
@@ -108,6 +116,8 @@ export function DashboardPage() {
           value={stats.unpaidMembers}
           color={stats.unpaidMembers > 0 ? 'red' : 'green'}
           highlight={stats.unpaidMembers > 0}
+          actionLabel={stats.unpaidMembers > 0 ? 'Se kontingent' : undefined}
+          onAction={stats.unpaidMembers > 0 ? () => setCurrentPage('finance') : undefined}
         />
         <StatCard
           icon={Users}
@@ -115,16 +125,44 @@ export function DashboardPage() {
           value={stats.missingBirthdates}
           color={stats.missingBirthdates > 0 ? 'amber' : 'green'}
           highlight={stats.missingBirthdates > 0}
+          actionLabel={stats.missingBirthdates > 0 ? 'Se medlemmer' : undefined}
+          onAction={stats.missingBirthdates > 0 ? () => setCurrentPage('members') : undefined}
         />
       </div>
 
+      {/* Quick Actions */}
       <div className="mb-8">
-        <button
-          onClick={() => setCurrentPage('statistics')}
-          className="text-blue-600 hover:text-blue-700 font-medium text-sm"
-        >
-          Se detaljeret statistik →
-        </button>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Hurtige handlinger</h2>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setCurrentPage('members')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Plus className="w-4 h-4 text-blue-600" />
+            Tilføj medlem
+          </button>
+          <button
+            onClick={() => setCurrentPage('finance')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <CreditCard className="w-4 h-4 text-green-600" />
+            Registrer kontingent
+          </button>
+          <button
+            onClick={() => setCurrentPage('devices')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4 text-amber-600" />
+            Synkroniser
+          </button>
+          <button
+            onClick={() => setCurrentPage('statistics')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <ArrowRight className="w-4 h-4 text-gray-400" />
+            Se statistik
+          </button>
+        </div>
       </div>
 
       {/* Quick Actions */}
@@ -280,9 +318,11 @@ interface StatCardProps {
   value: number;
   color: 'blue' | 'green' | 'amber' | 'purple' | 'red';
   highlight?: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
-function StatCard({ icon: Icon, label, value, color, highlight }: StatCardProps) {
+function StatCard({ icon: Icon, label, value, color, highlight, actionLabel, onAction }: StatCardProps) {
   const colorClasses = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-green-50 text-green-600',
@@ -301,11 +341,20 @@ function StatCard({ icon: Icon, label, value, color, highlight }: StatCardProps)
         <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
           <Icon className="w-6 h-6" />
         </div>
-        <div>
+        <div className="flex-1">
           <p className="text-2xl font-bold text-gray-900">{value}</p>
           <p className="text-sm text-gray-600">{label}</p>
         </div>
       </div>
+      {actionLabel && onAction && (
+        <button
+          onClick={onAction}
+          className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+        >
+          {actionLabel}
+          <ArrowRight className="w-3 h-3" />
+        </button>
+      )}
     </div>
   );
 }

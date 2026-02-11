@@ -3,9 +3,10 @@
  * Sets up the app shell with sidebar navigation and page routing.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ToastContainer } from './components/Toast';
+import { CommandPalette } from './components/CommandPalette';
 import { showInfo, showError } from './store/toastStore';
 import {
   DashboardPage,
@@ -14,9 +15,7 @@ import {
   EquipmentPage,
   FinancePage,
   DevicesPage,
-  ConflictsPage,
   SettingsPage,
-  ImportPage,
   TrainersPage,
   StatisticsPage,
   MinIdraetSearchPage
@@ -33,8 +32,48 @@ const PERIODIC_PULL_INTERVAL_MS = 5 * 60 * 1000;
 const DISCOVERY_SYNC_DEBOUNCE_MS = 3000;
 
 function App() {
-  const { isDbInitialized, setDbInitialized, currentPage, triggerSync } = useAppStore();
+  const { isDbInitialized, setDbInitialized, currentPage, setCurrentPage, triggerSync } = useAppStore();
   const [error, setError] = useState<string | null>(null);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+
+  // Page labels for accessibility announcements
+  const PAGE_LABELS: Record<string, string> = {
+    dashboard: 'Dashboard', members: 'Medlemmer', statistics: 'Statistik',
+    'member-activity': 'Aktivitet', 'minidraet-search': 'DGI søgning',
+    trainers: 'Trænere', equipment: 'Udstyr', finance: 'Økonomi',
+    devices: 'Enheder', settings: 'Indstillinger',
+  };
+
+  // Ctrl+1-9/0 page navigation mapping
+  const PAGE_SHORTCUTS: Record<string, string> = {
+    '1': 'dashboard', '2': 'members', '3': 'statistics',
+    '4': 'member-activity', '5': 'minidraet-search', '6': 'trainers',
+    '7': 'equipment', '8': 'finance', '9': 'devices', '0': 'settings',
+  };
+
+  // Global keyboard shortcuts: Ctrl+K (command palette) + Ctrl+1-0 (page nav)
+  const handleGlobalShortcuts = useCallback((e: KeyboardEvent) => {
+    // Skip if an input/textarea/select is focused (except for Ctrl+K)
+    const target = e.target as HTMLElement;
+    const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
+
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      setIsCommandPaletteOpen((prev) => !prev);
+      return;
+    }
+
+    // Ctrl+1-9/0 page navigation (only when no input is focused)
+    if ((e.ctrlKey || e.metaKey) && !isInputFocused && PAGE_SHORTCUTS[e.key]) {
+      e.preventDefault();
+      setCurrentPage(PAGE_SHORTCUTS[e.key]);
+    }
+  }, [setCurrentPage]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleGlobalShortcuts);
+    return () => document.removeEventListener('keydown', handleGlobalShortcuts);
+  }, [handleGlobalShortcuts]);
 
   // Task 6.5: Track last discovery sync to debounce
   const lastDiscoverySyncRef = useRef<number>(0);
@@ -303,13 +342,20 @@ function App() {
 
   return (
     <div className="h-screen flex overflow-hidden">
+      {/* Skip to content link (accessibility) */}
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-blue-600 focus:text-white focus:rounded-lg focus:text-sm focus:font-medium">
+        Spring til indhold
+      </a>
       <div className="no-print">
         <Sidebar />
       </div>
-      <main className="flex-1 overflow-hidden bg-gray-50 relative">
+      <main id="main-content" className="flex-1 overflow-hidden bg-gray-50 relative">
         <PageRouter currentPage={currentPage} />
       </main>
+      {/* Route change announcement (accessibility) */}
+      <div aria-live="polite" className="sr-only">{`Navigeret til ${PAGE_LABELS[currentPage] || currentPage}`}</div>
       <ToastContainer />
+      <CommandPalette isOpen={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} />
     </div>
   );
 }
@@ -337,11 +383,11 @@ function PageRouter({ currentPage }: { currentPage: string }) {
     case 'devices':
       return <DevicesPage />;
     case 'conflicts':
-      return <ConflictsPage />;
+      return <DevicesPage initialTab="conflicts" />;
     case 'settings':
       return <SettingsPage />;
     case 'import':
-      return <ImportPage />;
+      return <SettingsPage initialTab="import" />;
     case 'minidraet-search':
       return <MinIdraetSearchPage />;
     default:

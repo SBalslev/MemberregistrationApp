@@ -26,6 +26,7 @@ interface QuickFeePaymentDialogProps {
     paymentDate: string;
     paymentMethod: PaymentMethod;
     notes: string | null;
+    directPost: boolean;
   }) => void;
   members: Member[];
   feeRates: FeeRate[];
@@ -60,6 +61,7 @@ export function QuickFeePaymentDialog({
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
   const [notes, setNotes] = useState('');
+  const [directPost, setDirectPost] = useState(false);
 
   // Track previous isOpen to detect dialog opening
   const [wasOpen, setWasOpen] = useState(false);
@@ -116,6 +118,7 @@ export function QuickFeePaymentDialog({
       paymentDate,
       paymentMethod,
       notes: notes.trim() || null,
+      directPost,
     });
     onClose();
   };
@@ -255,12 +258,23 @@ export function QuickFeePaymentDialog({
               />
             </div>
 
-            {/* Info box */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
-              <p>
-                Denne betaling registreres som afventende og kan konsolideres til en transaktion senere.
-              </p>
-            </div>
+            {/* Direct posting toggle */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={directPost}
+                onChange={(e) => setDirectPost(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-700">Opret transaktion direkte</span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {directPost
+                    ? 'Betalingen posteres som en færdig transaktion med det samme.'
+                    : 'Betalingen registreres som afventende og kan konsolideres til en transaktion senere.'}
+                </p>
+              </div>
+            </label>
 
             {/* Actions */}
             <div className="flex justify-end gap-3 pt-2">
