@@ -191,6 +191,16 @@ export interface EntityCounts {
   pending_fee_payments: number;
 }
 
+/**
+ * Detailed information about a cloud record for display in the admin UI.
+ */
+export interface CloudRecordDetail {
+  id: string;
+  display: string;
+  details: string;
+  created: string | null;
+}
+
 export type MinIdraetSearchType = 'forening' | 'spillested' | 'udover';
 
 export interface MinIdraetSearchRequest {
@@ -1332,6 +1342,7 @@ class OnlineApiService {
 
   /**
    * Compare local IDs with cloud IDs for a specific entity type.
+   * Returns detailed information about records that only exist in the cloud.
    */
   async compareEntityIds(
     entityType: string,
@@ -1341,6 +1352,7 @@ class OnlineApiService {
     localCount: number;
     cloudCount: number;
     onlyInCloud: string[];
+    onlyInCloudDetails: CloudRecordDetail[];
     onlyInLocal: string[];
   }> {
     const response = await this.request<{
@@ -1348,6 +1360,12 @@ class OnlineApiService {
       local_count: number;
       cloud_count: number;
       only_in_cloud: string[];
+      only_in_cloud_details: Array<{
+        id: string;
+        display: string;
+        details: string;
+        created: string | null;
+      }>;
       only_in_local: string[];
     }>('POST', `/admin/entities/${entityType}/compare`, {
       local_ids: localIds,
@@ -1358,6 +1376,7 @@ class OnlineApiService {
       localCount: response.local_count,
       cloudCount: response.cloud_count,
       onlyInCloud: response.only_in_cloud,
+      onlyInCloudDetails: response.only_in_cloud_details || [],
       onlyInLocal: response.only_in_local,
     };
   }

@@ -30,6 +30,7 @@ import {
   type OnlineConnectionStatus,
   type AuthResult,
   type ApiDiagnosticResult,
+  type CloudRecordDetail,
 } from '../../database/onlineApiService';
 import {
   onlineSyncService,
@@ -96,6 +97,7 @@ export function OnlineSyncSettings() {
     localCount: number;
     cloudCount: number;
     onlyInCloud: string[];
+    onlyInCloudDetails: CloudRecordDetail[];
     onlyInLocal: string[];
   } | null>(null);
   const [isLoadingComparison, setIsLoadingComparison] = useState(false);
@@ -1163,17 +1165,45 @@ export function OnlineSyncSettings() {
                     <p className="text-sm text-yellow-700 mb-3">
                       Disse poster findes i cloud men ikke lokalt. Slet dem fra cloud for at synkronisere.
                     </p>
-                    <div className="max-h-40 overflow-y-auto bg-white rounded border border-yellow-200 p-2">
-                      <div className="text-xs font-mono text-gray-600 space-y-1">
-                        {cloudComparison.onlyInCloud.slice(0, 50).map((id) => (
-                          <div key={id} className="truncate">{id}</div>
-                        ))}
-                        {cloudComparison.onlyInCloud.length > 50 && (
-                          <div className="text-gray-400">
-                            ... og {cloudComparison.onlyInCloud.length - 50} flere
-                          </div>
-                        )}
-                      </div>
+                    <div className="max-h-60 overflow-y-auto bg-white rounded border border-yellow-200">
+                      {cloudComparison.onlyInCloudDetails.length > 0 ? (
+                        <table className="w-full text-sm">
+                          <thead className="bg-yellow-100 sticky top-0">
+                            <tr>
+                              <th className="text-left px-3 py-2 text-yellow-800">Navn/Titel</th>
+                              <th className="text-left px-3 py-2 text-yellow-800">Detaljer</th>
+                              <th className="text-left px-3 py-2 text-yellow-800 w-24">Oprettet</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-yellow-100">
+                            {cloudComparison.onlyInCloudDetails.slice(0, 100).map((record) => (
+                              <tr key={record.id} className="hover:bg-yellow-50">
+                                <td className="px-3 py-2">
+                                  <div className="font-medium text-gray-900">{record.display}</div>
+                                  <div className="text-xs text-gray-400 font-mono">{record.id}</div>
+                                </td>
+                                <td className="px-3 py-2 text-gray-600">{record.details}</td>
+                                <td className="px-3 py-2 text-gray-500 text-xs">
+                                  {record.created
+                                    ? new Date(record.created).toLocaleDateString('da-DK')
+                                    : '-'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="p-3 text-xs font-mono text-gray-600 space-y-1">
+                          {cloudComparison.onlyInCloud.slice(0, 50).map((id) => (
+                            <div key={id} className="truncate">{id}</div>
+                          ))}
+                        </div>
+                      )}
+                      {cloudComparison.onlyInCloud.length > 100 && (
+                        <div className="px-3 py-2 text-sm text-gray-400 bg-yellow-50 border-t border-yellow-200">
+                          ... og {cloudComparison.onlyInCloud.length - 100} flere poster
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
