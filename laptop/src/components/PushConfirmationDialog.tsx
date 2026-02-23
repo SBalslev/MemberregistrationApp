@@ -7,7 +7,7 @@
  * @see [design.md FR-4.3] - Manual Push
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { X, Check, AlertCircle, Loader, Tablet, Laptop, Send, Wifi, WifiOff } from 'lucide-react';
 import type { DeviceInfo } from '../types/entities';
 import { useAppStore, setSyncResultCallback, type SyncResultNotification } from '../store/appStore';
@@ -30,51 +30,44 @@ interface DeviceSyncStatus {
 
 export function PushConfirmationDialog({ isOpen, onClose, devices }: Props) {
   const { triggerSync, isSyncing } = useAppStore();
-  const [memberCount, setMemberCount] = useState(0);
-  const [deviceStatuses, setDeviceStatuses] = useState<DeviceSyncStatus[]>([]);
-  const [syncComplete, setSyncComplete] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResultNotification | null>(null);
 
-  // Get member count on open
-  useEffect(() => {
-    if (isOpen) {
-      const members = getAllMembers();
-      setMemberCount(members.length);
-      
-      // Initialize device statuses
-      setDeviceStatuses(
-        devices
-          .filter(d => d.isTrusted)
-          .map(d => ({
-            deviceId: d.id,
-            status: d.isOnline ? 'pending' : 'error',
-            error: d.isOnline ? undefined : 'Offline'
-          }))
-      );
-      setSyncComplete(false);
-      setSyncResult(null);
-    }
-  }, [isOpen, devices]);
+  const memberCount = useMemo(() => {
+    if (!isOpen) return 0;
+    return getAllMembers().length;
+  }, [isOpen]);
+
+  const syncComplete = !!syncResult;
+
+  const deviceStatuses = useMemo<DeviceSyncStatus[]>(() => {
+    if (!isOpen) return [];
+    return devices
+      .filter(d => d.isTrusted)
+      .map(d => {
+        let status: DeviceSyncStatus['status'] = d.isOnline ? 'pending' : 'error';
+        if (d.isOnline && isSyncing && !syncComplete) {
+          status = 'pushing';
+        }
+        if (d.isOnline && syncComplete) {
+          status = syncResult?.success ? 'success' : 'error';
+        }
+
+        return {
+          deviceId: d.id,
+          status,
+          error: d.isOnline ? undefined : 'Offline',
+          membersPushed: syncResult?.membersPushed,
+          checkInsReceived: syncResult?.checkInsReceived,
+          sessionsReceived: syncResult?.sessionsReceived,
+        };
+      });
+  }, [devices, isOpen, isSyncing, syncComplete, syncResult]);
 
   // Listen for sync result
   useEffect(() => {
     if (isOpen) {
       setSyncResultCallback((result) => {
         setSyncResult(result);
-        setSyncComplete(true);
-        
-        // Update all device statuses to success
-        setDeviceStatuses(prev =>
-          prev.map(ds => ({
-            ...ds,
-            status: ds.status === 'pending' || ds.status === 'pushing' || ds.status === 'pulling'
-              ? (result.success ? 'success' : 'error')
-              : ds.status,
-            membersPushed: result.membersPushed,
-            checkInsReceived: result.checkInsReceived,
-            sessionsReceived: result.sessionsReceived
-          }))
-        );
       });
     }
     
@@ -83,26 +76,14 @@ export function PushConfirmationDialog({ isOpen, onClose, devices }: Props) {
     };
   }, [isOpen]);
 
-  // Update device statuses when sync starts
-  useEffect(() => {
-    if (isSyncing && !syncComplete) {
-      setDeviceStatuses(prev =>
-        prev.map(ds => ({
-          ...ds,
-          status: ds.status === 'pending' ? 'pushing' : ds.status
-        }))
-      );
-    }
-  }, [isSyncing, syncComplete]);
-
   async function handlePush() {
-    setSyncComplete(false);
     setSyncResult(null);
     await triggerSync();
   }
 
   function handleClose() {
     if (!isSyncing) {
+      setSyncResult(null);
       onClose();
     }
   }

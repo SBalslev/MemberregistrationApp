@@ -74,15 +74,16 @@ export function FinancePage() {
   const [externallyPaidPayments, setExternallyPaidPayments] = useState<PendingFeePaymentWithMember[]>(() =>
     getExternallyPaidFeePayments(currentYear)
   );
-  const [feeRateDrafts, setFeeRateDrafts] = useState<Record<MemberType, string>>(() => {
-    const initialRates = getFeeRatesForYear(currentYear);
-    return {
-      ADULT: String(initialRates.find((r) => r.memberType === 'ADULT')?.feeAmount ?? ''),
-      CHILD: String(initialRates.find((r) => r.memberType === 'CHILD')?.feeAmount ?? ''),
-      CHILD_PLUS: String(initialRates.find((r) => r.memberType === 'CHILD_PLUS')?.feeAmount ?? ''),
-      HONORARY: String(initialRates.find((r) => r.memberType === 'HONORARY')?.feeAmount ?? '0'),
-    };
-  });
+  const buildFeeRateDrafts = useCallback((rates: FeeRate[]) => ({
+    ADULT: String(rates.find((r) => r.memberType === 'ADULT')?.feeAmount ?? ''),
+    CHILD: String(rates.find((r) => r.memberType === 'CHILD')?.feeAmount ?? ''),
+    CHILD_PLUS: String(rates.find((r) => r.memberType === 'CHILD_PLUS')?.feeAmount ?? ''),
+    HONORARY: String(rates.find((r) => r.memberType === 'HONORARY')?.feeAmount ?? '0'),
+  }), []);
+
+  const [feeRateDrafts, setFeeRateDrafts] = useState<Record<MemberType, string>>(() =>
+    buildFeeRateDrafts(getFeeRatesForYear(currentYear))
+  );
   const [feeRateError, setFeeRateError] = useState<string | null>(null);
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -110,15 +111,6 @@ export function FinancePage() {
   }, []);
 
   useEffect(() => {
-    setFeeRateDrafts({
-      ADULT: String(feeRates.find((r) => r.memberType === 'ADULT')?.feeAmount ?? ''),
-      CHILD: String(feeRates.find((r) => r.memberType === 'CHILD')?.feeAmount ?? ''),
-      CHILD_PLUS: String(feeRates.find((r) => r.memberType === 'CHILD_PLUS')?.feeAmount ?? ''),
-      HONORARY: String(feeRates.find((r) => r.memberType === 'HONORARY')?.feeAmount ?? '0'),
-    });
-  }, [feeRates]);
-
-  useEffect(() => {
     if (!printTransactionId) return;
     const timer = window.setTimeout(() => window.print(), 0);
     return () => window.clearTimeout(timer);
@@ -138,7 +130,9 @@ export function FinancePage() {
     setCategories(getCategories());
     setMembers(getAllMembers());
     setFiscalYears(getFiscalYears());
-    setFeeRates(getFeeRatesForYear(selectedYear));
+    const nextFeeRates = getFeeRatesForYear(selectedYear);
+    setFeeRates(nextFeeRates);
+    setFeeRateDrafts(buildFeeRateDrafts(nextFeeRates));
     setPendingPayments(getPendingFeePayments(selectedYear));
     setExternallyPaidPayments(getExternallyPaidFeePayments(selectedYear));
 
@@ -170,12 +164,14 @@ export function FinancePage() {
     setCategories(getCategories());
     setMembers(getAllMembers());
     setFiscalYears(getFiscalYears());
-    setFeeRates(getFeeRatesForYear(selectedYear));
+    const nextFeeRates = getFeeRatesForYear(selectedYear);
+    setFeeRates(nextFeeRates);
+    setFeeRateDrafts(buildFeeRateDrafts(nextFeeRates));
     setPendingPayments(getPendingFeePayments(selectedYear));
     setExternallyPaidPayments(getExternallyPaidFeePayments(selectedYear));
-  }, [selectedYear]);
+  }, [buildFeeRateDrafts, selectedYear]);
 
-  const selectedFiscalYear = useMemo(() => getFiscalYear(selectedYear), [selectedYear, fiscalYears]);
+  const selectedFiscalYear = useMemo(() => getFiscalYear(selectedYear), [selectedYear]);
 
   const handleFeeRateChange = (memberType: MemberType, value: string) => {
     setFeeRateDrafts((prev) => ({
@@ -204,7 +200,9 @@ export function FinancePage() {
     }
 
     parsedRates.forEach((rate) => setFeeRate(selectedYear, rate.memberType, rate.amount));
-    setFeeRates(getFeeRatesForYear(selectedYear));
+    const nextFeeRates = getFeeRatesForYear(selectedYear);
+    setFeeRates(nextFeeRates);
+    setFeeRateDrafts(buildFeeRateDrafts(nextFeeRates));
   };
 
   // Calculate display rows with running balances

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import { render, fireEvent, screen } from '@testing-library/react';
 import { MemberActivityOverviewPage } from './MemberActivityOverviewPage';
 
@@ -8,7 +9,7 @@ vi.mock('recharts', async () => {
   const actual = await vi.importActual<typeof import('recharts')>('recharts');
   return {
     ...actual,
-    ResponsiveContainer: ({ width, height, children }: { width?: number | string; height?: number | string; children: any }) => (
+    ResponsiveContainer: ({ width, height, children }: { width?: number | string; height?: number | string; children: ReactNode | ((args: { width: number; height: number }) => ReactNode) }) => (
       <div style={{ width: width ?? 800, height: height ?? 400 }}>
         {typeof children === 'function' ? children({ width: 800, height: 400 }) : children}
       </div>

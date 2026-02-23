@@ -12,14 +12,18 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock the database module
 vi.mock('./db', () => {
-  const mockData: Record<string, unknown[]> = {
+  const mockData: {
+    registrations: Array<{ id: string; approvalStatus?: string }>;
+    checkIns: Array<{ id: string }>;
+    sessions: Array<{ id: string }>;
+  } = {
     registrations: [],
     checkIns: [],
     sessions: [],
   };
   
   return {
-    execute: vi.fn((_sql: string, _params?: unknown[]) => {
+    execute: vi.fn(() => {
       // Track what was executed for assertions
       return { changes: 1 };
     }),
@@ -27,18 +31,18 @@ vi.mock('./db', () => {
       // Return mock data based on the query
       if (sql.includes('NewMemberRegistration') && sql.includes('WHERE id =')) {
         const id = params?.[0];
-        return mockData.registrations.filter((r: any) => r.id === id) as T[];
+        return mockData.registrations.filter((r) => r.id === id) as T[];
       }
       if (sql.includes('NewMemberRegistration') && sql.includes('approvalStatus !=')) {
-        return mockData.registrations.filter((r: any) => r.approvalStatus !== 'PENDING') as T[];
+        return mockData.registrations.filter((r) => r.approvalStatus !== 'PENDING') as T[];
       }
       if (sql.includes('CheckIn') && sql.includes('WHERE id =')) {
         const id = params?.[0];
-        return mockData.checkIns.filter((c: any) => c.id === id) as T[];
+        return mockData.checkIns.filter((c) => c.id === id) as T[];
       }
       if (sql.includes('PracticeSession') && sql.includes('WHERE id =')) {
         const id = params?.[0];
-        return mockData.sessions.filter((s: any) => s.id === id) as T[];
+        return mockData.sessions.filter((s) => s.id === id) as T[];
       }
       return [] as T[];
     }),
@@ -214,11 +218,14 @@ describe('Sync Service - Registration Operations', () => {
         approvalStatus: 'PENDING',
         syncVersion: 1,
       };
+
+      type PendingReg = typeof pendingReg;
+      void pendingReg;
       
       vi.mocked(query).mockReturnValueOnce([]); // Query filters out PENDING
 
       // Act
-      const toSync = query<typeof pendingReg>(
+      const toSync = query<PendingReg>(
         `SELECT * FROM NewMemberRegistration 
          WHERE approvalStatus != 'PENDING'`
       );

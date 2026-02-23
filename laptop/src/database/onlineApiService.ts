@@ -1268,10 +1268,11 @@ class OnlineApiService {
             this.tokenExpiry = null;
             throw new AuthenticationError(errorData.error || 'Authentication required');
 
-          case 429:
+          case 429: {
             // Rate limited
             const retryAfter = errorData.retry_after_seconds || 60;
             throw new RateLimitError(retryAfter);
+          }
 
           case 409:
             // Conflict

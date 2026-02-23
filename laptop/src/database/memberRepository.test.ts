@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTrialMemberCount, getRecentTrialMembers, getMemberDeletePreview, deleteMemberPermanently } from './memberRepository';
+import { getTrialMemberCount, getRecentTrialMembers, getMemberDeletePreview, deleteMemberPermanently, getUniqueMemberEmailsByFeeCategory } from './memberRepository';
 
 // Mock the database module
 const mockData: {
@@ -62,7 +62,7 @@ vi.mock('./syncOutboxRepository', () => ({
 }));
 
 vi.mock('./db', () => ({
-  execute: vi.fn((_sql: string, _params?: unknown[]) => {
+  execute: vi.fn(() => {
     return { changes: 1 };
   }),
   query: vi.fn(<T>(sql: string, params?: unknown[]): T[] => {
@@ -109,6 +109,11 @@ vi.mock('./db', () => ({
     if (sql.includes('FROM Member') && sql.includes('WHERE membershipId =')) {
       const id = params?.[0];
       return mockData.members.filter((m) => m.membershipId === id) as T[];
+    }
+    if (sql.includes('SELECT memberType, email') && sql.includes('FROM Member')) {
+      return mockData.members
+        .filter((m) => m.email && m.email.trim() !== '' && m.mergedIntoId === null)
+        .map((m) => ({ memberType: m.memberType, email: m.email })) as T[];
     }
     if (sql.includes("FROM Member") && sql.includes("memberType = 'TRIAL'")) {
       return mockData.members.filter((m) => m.memberType === 'TRIAL') as T[];
@@ -1044,6 +1049,26 @@ describe('Permanent Member Deletion', () => {
           pendingFeePaymentIds: ['payment-1'],
         })
       );
+    });
+  });
+
+  describe('getUniqueMemberEmailsByFeeCategory', () => {
+    it('returns normalized unique emails per fee category', () => {
+      mockData.members = [
+        { internalId: 'uuid-1', membershipId: 'M001', memberType: 'ADULT', memberLifecycleStage: 'FULL', firstName: 'A', lastName: 'One', email: 'Test@Example.com', phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-2', membershipId: 'M002', memberType: 'ADULT', memberLifecycleStage: 'FULL', firstName: 'B', lastName: 'Two', email: ' test@example.com ', phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-3', membershipId: 'M003', memberType: 'CHILD', memberLifecycleStage: 'FULL', firstName: 'C', lastName: 'Three', email: 'child@example.com', phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-4', membershipId: 'M004', memberType: 'CHILD', memberLifecycleStage: 'FULL', firstName: 'D', lastName: 'Four', email: 'child@example.com', phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-5', membershipId: 'M005', memberType: 'HONORARY', memberLifecycleStage: 'FULL', firstName: 'E', lastName: 'Five', email: '', phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: null },
+        { internalId: 'uuid-6', membershipId: 'M006', memberType: 'ADULT', memberLifecycleStage: 'FULL', firstName: 'F', lastName: 'Six', email: 'merged@example.com', phone: null, birthday: null, status: 'ACTIVE', createdAtUtc: '2026-01-10T10:00:00Z', mergedIntoId: 'uuid-1' },
+      ];
+
+      const rows = getUniqueMemberEmailsByFeeCategory();
+
+      expect(rows).toEqual([
+        { memberType: 'ADULT', email: 'test@example.com' },
+        { memberType: 'CHILD', email: 'child@example.com' },
+      ]);
     });
   });
 });

@@ -1782,7 +1782,8 @@ class OnlineSyncService {
         // Photo download from server can be implemented later for disaster recovery.
         const photos = entities['photos'] as OnlinePhotoMetadata[] | undefined;
         if (photos) {
-          for (const _photo of photos) {
+          for (const photo of photos) {
+            void photo;
             // TODO: If photo doesn't exist locally, download it from server
             // For now, just count photos received from server
             pulled.photos++;

@@ -125,12 +125,15 @@ export function Sidebar() {
     }).catch((err) => {
       console.error('[Sidebar] Subnet scan failed:', err);
     });
-  }, [updateDeviceStatus]);
+  }, [setPairedDevices]);
 
   // Track if we've done initial probe
   const hasProbed = useRef(false);
   const devicesRef = useRef(pairedDevices);
-  devicesRef.current = pairedDevices;
+
+  useEffect(() => {
+    devicesRef.current = pairedDevices;
+  }, [pairedDevices]);
 
   // Probe function using ref to avoid dependency on pairedDevices
   const probeDevices = useCallback(async () => {

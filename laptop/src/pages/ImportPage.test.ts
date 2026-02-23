@@ -12,7 +12,7 @@ import {
   normalizeStatus,
   normalizeGender,
   normalizeDateString
-} from './ImportPage';
+} from './importUtils';
 
 describe('CSV import helpers', () => {
   it('detects semicolon delimiter when it is dominant', () => {

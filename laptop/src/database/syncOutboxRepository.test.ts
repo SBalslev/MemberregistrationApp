@@ -18,10 +18,63 @@ vi.stubGlobal('crypto', {
 });
 
 // Store for mock data
-const mockOutboxEntries: Map<string, any> = new Map();
-const mockDeliveries: Map<string, any> = new Map();
-const mockProcessedMessages: Map<string, any> = new Map();
+interface MockOutboxEntry {
+  id: string;
+  entityType: string;
+  entityId: string;
+  operation: string;
+  payload: string;
+  createdAtUtc?: string;
+  attempts: number;
+  status: string;
+  lastAttemptUtc?: string | null;
+  lastError?: string | null;
+  nextRetryUtc?: string | null;
+}
+
+interface MockDeliveryEntry {
+  outboxId: string;
+  deviceId: string;
+  deliveredAtUtc: string | null;
+  attempts: number;
+  lastAttemptUtc?: string;
+  lastError?: string | null;
+}
+
+interface MockProcessedMessageEntry {
+  messageId: string;
+  sourceDeviceId: string;
+  processedAtUtc: string;
+}
+
+const mockOutboxEntries: Map<string, MockOutboxEntry> = new Map();
+const mockDeliveries: Map<string, MockDeliveryEntry> = new Map();
+const mockProcessedMessages: Map<string, MockProcessedMessageEntry> = new Map();
 let lastChangesCount = 0;
+
+const getOutboxEntry = (id: string): MockOutboxEntry => {
+  const entry = mockOutboxEntries.get(id);
+  if (!entry) {
+    throw new Error(`Missing outbox entry: ${id}`);
+  }
+  return entry;
+};
+
+const getDeliveryEntry = (key: string): MockDeliveryEntry => {
+  const entry = mockDeliveries.get(key);
+  if (!entry) {
+    throw new Error(`Missing delivery entry: ${key}`);
+  }
+  return entry;
+};
+
+const getProcessedMessageEntry = (messageId: string): MockProcessedMessageEntry => {
+  const entry = mockProcessedMessages.get(messageId);
+  if (!entry) {
+    throw new Error(`Missing processed message: ${messageId}`);
+  }
+  return entry;
+};
 
 // Mock the database module
 vi.mock('./db', () => {
@@ -29,7 +82,10 @@ vi.mock('./db', () => {
     execute: vi.fn((sql: string, params?: unknown[]) => {
       // Track INSERT operations
       if (sql.includes('INSERT INTO SyncOutbox') && !sql.includes('Delivery') && !sql.includes('ProcessedSyncMessage')) {
-        const [id, entityType, entityId, operation, payload, createdAtUtc] = params || [];
+        const [id, entityType, entityId, operation, payload, createdAtUtc] = (params ?? []) as Array<string | undefined>;
+        if (!id || !entityType || !entityId || !operation || !payload) {
+          return { changes: 1 };
+        }
         mockOutboxEntries.set(id as string, {
           id,
           entityType,
@@ -68,11 +124,11 @@ vi.mock('./db', () => {
           // Successful delivery tracking
           const outboxId = params?.[0] as string;
           const deviceId = params?.[1] as string;
-          const deliveredAtUtc = params?.[2] as string;
+          const deliveredAtUtc = params?.[2] as string | undefined;
           mockDeliveries.set(key, {
             outboxId,
             deviceId,
-            deliveredAtUtc: deliveredAtUtc || existing?.deliveredAtUtc,
+            deliveredAtUtc: deliveredAtUtc ?? existing?.deliveredAtUtc ?? null,
             attempts: (existing?.attempts || 0) + 1,
             lastAttemptUtc: new Date().toISOString(),
           });
@@ -81,9 +137,12 @@ vi.mock('./db', () => {
 
       // Track INSERT into ProcessedSyncMessage
       if (sql.includes('INSERT') && sql.includes('ProcessedSyncMessage')) {
-        const [messageId, sourceDeviceId, processedAtUtc] = params || [];
-        if (!mockProcessedMessages.has(messageId as string)) {
-          mockProcessedMessages.set(messageId as string, {
+        const [messageId, sourceDeviceId, processedAtUtc] = (params ?? []) as Array<string | undefined>;
+        if (!messageId || !sourceDeviceId || !processedAtUtc) {
+          return { changes: 1 };
+        }
+        if (!mockProcessedMessages.has(messageId)) {
+          mockProcessedMessages.set(messageId, {
             messageId,
             sourceDeviceId,
             processedAtUtc,
@@ -100,16 +159,16 @@ vi.mock('./db', () => {
             entry.status = 'completed';
           } else if (sql.includes("status = 'failed'")) {
             entry.status = 'failed';
-            entry.attempts = params?.[0];
-            entry.lastAttemptUtc = params?.[1];
-            entry.lastError = params?.[2];
+            entry.attempts = Number(params?.[0] ?? entry.attempts);
+            entry.lastAttemptUtc = (params?.[1] as string | null | undefined) ?? entry.lastAttemptUtc ?? null;
+            entry.lastError = (params?.[2] as string | null | undefined) ?? entry.lastError ?? null;
           } else if (sql.includes('attempts =') && sql.includes('nextRetryUtc =')) {
             // This is the failed attempt update with backoff
             entry.status = 'pending';
-            entry.attempts = params?.[0];
-            entry.lastAttemptUtc = params?.[1];
-            entry.lastError = params?.[2];
-            entry.nextRetryUtc = params?.[3];
+            entry.attempts = Number(params?.[0] ?? entry.attempts);
+            entry.lastAttemptUtc = (params?.[1] as string | null | undefined) ?? entry.lastAttemptUtc ?? null;
+            entry.lastError = (params?.[2] as string | null | undefined) ?? entry.lastError ?? null;
+            entry.nextRetryUtc = (params?.[3] as string | null | undefined) ?? entry.nextRetryUtc ?? null;
           }
         }
       }
@@ -145,7 +204,7 @@ vi.mock('./db', () => {
       // Get pending entries for device
       if (sql.includes('SELECT o.* FROM SyncOutbox o') && sql.includes('NOT EXISTS')) {
         const deviceId = params?.[1] as string;
-        const entries: any[] = [];
+        const entries: MockOutboxEntry[] = [];
         for (const entry of mockOutboxEntries.values()) {
           if (entry.status !== 'completed' && entry.status !== 'failed') {
             const deliveryKey = `${entry.id}-${deviceId}`;
@@ -270,7 +329,7 @@ describe('Sync Outbox Repository', () => {
       expect(outboxId).toBe('mock-uuid-12345');
       expect(mockOutboxEntries.has(outboxId)).toBe(true);
 
-      const entry = mockOutboxEntries.get(outboxId);
+      const entry = getOutboxEntry(outboxId);
       expect(entry.entityType).toBe('TestEntity');
       expect(entry.entityId).toBe('entity-1');
       expect(entry.operation).toBe('INSERT');
@@ -282,7 +341,7 @@ describe('Sync Outbox Repository', () => {
       const outboxId = queueMember(baseMember, 'INSERT');
 
       expect(outboxId).toBe('mock-uuid-12345');
-      const entry = mockOutboxEntries.get(outboxId);
+      const entry = getOutboxEntry(outboxId);
       expect(entry.entityType).toBe('Member');
       expect(entry.entityId).toBe('member-uuid');
       expect(entry.operation).toBe('INSERT');
@@ -291,7 +350,7 @@ describe('Sync Outbox Repository', () => {
     it('should queue a Member UPDATE operation', () => {
       queueMember({ ...baseMember, lastName: 'Updated' }, 'UPDATE');
 
-      const entry = mockOutboxEntries.get('mock-uuid-12345');
+      const entry = getOutboxEntry('mock-uuid-12345');
       expect(entry.operation).toBe('UPDATE');
     });
 
@@ -299,7 +358,7 @@ describe('Sync Outbox Repository', () => {
       const checkIn = { id: 'checkin-1', membershipId: 'M001', localDate: '2026-01-23' };
       queueCheckIn(checkIn);
 
-      const entry = mockOutboxEntries.get('mock-uuid-12345');
+      const entry = getOutboxEntry('mock-uuid-12345');
       expect(entry.entityType).toBe('CheckIn');
       expect(entry.entityId).toBe('checkin-1');
       expect(entry.operation).toBe('INSERT');
@@ -309,7 +368,7 @@ describe('Sync Outbox Repository', () => {
       const session = { id: 'session-1', membershipId: 'M001', practiceType: 'LUFTRIFFEL' };
       queuePracticeSession(session);
 
-      const entry = mockOutboxEntries.get('mock-uuid-12345');
+      const entry = getOutboxEntry('mock-uuid-12345');
       expect(entry.entityType).toBe('PracticeSession');
       expect(entry.entityId).toBe('session-1');
     });
@@ -318,7 +377,7 @@ describe('Sync Outbox Repository', () => {
       const checkout = { id: 'checkout-1', equipmentId: 'eq-1', membershipId: 'M001' };
       queueEquipmentCheckout(checkout, 'INSERT');
 
-      const entry = mockOutboxEntries.get('mock-uuid-12345');
+      const entry = getOutboxEntry('mock-uuid-12345');
       expect(entry.entityType).toBe('EquipmentCheckout');
       expect(entry.entityId).toBe('checkout-1');
     });
@@ -405,7 +464,7 @@ describe('Sync Outbox Repository', () => {
       const key = 'entry-1-tablet-1';
       expect(mockDeliveries.has(key)).toBe(true);
 
-      const delivery = mockDeliveries.get(key);
+      const delivery = getDeliveryEntry(key);
       expect(delivery.deliveredAtUtc).toBeTruthy();
       expect(delivery.attempts).toBe(1);
     });
@@ -453,7 +512,7 @@ describe('Sync Outbox Repository', () => {
     it('should increment attempt count on failure', () => {
       recordFailedAttempt('entry-1', 'tablet-1', 'Connection timeout');
 
-      const entry = mockOutboxEntries.get('entry-1');
+      const entry = getOutboxEntry('entry-1');
       expect(entry.attempts).toBe(1);
       expect(entry.lastError).toBe('Connection timeout');
       expect(entry.status).toBe('pending');
@@ -462,7 +521,7 @@ describe('Sync Outbox Repository', () => {
     it('should calculate backoff delay for retries', () => {
       // First failure - 0s delay
       recordFailedAttempt('entry-1', 'tablet-1', 'Error 1');
-      let entry = mockOutboxEntries.get('entry-1');
+      const entry = getOutboxEntry('entry-1');
       expect(entry.attempts).toBe(1);
       // nextRetryUtc should be set (backoff delay applied)
       expect(entry.nextRetryUtc).toBeTruthy();
@@ -470,12 +529,12 @@ describe('Sync Outbox Repository', () => {
 
     it('should mark entry as failed after max attempts', () => {
       // Set attempts to 9 (one below max)
-      mockOutboxEntries.get('entry-1').attempts = 9;
+      getOutboxEntry('entry-1').attempts = 9;
 
       // 10th attempt should mark as failed
       recordFailedAttempt('entry-1', 'tablet-1', 'Final error');
 
-      const entry = mockOutboxEntries.get('entry-1');
+      const entry = getOutboxEntry('entry-1');
       expect(entry.status).toBe('failed');
       expect(entry.attempts).toBe(10);
     });
@@ -486,7 +545,7 @@ describe('Sync Outbox Repository', () => {
       const key = 'entry-1-tablet-1';
       expect(mockDeliveries.has(key)).toBe(true);
 
-      const delivery = mockDeliveries.get(key);
+      const delivery = getDeliveryEntry(key);
       expect(delivery.attempts).toBe(1);
       expect(delivery.lastError).toBe('Error');
     });
@@ -508,7 +567,7 @@ describe('Sync Outbox Repository', () => {
     it('should mark an entry as completed', () => {
       markCompleted('entry-1');
 
-      const entry = mockOutboxEntries.get('entry-1');
+      const entry = getOutboxEntry('entry-1');
       expect(entry.status).toBe('completed');
     });
 
@@ -534,7 +593,7 @@ describe('Sync Outbox Repository', () => {
       recordProcessedMessage('msg-123', 'tablet-1');
 
       expect(mockProcessedMessages.has('msg-123')).toBe(true);
-      const msg = mockProcessedMessages.get('msg-123');
+      const msg = getProcessedMessageEntry('msg-123');
       expect(msg.sourceDeviceId).toBe('tablet-1');
     });
 
@@ -573,6 +632,7 @@ describe('Sync Outbox Repository', () => {
         operation: 'INSERT',
         payload: '{}',
         status: 'completed',
+        attempts: 0,
         createdAtUtc: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(), // 48 hours ago
       });
       // Add pending entry (should not be deleted)
@@ -583,6 +643,7 @@ describe('Sync Outbox Repository', () => {
         operation: 'INSERT',
         payload: '{}',
         status: 'pending',
+        attempts: 0,
         createdAtUtc: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
       });
       // Add processed message
@@ -730,7 +791,7 @@ describe('Sync Outbox Repository', () => {
 
       // First attempt - delay index 1 = 5s
       recordFailedAttempt('entry-backoff', 'tablet-1', 'Error');
-      let entry = mockOutboxEntries.get('entry-backoff');
+      const entry = getOutboxEntry('entry-backoff');
       expect(entry.attempts).toBe(1);
 
       // The nextRetryUtc should be approximately 5 seconds in the future
@@ -752,7 +813,7 @@ describe('Sync Outbox Edge Cases', () => {
     const member = { firstName: 'No', lastName: 'Id' } as unknown as Member; // No internalId
     queueMember(member);
 
-    const entry = mockOutboxEntries.get('mock-uuid-12345');
+    const entry = getOutboxEntry('mock-uuid-12345');
     expect(entry.entityId).toBe(''); // Empty string for missing ID
   });
 

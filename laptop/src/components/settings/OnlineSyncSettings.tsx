@@ -104,11 +104,6 @@ export function OnlineSyncSettings() {
   const [isDeletingCloudRecords, setIsDeletingCloudRecords] = useState(false);
   const [cloudDeleteResult, setCloudDeleteResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Load saved connection state and check status on mount
-  useEffect(() => {
-    checkConnectionStatus();
-  }, []);
-
   const loadPendingDeletes = useCallback(() => {
     const items = onlineSyncService.getPendingDeletes().map((pending) => {
       const member = pending.entityType === 'member'
@@ -179,6 +174,11 @@ export function OnlineSyncSettings() {
       setIsCheckingConnection(false);
     }
   }, []);
+
+  // Load saved connection state and check status on mount
+  useEffect(() => {
+    checkConnectionStatus();
+  }, [checkConnectionStatus]);
 
   const handleConnect = () => {
     setShowAuthModal(true);

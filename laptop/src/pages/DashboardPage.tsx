@@ -63,22 +63,23 @@ const DEVICE_SEARCH_TIMEOUT_MS = 10000;
 export function DashboardPage() {
   const { setCurrentPage, pairedDevices } = useAppStore();
   const [stats] = useState<Stats>(getInitialStats);
-  const [deviceSearchTimedOut, setDeviceSearchTimedOut] = useState(false);
+  const [hasDeviceSearchTimedOut, setHasDeviceSearchTimedOut] = useState(false);
 
   // Track online devices from store
   const onlineDevices = pairedDevices.filter(d => d.isOnline);
+
+  const deviceSearchTimedOut = hasDeviceSearchTimedOut && pairedDevices.length === 0;
 
   // Set timeout for device search
   useEffect(() => {
     // If we already have devices, no need for timeout
     if (pairedDevices.length > 0) {
-      setDeviceSearchTimedOut(false);
       return;
     }
 
     // Start timeout
     const timer = setTimeout(() => {
-      setDeviceSearchTimedOut(true);
+      setHasDeviceSearchTimedOut(true);
     }, DEVICE_SEARCH_TIMEOUT_MS);
 
     return () => clearTimeout(timer);

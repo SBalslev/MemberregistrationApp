@@ -35,7 +35,7 @@ let mockExecutedQueries: string[];
 
 // Mock the database module
 vi.mock('../database/db', () => ({
-  execute: vi.fn((sql: string, _params?: unknown[]) => {
+  execute: vi.fn((sql: string) => {
     mockExecutedQueries.push(sql);
     return { changes: 1 };
   }),

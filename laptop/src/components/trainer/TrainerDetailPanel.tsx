@@ -4,7 +4,7 @@
  * @see [trainer-experience/prd.md] - Trainer Experience Feature
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { GraduationCap, Shield, Plus, Calendar, Award } from 'lucide-react';
 import {
   getTrainerDetails,
@@ -23,23 +23,22 @@ interface TrainerDetailPanelProps {
 }
 
 export function TrainerDetailPanel({ memberId, onTrainerUpdated }: TrainerDetailPanelProps) {
-  const [trainerData, setTrainerData] = useState<ReturnType<typeof getTrainerDetails> | null>(null);
-  const [disciplines, setDisciplines] = useState<TrainerDiscipline[]>([]);
-  const [isTrainer, setIsTrainer] = useState(false);
-  const [hasSkydeleder, setHasSkydeleder] = useState(false);
-  const [skydelederDate, setSkydelederDate] = useState('');
+  const [trainerData, setTrainerData] = useState<ReturnType<typeof getTrainerDetails>>(
+    () => getTrainerDetails(memberId)
+  );
+  const [disciplines, setDisciplines] = useState<TrainerDiscipline[]>(
+    () => getDisciplinesForTrainer(memberId)
+  );
+  const [isTrainer, setIsTrainer] = useState(() => trainerData.trainerInfo?.isTrainer ?? false);
+  const [hasSkydeleder, setHasSkydeleder] = useState(() => trainerData.trainerInfo?.hasSkydelederCertificate ?? false);
+  const [skydelederDate, setSkydelederDate] = useState(() => trainerData.trainerInfo?.certifiedDate ?? '');
   const [showAddDiscipline, setShowAddDiscipline] = useState(false);
   const [editingDisciplineId, setEditingDisciplineId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadTrainerData();
-  }, [memberId]);
-
-  function loadTrainerData() {
+  function refreshTrainerData() {
     const data = getTrainerDetails(memberId);
     setTrainerData(data);
     setDisciplines(getDisciplinesForTrainer(memberId));
-
     if (data.trainerInfo) {
       setIsTrainer(data.trainerInfo.isTrainer);
       setHasSkydeleder(data.trainerInfo.hasSkydelederCertificate);
@@ -61,6 +60,7 @@ export function TrainerDetailPanel({ memberId, onTrainerUpdated }: TrainerDetail
     const date = enabled ? (skydelederDate || new Date().toISOString().split('T')[0]) : undefined;
     setSkydelederCertification(memberId, enabled, date);
     setHasSkydeleder(enabled);
+    refreshTrainerData();
     if (enabled && !skydelederDate) {
       setSkydelederDate(new Date().toISOString().split('T')[0]);
     }
@@ -71,6 +71,7 @@ export function TrainerDetailPanel({ memberId, onTrainerUpdated }: TrainerDetail
     setSkydelederDate(date);
     if (hasSkydeleder) {
       setSkydelederCertification(memberId, true, date);
+    refreshTrainerData();
       onTrainerUpdated();
     }
   }
@@ -78,6 +79,7 @@ export function TrainerDetailPanel({ memberId, onTrainerUpdated }: TrainerDetail
   function handleDisciplineUpdated() {
     setDisciplines(getDisciplinesForTrainer(memberId));
     setShowAddDiscipline(false);
+      refreshTrainerData();
     setEditingDisciplineId(null);
     onTrainerUpdated();
   }
@@ -86,6 +88,7 @@ export function TrainerDetailPanel({ memberId, onTrainerUpdated }: TrainerDetail
     return (
       <div className="flex items-center justify-center h-full">
         <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+    refreshTrainerData();
       </div>
     );
   }

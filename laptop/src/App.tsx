@@ -31,25 +31,25 @@ const PERIODIC_PULL_INTERVAL_MS = 5 * 60 * 1000;
 // Task 6.5: Debounce delay for sync-on-discovery (avoid rapid fire)
 const DISCOVERY_SYNC_DEBOUNCE_MS = 3000;
 
+// Page labels for accessibility announcements
+const PAGE_LABELS: Record<string, string> = {
+  dashboard: 'Dashboard', members: 'Medlemmer', statistics: 'Statistik',
+  'member-activity': 'Aktivitet', 'minidraet-search': 'DGI søgning',
+  trainers: 'Trænere', equipment: 'Udstyr', finance: 'Økonomi',
+  devices: 'Enheder', settings: 'Indstillinger',
+};
+
+// Ctrl+1-9/0 page navigation mapping
+const PAGE_SHORTCUTS: Record<string, string> = {
+  '1': 'dashboard', '2': 'members', '3': 'statistics',
+  '4': 'member-activity', '5': 'minidraet-search', '6': 'trainers',
+  '7': 'equipment', '8': 'finance', '9': 'devices', '0': 'settings',
+};
+
 function App() {
   const { isDbInitialized, setDbInitialized, currentPage, setCurrentPage, triggerSync } = useAppStore();
   const [error, setError] = useState<string | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-
-  // Page labels for accessibility announcements
-  const PAGE_LABELS: Record<string, string> = {
-    dashboard: 'Dashboard', members: 'Medlemmer', statistics: 'Statistik',
-    'member-activity': 'Aktivitet', 'minidraet-search': 'DGI søgning',
-    trainers: 'Trænere', equipment: 'Udstyr', finance: 'Økonomi',
-    devices: 'Enheder', settings: 'Indstillinger',
-  };
-
-  // Ctrl+1-9/0 page navigation mapping
-  const PAGE_SHORTCUTS: Record<string, string> = {
-    '1': 'dashboard', '2': 'members', '3': 'statistics',
-    '4': 'member-activity', '5': 'minidraet-search', '6': 'trainers',
-    '7': 'equipment', '8': 'finance', '9': 'devices', '0': 'settings',
-  };
 
   // Global keyboard shortcuts: Ctrl+K (command palette) + Ctrl+1-0 (page nav)
   const handleGlobalShortcuts = useCallback((e: KeyboardEvent) => {

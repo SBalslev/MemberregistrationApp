@@ -3,7 +3,7 @@
  */
 
 import { query, execute, transaction } from './db';
-import type { Member, MemberStatus, MemberListItem } from '../types';
+import type { FeeCategoryType, Member, MemberStatus, MemberListItem } from '../types';
 import { deletePhotoFile } from '../utils/photoStorage';
 import { queueMember, queueMemberDeletion } from './syncOutboxRepository';
 
@@ -394,6 +394,43 @@ export function getMembersForTabletSyncSince(sinceUtc: string): Member[] {
     'SELECT * FROM Member WHERE updatedAtUtc > ? ORDER BY updatedAtUtc',
     [sinceUtc]
   );
+}
+
+export interface MemberEmailExportRow {
+  memberType: FeeCategoryType;
+  email: string;
+}
+
+/**
+ * Get unique member emails grouped by fee category.
+ * Emails are normalized (trimmed + lowercased) for uniqueness.
+ */
+export function getUniqueMemberEmailsByFeeCategory(): MemberEmailExportRow[] {
+  const rows = query<MemberEmailExportRow>(
+    `SELECT memberType, email
+     FROM Member
+     WHERE mergedIntoId IS NULL
+       AND email IS NOT NULL
+       AND TRIM(email) <> ''
+     ORDER BY memberType, email`
+  );
+
+  const results: MemberEmailExportRow[] = [];
+  const seen = new Map<FeeCategoryType, Set<string>>();
+
+  for (const row of rows) {
+    const normalized = row.email.trim().toLowerCase();
+    if (!normalized) continue;
+
+    const set = seen.get(row.memberType) ?? new Set<string>();
+    if (set.has(normalized)) continue;
+
+    set.add(normalized);
+    seen.set(row.memberType, set);
+    results.push({ memberType: row.memberType, email: normalized });
+  }
+
+  return results;
 }
 
 // ===== Duplicate Detection (FR-9.1) =====

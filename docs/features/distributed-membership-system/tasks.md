@@ -7,6 +7,11 @@
 
 ## Maintenance updates
 
+- [x] M-2026-02-23 Add email export for member list
+  - **Started**: 2026-02-23 10:00:00 UTC+1
+  - **Completed**: 2026-02-23 10:25:00 UTC+1
+  - **Duration**: 25m
+  - **Notes**: Added Settings export for unique member emails grouped by fee category.
 - [x] M-2026-02-02 Fix tablet-to-tablet pairing code expected device type
   - **Started**: 2026-02-02 00:10:00 UTC+1
   - **Completed**: 2026-02-02 00:18:08 UTC+1

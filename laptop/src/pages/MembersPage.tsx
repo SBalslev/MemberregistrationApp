@@ -21,13 +21,13 @@ import type { FeeRate } from '../types';
 
 export function MembersPage() {
   const [members, setMembers] = useState<Member[]>(() => getAllMembers());
+  const [nowUtc] = useState(() => Date.now());
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ACTIVE' | 'INACTIVE'>('all');
   const [memberTypeFilter, setMemberTypeFilter] = useState<'all' | 'TRIAL' | 'FULL'>('all');
   const [idPhotoFilter, setIdPhotoFilter] = useState<'all' | 'has_id' | 'needs_id' | 'not_required'>('all');
   const [feeCategoryFilter, setFeeCategoryFilter] = useState<'all' | 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY'>('all');
   const [viewMode, setViewMode] = useState<'members' | 'duplicates'>('members');
-  const [selectedIndex, setSelectedIndex] = useState(-1);
   const listRef = useRef<HTMLUListElement>(null);
   const [enlargedPhoto, setEnlargedPhoto] = useState<{ src: string; title: string } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -43,8 +43,9 @@ export function MembersPage() {
   // Get duplicates data
   const duplicatesData = useMemo(() => {
     if (viewMode !== 'duplicates') return [];
+    if (members.length === 0) return [];
     return getMembersWithDuplicates();
-  }, [viewMode, members]);
+  }, [viewMode, members.length]);
 
   const filteredMembers = useMemo(() => {
     let result = members;
@@ -105,8 +106,9 @@ export function MembersPage() {
 
   // Count duplicates for badge
   const duplicateCount = useMemo(() => {
+    if (members.length === 0) return 0;
     return getMembersWithDuplicates().length;
-  }, [members]);
+  }, [members.length]);
 
   // Count members by ID photo status for filter labels
   const idPhotoStatusCounts = useMemo(() => {
@@ -145,14 +147,9 @@ export function MembersPage() {
     return counts;
   }, [members]);
 
-  // Keep selectedIndex in sync with selectedMember when filtered list changes
-  useEffect(() => {
-    if (selectedMember) {
-      const idx = filteredMembers.findIndex(m => m.internalId === selectedMember.internalId);
-      setSelectedIndex(idx);
-    } else {
-      setSelectedIndex(-1);
-    }
+  const selectedIndex = useMemo(() => {
+    if (!selectedMember) return -1;
+    return filteredMembers.findIndex(m => m.internalId === selectedMember.internalId);
   }, [filteredMembers, selectedMember]);
 
   // Auto-focus list when members view is active and list has items
@@ -182,7 +179,6 @@ export function MembersPage() {
     }
 
     if (nextIndex >= 0) {
-      setSelectedIndex(nextIndex);
       setSelectedMember(filteredMembers[nextIndex]);
       const listEl = listRef.current;
       if (listEl) {
@@ -362,10 +358,10 @@ export function MembersPage() {
                 </div>
               ) : (
                 <ul ref={listRef} tabIndex={0} onKeyDown={handleListKeyDown} className="divide-y divide-gray-100 outline-none" role="listbox" aria-label="Medlemsliste">
-                  {filteredMembers.map((member, index) => {
+                  {filteredMembers.map((member) => {
                     // Calculate days since registration for trial members
                     const daysSinceRegistration = member.memberLifecycleStage === 'TRIAL' && member.createdAtUtc
-                      ? Math.floor((Date.now() - new Date(member.createdAtUtc).getTime()) / (1000 * 60 * 60 * 24))
+                      ? Math.floor((nowUtc - new Date(member.createdAtUtc).getTime()) / (1000 * 60 * 60 * 24))
                       : 0;
                     const trialWarning = daysSinceRegistration > 90 ? 'error' : daysSinceRegistration > 30 ? 'warning' : 'info';
 
@@ -381,7 +377,7 @@ export function MembersPage() {
                   }`}
                 >
                   <button
-                    onClick={() => { setSelectedMember(member); setSelectedIndex(index); }}
+                    onClick={() => { setSelectedMember(member); }}
                     className="w-full flex items-center gap-4 p-4 transition-colors text-left"
                   >
                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
@@ -542,7 +538,7 @@ export function MembersPage() {
       {/* Member Detail Panel */}
       <div className="flex-1 min-w-[400px] bg-gray-50 overflow-y-auto">
         {selectedMember ? (
-          <MemberDetailPanel member={selectedMember} onMemberUpdated={loadMembers} onEnlargePhoto={setEnlargedPhoto} onClose={() => setSelectedMember(null)} />
+          <MemberDetailPanel key={selectedMember.internalId} member={selectedMember} onMemberUpdated={loadMembers} onEnlargePhoto={setEnlargedPhoto} onClose={() => setSelectedMember(null)} />
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-500">
             <User className="w-16 h-16 mb-4 text-gray-300" />
@@ -593,6 +589,7 @@ export function MembersPage() {
 
 function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }: { member: Member; onMemberUpdated: () => void; onEnlargePhoto: (photo: { src: string; title: string }) => void; onClose: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
+  const [nowUtc] = useState(() => Date.now());
   const [editForm, setEditForm] = useState({
     firstName: '', lastName: '', email: '', phone: '', birthday: '',
     gender: '' as Gender | '', address: '', zipCode: '', city: '',
@@ -603,8 +600,11 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
     showMembershipIdEdit: false, membershipIdError: null as string | null,
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [skvRegistration, setSkvRegistration] = useState<SkvRegistration | null>(null);
-  const [skvWeapons, setSkvWeapons] = useState<SkvWeapon[]>([]);
+  const [skvRegistration, setSkvRegistration] = useState<SkvRegistration | null>(() => getSkvRegistration(member.internalId));
+  const [skvWeapons, setSkvWeapons] = useState<SkvWeapon[]>(() => {
+    const registration = getSkvRegistration(member.internalId);
+    return registration ? getSkvWeaponsByRegistrationId(registration.id) : [];
+  });
   const [showWeaponModal, setShowWeaponModal] = useState(false);
 
   // Inline assign membership ID state (replaces modal)
@@ -636,23 +636,13 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
 
   // Calculate days since registration for trial members
   const daysSinceRegistration = member.memberLifecycleStage === 'TRIAL' && member.createdAtUtc
-    ? Math.floor((Date.now() - new Date(member.createdAtUtc).getTime()) / (1000 * 60 * 60 * 24))
+    ? Math.floor((nowUtc - new Date(member.createdAtUtc).getTime()) / (1000 * 60 * 60 * 24))
     : 0;
   const trialWarning = daysSinceRegistration > 90 ? 'error' : daysSinceRegistration > 30 ? 'warning' : 'info';
 
   // Get photo source - prefer full photo (photoPath) for detail view, fallback to older fields
   const photoSource = member.photoPath || member.registrationPhotoPath;
   const photoSrc = getPhotoSrc(photoSource);
-
-  useEffect(() => {
-    const registration = getSkvRegistration(member.internalId);
-    setSkvRegistration(registration);
-    if (registration) {
-      setSkvWeapons(getSkvWeaponsByRegistrationId(registration.id));
-    } else {
-      setSkvWeapons([]);
-    }
-  }, [member.internalId]);
 
   function refreshSkv() {
     const registration = getSkvRegistration(member.internalId);
@@ -692,7 +682,7 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
       groups.get(entry.localDate)?.push(entry);
     }
     return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [activityResult.entries]);
+  }, [activityResult]);
 
   function toggleActivityType(type: ActivityType) {
     setActivityTypes((current) =>
@@ -2260,23 +2250,29 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
   // Calculate if member is under 18
   const isUnder18 = birthday ? calculateAge(birthday) < 18 : false;
 
-  useEffect(() => {
-    // Don't auto-change honorary members
-    if (feeCategory === 'HONORARY') return;
-
-    if (isUnder18 && feeCategory === 'ADULT') {
-      setFeeCategory('CHILD');
-    }
-    if (!isUnder18 && (feeCategory === 'CHILD' || feeCategory === 'CHILD_PLUS')) {
-      setFeeCategory('ADULT');
-    }
-  }, [isUnder18, feeCategory]);
-
-  useEffect(() => {
-    if (isTrialMember && membershipId) {
+  function handleLifecycleStageChange(nextStage: 'TRIAL' | 'FULL') {
+    setLifecycleStage(nextStage);
+    if (nextStage === 'TRIAL' && membershipId) {
       setMembershipId('');
     }
-  }, [isTrialMember, membershipId]);
+  }
+
+  function handleBirthdayChange(value: string) {
+    setBirthday(value);
+
+    if (feeCategory === 'HONORARY') return;
+    const under18 = value ? calculateAge(value) < 18 : false;
+    if (under18 && feeCategory === 'ADULT') {
+      setFeeCategory('CHILD');
+    }
+    if (!under18 && (feeCategory === 'CHILD' || feeCategory === 'CHILD_PLUS')) {
+      setFeeCategory('ADULT');
+    }
+  }
+
+  function handleFeeCategoryChange(nextCategory: Member['memberType']) {
+    setFeeCategory(nextCategory);
+  }
 
   // Handle photo file selection
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -2422,7 +2418,7 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
             </label>
             <select
               value={lifecycleStage}
-              onChange={(e) => setLifecycleStage(e.target.value as 'TRIAL' | 'FULL')}
+              onChange={(e) => handleLifecycleStageChange(e.target.value as 'TRIAL' | 'FULL')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             >
               <option value="FULL">Fuld medlem (medlemsnummer kræves)</option>
@@ -2479,7 +2475,7 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
             <input
               type="date"
               value={birthday}
-              onChange={(e) => setBirthday(e.target.value)}
+              onChange={(e) => handleBirthdayChange(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             />
           </div>
@@ -2490,7 +2486,7 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
             </label>
             <select
               value={feeCategory}
-              onChange={(e) => setFeeCategory(e.target.value as Member['memberType'])}
+              onChange={(e) => handleFeeCategoryChange(e.target.value as Member['memberType'])}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             >
               <option value="ADULT">Voksen</option>

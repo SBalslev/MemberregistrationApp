@@ -1,6 +1,6 @@
 # Distributed Membership Management System - Design Document
 
-**Last Updated:** 2026-02-02
+**Last Updated:** 2026-02-23
 **Updated By:** sbalslev
 
 ## Introduction/Overview
@@ -167,6 +167,8 @@ As a club member or admin, I want to see practice sessions recorded across all d
 **FR-6.5** Master Laptop SHALL provide reporting and analytics views across all synchronized data.
 
 **FR-6.6** Changes to Member master data on Laptop SHALL require explicit push to sync to tablets.
+
+**FR-6.7** Master Laptop SHALL allow exporting a CSV of unique member emails grouped by fee category.
 
 ### FR-7: Conflict Resolution
 

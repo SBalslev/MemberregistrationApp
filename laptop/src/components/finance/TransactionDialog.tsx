@@ -273,6 +273,30 @@ export function TransactionDialog({
     [formData.cashIn, formData.cashOut, formData.bankIn, formData.bankOut]
   );
 
+  const activeCategories = categories.filter((c) => c.isActive);
+  const activeMembers = useMemo(
+    () =>
+      members
+        .filter((m) => m.status === 'ACTIVE')
+        .sort((a, b) => {
+          const firstNameCompare = (a.firstName || '').localeCompare(b.firstName || '', 'da');
+          if (firstNameCompare !== 0) return firstNameCompare;
+          return (a.lastName || '').localeCompare(b.lastName || '', 'da');
+        }),
+    [members]
+  );
+
+  // Convert members to SelectOption format for searchable dropdown
+  const memberOptions: SelectOption[] = useMemo(
+    () =>
+      activeMembers.map((member) => ({
+        value: member.internalId,
+        label: `${member.firstName} ${member.lastName}`.trim(),
+        sublabel: member.membershipId ? `#${member.membershipId}` : 'Prøvemedlem',
+      })),
+    [activeMembers]
+  );
+
   // Reset form when dialog opens
   if (isOpen && !wasOpen) {
     setWasOpen(true);
@@ -503,30 +527,6 @@ export function TransactionDialog({
   // ===== Render =====
 
   const isEditMode = !!initialData?.id;
-  const activeCategories = categories.filter((c) => c.isActive);
-  const activeMembers = useMemo(
-    () =>
-      members
-        .filter((m) => m.status === 'ACTIVE')
-        .sort((a, b) => {
-          const firstNameCompare = (a.firstName || '').localeCompare(b.firstName || '', 'da');
-          if (firstNameCompare !== 0) return firstNameCompare;
-          return (a.lastName || '').localeCompare(b.lastName || '', 'da');
-        }),
-    [members]
-  );
-
-  // Convert members to SelectOption format for searchable dropdown
-  const memberOptions: SelectOption[] = useMemo(
-    () =>
-      activeMembers.map((member) => ({
-        value: member.internalId,
-        label: `${member.firstName} ${member.lastName}`.trim(),
-        sublabel: member.membershipId ? `#${member.membershipId}` : 'Prøvemedlem',
-      })),
-    [activeMembers]
-  );
-
   const epsilon = 0.001;
   const lineMismatches = {
     cashIn: Math.abs(lineTotals.cashIn - headerTotals.cashIn) > epsilon,
