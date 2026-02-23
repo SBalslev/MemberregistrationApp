@@ -944,39 +944,44 @@ class OnlineApiService {
       throw new AuthenticationError('Not authenticated');
     }
 
-    const formData = new FormData();
-    const blob = photoData instanceof ArrayBuffer
-      ? new Blob([photoData], { type: 'image/jpeg' })
-      : photoData;
-    formData.append('photo', blob, 'photo.jpg');
-    formData.append('internal_member_id', memberId);
-    formData.append('content_hash', contentHash);
-    formData.append('photo_type', 'profile');
+    return this.withRateLimitRetry(async () => {
+      const formData = new FormData();
+      const blob = photoData instanceof ArrayBuffer
+        ? new Blob([photoData], { type: 'image/jpeg' })
+        : photoData;
+      formData.append('photo', blob, 'photo.jpg');
+      formData.append('internal_member_id', memberId);
+      formData.append('content_hash', contentHash);
+      formData.append('photo_type', 'profile');
 
-    const response = await fetch(`${API_BASE_URL}/photos`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-      },
-      body: formData,
+      const response = await fetch(`${API_BASE_URL}/photos`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        if (response.status === 429) {
+          throw new RateLimitError(error.retry_after_seconds || 60);
+        }
+        throw new OnlineApiError(
+          error.error || 'Photo upload failed',
+          response.status,
+          error.code
+        );
+      }
+
+      const data = await response.json();
+      return {
+        success: true,
+        photoId: data.photo_id,
+        sizeBytes: data.size_bytes,
+        message: data.message,
+      };
     });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new OnlineApiError(
-        error.error || 'Photo upload failed',
-        response.status,
-        error.code
-      );
-    }
-
-    const data = await response.json();
-    return {
-      success: true,
-      photoId: data.photo_id,
-      sizeBytes: data.size_bytes,
-      message: data.message,
-    };
   }
 
   /**
@@ -1298,6 +1303,32 @@ class OnlineApiService {
     }
   }
 
+  private async withRateLimitRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = MAX_RETRY_ATTEMPTS
+  ): Promise<T> {
+    let lastError: RateLimitError | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (error instanceof RateLimitError) {
+          lastError = error;
+          if (attempt < maxRetries) {
+            const waitMs = (error.retryAfterSeconds || 60) * 1000;
+            console.log(`[OnlineApiService] Rate limited, waiting ${error.retryAfterSeconds}s before retry ${attempt}/${maxRetries}...`);
+            await this.delay(waitMs);
+            continue;
+          }
+        }
+        throw error;
+      }
+    }
+
+    throw lastError;
+  }
+
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
@@ -1355,7 +1386,7 @@ class OnlineApiService {
     onlyInCloudDetails: CloudRecordDetail[];
     onlyInLocal: string[];
   }> {
-    const response = await this.request<{
+    const response = await this.withRateLimitRetry(() => this.request<{
       entity_type: string;
       local_count: number;
       cloud_count: number;
@@ -1369,7 +1400,7 @@ class OnlineApiService {
       only_in_local: string[];
     }>('POST', `/admin/entities/${entityType}/compare`, {
       local_ids: localIds,
-    });
+    }));
 
     return {
       entityType: response.entity_type,

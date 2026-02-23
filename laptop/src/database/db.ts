@@ -10,7 +10,8 @@ import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.j
 // Schema version matching Android app
 // v14: Added idPhotoPath and idPhotoThumbnail for adult ID verification
 // v15: Added AuditLog table for ID photo deletion tracking
-const SCHEMA_VERSION = 15;
+// v16: Seed missing default posting categories
+const SCHEMA_VERSION = 16;
 
 // SQL.js instance (singleton)
 let SQL: SqlJsStatic | null = null;
@@ -51,6 +52,8 @@ async function runMigrations(): Promise<void> {
   if (!db) return;
 
   const migrationsRun: string[] = [];
+
+  const schemaVersion = getSchemaVersion();
 
   // ===== Migration: NewMemberRegistration table =====
   const regColumns = db.exec("PRAGMA table_info(NewMemberRegistration)");
@@ -632,6 +635,15 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('PracticeSessionDeletion table created');
   }
 
+  if (schemaVersion < 16) {
+    const postingCategoryCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='PostingCategory'");
+    if (postingCategoryCheck.length > 0 && postingCategoryCheck[0].values.length > 0) {
+      await seedDefaultCategories();
+      migrationsRun.push('Schema v16 seed default categories');
+    }
+    setSchemaVersion(16);
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -1089,6 +1101,29 @@ async function createSchema(): Promise<void> {
 export function getDatabase(): Database {
   if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
   return db;
+}
+
+function getSchemaVersion(): number {
+  if (!db) return 0;
+  const tableCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='_schema_version'");
+  if (tableCheck.length === 0 || tableCheck[0].values.length === 0) {
+    db.run('CREATE TABLE IF NOT EXISTS _schema_version (version INTEGER PRIMARY KEY)');
+    db.run('INSERT OR REPLACE INTO _schema_version (version) VALUES (0)');
+    return 0;
+  }
+  const result = db.exec('SELECT version FROM _schema_version LIMIT 1');
+  if (result.length === 0 || result[0].values.length === 0) {
+    db.run('INSERT OR REPLACE INTO _schema_version (version) VALUES (0)');
+    return 0;
+  }
+  const value = result[0].values[0]?.[0];
+  return typeof value === 'number' ? value : Number(value) || 0;
+}
+
+function setSchemaVersion(version: number): void {
+  if (!db) return;
+  db.run('CREATE TABLE IF NOT EXISTS _schema_version (version INTEGER PRIMARY KEY)');
+  db.run('INSERT OR REPLACE INTO _schema_version (version) VALUES (?)', [version]);
 }
 
 /**

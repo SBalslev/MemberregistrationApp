@@ -2,8 +2,8 @@
  * Members page - list and manage members.
  */
 
-import { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Filter, ChevronRight, User, X, Camera, Trash2, UserPlus, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Search, Plus, ChevronRight, User, X, Camera, Trash2, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, getMemberDeletePreview, deleteMemberPermanently, type ActivityType } from '../database';
 import type { Member, Gender } from '../types';
 import { getIdPhotoStatus } from '../types/entities';
@@ -25,7 +25,10 @@ export function MembersPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'ACTIVE' | 'INACTIVE'>('all');
   const [memberTypeFilter, setMemberTypeFilter] = useState<'all' | 'TRIAL' | 'FULL'>('all');
   const [idPhotoFilter, setIdPhotoFilter] = useState<'all' | 'has_id' | 'needs_id' | 'not_required'>('all');
+  const [feeCategoryFilter, setFeeCategoryFilter] = useState<'all' | 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY'>('all');
   const [viewMode, setViewMode] = useState<'members' | 'duplicates'>('members');
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const listRef = useRef<HTMLUListElement>(null);
   const [enlargedPhoto, setEnlargedPhoto] = useState<{ src: string; title: string } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
@@ -74,6 +77,11 @@ export function MembersPage() {
       });
     }
 
+    // Apply fee category filter
+    if (feeCategoryFilter !== 'all') {
+      result = result.filter((m) => m.memberType === feeCategoryFilter);
+    }
+
     // Sort: active first, then by first name, then last name
     result = [...result].sort((a, b) => {
       // Active members first
@@ -88,7 +96,7 @@ export function MembersPage() {
     });
 
     return result;
-  }, [members, searchQuery, statusFilter, memberTypeFilter, idPhotoFilter]);
+  }, [members, searchQuery, statusFilter, memberTypeFilter, idPhotoFilter, feeCategoryFilter]);
 
   // Count trial members for badge
   const trialMemberCount = useMemo(() => {
@@ -127,6 +135,63 @@ export function MembersPage() {
     return members.filter((m) => m.memberLifecycleStage === 'FULL').length;
   }, [members]);
 
+  // Count members by fee category for filter labels
+  const feeCategoryCounts = useMemo(() => {
+    const counts = { ADULT: 0, CHILD: 0, CHILD_PLUS: 0, HONORARY: 0 };
+    members.forEach((m) => {
+      const t = m.memberType as keyof typeof counts;
+      if (t in counts) counts[t]++;
+    });
+    return counts;
+  }, [members]);
+
+  // Keep selectedIndex in sync with selectedMember when filtered list changes
+  useEffect(() => {
+    if (selectedMember) {
+      const idx = filteredMembers.findIndex(m => m.internalId === selectedMember.internalId);
+      setSelectedIndex(idx);
+    } else {
+      setSelectedIndex(-1);
+    }
+  }, [filteredMembers, selectedMember]);
+
+  // Auto-focus list when members view is active and list has items
+  useEffect(() => {
+    if (viewMode === 'members' && filteredMembers.length > 0) {
+      listRef.current?.focus();
+    }
+  }, [viewMode, filteredMembers.length]);
+
+  // Keyboard navigation for member list
+  const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (filteredMembers.length === 0) return;
+
+    let nextIndex = -1;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      nextIndex = selectedIndex < filteredMembers.length - 1 ? selectedIndex + 1 : 0;
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      nextIndex = selectedIndex > 0 ? selectedIndex - 1 : filteredMembers.length - 1;
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      nextIndex = 0;
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      nextIndex = filteredMembers.length - 1;
+    }
+
+    if (nextIndex >= 0) {
+      setSelectedIndex(nextIndex);
+      setSelectedMember(filteredMembers[nextIndex]);
+      const listEl = listRef.current;
+      if (listEl) {
+        const item = listEl.children[nextIndex] as HTMLElement;
+        item?.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [filteredMembers, selectedIndex, setSelectedMember]);
+
   return (
     <>
       {/* Photo Enlargement Modal */}
@@ -158,11 +223,11 @@ export function MembersPage() {
       {/* Member List */}
       <div className="w-1/2 min-w-[320px] max-w-[600px] flex flex-col border-r border-gray-200">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center justify-between mb-4">
+        <div className="px-4 py-3 border-b border-gray-200">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Medlemmer</h1>
-              <p className="text-gray-600 mt-1">
+              <h1 className="text-xl font-bold text-gray-900">Medlemmer</h1>
+              <p className="text-sm text-gray-600">
                 {viewMode === 'members' ? `${filteredMembers.length} medlemmer` : `${duplicatesData.length} potentielle dubletter`}
               </p>
             </div>
@@ -210,8 +275,8 @@ export function MembersPage() {
 
           {/* Search and Filter - only show in members view */}
           {viewMode === 'members' && (
-          <div className="space-y-3" role="search">
-            {/* Search bar - full width */}
+          <div className="space-y-2" role="search">
+            {/* Search bar with inline filter dropdowns */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true" />
               <input
@@ -220,51 +285,54 @@ export function MembersPage() {
                 aria-label="Søg efter medlemmer"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               />
             </div>
-            {/* Filter dropdowns - wrap on smaller widths */}
-            <div className="flex flex-wrap gap-2">
-              <div className="relative">
-                <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true" />
-                <select
-                  value={memberTypeFilter}
-                  onChange={(e) => setMemberTypeFilter(e.target.value as 'all' | 'TRIAL' | 'FULL')}
-                  aria-label="Filtrer efter medlemstype"
-                  className="pl-9 pr-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
-                >
-                  <option value="all">Alle typer ({members.length})</option>
-                  <option value="TRIAL">Prøve ({trialMemberCount})</option>
-                  <option value="FULL">Fuld ({fullMemberCount})</option>
-                </select>
-              </div>
-              <div className="relative">
-                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true" />
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as 'all' | 'ACTIVE' | 'INACTIVE')}
-                  aria-label="Filtrer efter status"
-                  className="pl-9 pr-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
-                >
-                  <option value="all">Alle status ({members.length})</option>
-                  <option value="ACTIVE">Aktive ({statusCounts.active})</option>
-                  <option value="INACTIVE">Inaktive ({statusCounts.inactive})</option>
-                </select>
-              </div>
-              <div className="relative">
-                <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" aria-hidden="true" />
-                <select
-                  value={idPhotoFilter}
-                  onChange={(e) => setIdPhotoFilter(e.target.value as 'all' | 'has_id' | 'needs_id' | 'not_required')}
-                  aria-label="Filtrer efter ID-billede status"
-                  className="pl-9 pr-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white"
-                >
-                  <option value="all">Alle ID ({members.length})</option>
-                  <option value="has_id">Har ID ({idPhotoStatusCounts.has_id})</option>
-                  <option value="needs_id">Mangler ({idPhotoStatusCounts.needs_id})</option>
-                  <option value="not_required">Ikke krævet ({idPhotoStatusCounts.not_required})</option>
-                </select>
-              </div>
+            {/* Compact filter row */}
+            <div className="flex gap-1.5">
+              <select
+                value={memberTypeFilter}
+                onChange={(e) => setMemberTypeFilter(e.target.value as 'all' | 'TRIAL' | 'FULL')}
+                aria-label="Filtrer efter medlemstype"
+                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
+              >
+                <option value="all">Type: Alle</option>
+                <option value="TRIAL">Prøve ({trialMemberCount})</option>
+                <option value="FULL">Fuld ({fullMemberCount})</option>
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as 'all' | 'ACTIVE' | 'INACTIVE')}
+                aria-label="Filtrer efter status"
+                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
+              >
+                <option value="all">Status: Alle</option>
+                <option value="ACTIVE">Aktive ({statusCounts.active})</option>
+                <option value="INACTIVE">Inaktive ({statusCounts.inactive})</option>
+              </select>
+              <select
+                value={idPhotoFilter}
+                onChange={(e) => setIdPhotoFilter(e.target.value as 'all' | 'has_id' | 'needs_id' | 'not_required')}
+                aria-label="Filtrer efter ID-billede status"
+                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
+              >
+                <option value="all">ID: Alle</option>
+                <option value="has_id">Har ID ({idPhotoStatusCounts.has_id})</option>
+                <option value="needs_id">Mangler ({idPhotoStatusCounts.needs_id})</option>
+                <option value="not_required">Ej krævet ({idPhotoStatusCounts.not_required})</option>
+              </select>
+              <select
+                value={feeCategoryFilter}
+                onChange={(e) => setFeeCategoryFilter(e.target.value as 'all' | 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY')}
+                aria-label="Filtrer efter kontingenttype"
+                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
+              >
+                <option value="all">Kont: Alle</option>
+                <option value="ADULT">Voksen ({feeCategoryCounts.ADULT})</option>
+                <option value="CHILD">Barn ({feeCategoryCounts.CHILD})</option>
+                <option value="CHILD_PLUS">Barn+ ({feeCategoryCounts.CHILD_PLUS})</option>
+                <option value="HONORARY">Æresmedlem ({feeCategoryCounts.HONORARY})</option>
+              </select>
             </div>
           </div>
           )}
@@ -293,23 +361,28 @@ export function MembersPage() {
                   )}
                 </div>
               ) : (
-                <ul className="divide-y divide-gray-100">
-                  {filteredMembers.map((member) => {
+                <ul ref={listRef} tabIndex={0} onKeyDown={handleListKeyDown} className="divide-y divide-gray-100 outline-none" role="listbox" aria-label="Medlemsliste">
+                  {filteredMembers.map((member, index) => {
                     // Calculate days since registration for trial members
                     const daysSinceRegistration = member.memberLifecycleStage === 'TRIAL' && member.createdAtUtc
                       ? Math.floor((Date.now() - new Date(member.createdAtUtc).getTime()) / (1000 * 60 * 60 * 24))
                       : 0;
                     const trialWarning = daysSinceRegistration > 90 ? 'error' : daysSinceRegistration > 30 ? 'warning' : 'info';
-                
+
                 return (
-                <li key={member.internalId}>
+                <li
+                  key={member.internalId}
+                  role="option"
+                  aria-selected={selectedMember?.internalId === member.internalId}
+                  className={`border-l-3 transition-colors ${
+                    selectedMember?.internalId === member.internalId
+                      ? 'border-l-blue-600 bg-blue-50'
+                      : 'border-l-transparent hover:bg-gray-50'
+                  }`}
+                >
                   <button
-                    onClick={() => setSelectedMember(member)}
-                    className={`w-full flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors text-left ${
-                      selectedMember?.internalId === member.internalId
-                        ? 'bg-blue-50'
-                        : ''
-                    }`}
+                    onClick={() => { setSelectedMember(member); setSelectedIndex(index); }}
+                    className="w-full flex items-center gap-4 p-4 transition-colors text-left"
                   >
                     <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
                       {(member.photoThumbnail || member.photoPath || member.registrationPhotoPath) ? (
