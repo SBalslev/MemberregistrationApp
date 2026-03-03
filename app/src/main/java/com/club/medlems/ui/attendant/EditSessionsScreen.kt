@@ -1,6 +1,8 @@
 package com.club.medlems.ui.attendant
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -14,8 +16,10 @@ import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.sync.SyncManager
 import com.club.medlems.data.sync.SyncOutboxManager
+import com.club.medlems.domain.ClassificationOptions
 import com.club.medlems.network.TrustManager
 import com.club.medlems.ui.common.Formatters
+import com.club.medlems.ui.common.displayName
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
@@ -73,7 +77,7 @@ class EditSessionsViewModel @Inject constructor(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EditSessionsScreen(
     memberId: String,
@@ -125,7 +129,7 @@ fun EditSessionsScreen(
                  items(list) { s ->
                     ElevatedCard(onClick = { editing = s }, modifier = Modifier.fillMaxWidth()) {
                          Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                             Text("${s.practiceType} ${s.classification ?: "Uklassificeret"}", style = MaterialTheme.typography.titleSmall)
+                             Text("${s.practiceType.displayName} ${s.classification ?: "Uklassificeret"}", style = MaterialTheme.typography.titleSmall)
                              Text("${Formatters.daDate(s.localDate)} – ${s.points}${s.krydser?.let { "/$it" } ?: ""}")
                          }
                      }
@@ -173,17 +177,41 @@ fun EditSessionsScreen(
             },
             title = { Text("Redigér skydning") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Type selection
-                    val types = PracticeType.values()
-                    var expanded by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-                        OutlinedTextField(value = type.name, onValueChange = {}, readOnly = true, label = { Text("Disciplin") }, modifier = Modifier.menuAnchor())
-                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            types.forEach { t -> DropdownMenuItem(text = { Text(t.name) }, onClick = { type = t; expanded = false }) }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Practice type selection with FilterChips
+                    Text("Disciplin", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        PracticeType.values().forEach { pt ->
+                            FilterChip(
+                                selected = type == pt,
+                                onClick = {
+                                    type = pt
+                                    // Reset classification if not valid for new type
+                                    if (!ClassificationOptions.isValid(pt, cls.ifBlank { null })) {
+                                        cls = ""
+                                    }
+                                },
+                                label = { Text(pt.displayName) }
+                            )
                         }
                     }
-                    OutlinedTextField(value = cls, onValueChange = { cls = it }, label = { Text("Klassifikation (valgfri)") })
+                    // Classification selection with FilterChips
+                    Text("Klassifikation", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ClassificationOptions.optionsFor(type).forEach { opt ->
+                            FilterChip(
+                                selected = cls == opt,
+                                onClick = { cls = opt },
+                                label = { Text(opt) }
+                            )
+                        }
+                    }
                     OutlinedTextField(value = points, onValueChange = { points = it.filter { ch -> ch.isDigit() } }, label = { Text("Point") })
                     OutlinedTextField(value = krydser, onValueChange = { krydser = it.filter { ch -> ch.isDigit() } }, label = { Text("Krydser (valgfri)") })
                 }

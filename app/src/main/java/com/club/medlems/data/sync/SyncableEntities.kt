@@ -311,7 +311,7 @@ data class SyncableEquipmentCheckout(
  */
 @Serializable
 data class SyncableMemberPreference(
-    /** FK to Member.internalId */
+    /** External membership ID (card number), matches Member.membershipId */
     val memberId: String,
 
     /** Last selected PracticeType enum name (e.g., "Riffel", "Pistol") */

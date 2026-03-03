@@ -309,7 +309,7 @@ data class EquipmentCheckout(
  */
 @Entity(tableName = "member_preference")
 data class MemberPreference(
-    /** FK to Member.internalId */
+    /** External membership ID (card number), matches Member.membershipId */
     @PrimaryKey
     val memberId: String,
 
