@@ -46,8 +46,6 @@ import {
   trainerDisciplineFromOnline,
   scanEventToOnline,
   scanEventFromOnline,
-  memberPreferenceToOnline,
-  memberPreferenceFromOnline,
   newMemberRegistrationToOnline,
   newMemberRegistrationFromOnline,
   skvRegistrationToOnline,
@@ -70,7 +68,6 @@ import {
   type OnlineTrainerInfo,
   type OnlineTrainerDiscipline,
   type OnlineScanEvent,
-  type OnlineMemberPreference,
   type OnlinePhotoMetadata,
   type OnlineNewMemberRegistration,
   type OnlineSkvRegistration,
@@ -81,7 +78,7 @@ import {
   RateLimitError,
 } from './onlineApiService';
 import { SYNC_SCHEMA_VERSION } from './syncService';
-import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout, ScanEvent, MemberPreference, NewMemberRegistration } from '../types/entities';
+import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout, ScanEvent, NewMemberRegistration } from '../types/entities';
 import type { TrainerInfo, TrainerDiscipline } from './trainerRepository';
 import type { SkvRegistration, SkvWeapon } from './skvRepository';
 import type {
@@ -210,7 +207,6 @@ export interface OnlineSyncResult {
     transactionLines: number;
     photos: number;
     scanEvents?: number;
-    memberPreferences?: number;
     newMemberRegistrations?: number;
     skvRegistrations?: number;
     skvWeapons?: number;
@@ -227,7 +223,6 @@ export interface OnlineSyncResult {
     transactionLines: number;
     photos: number;
     scanEvents?: number;
-    memberPreferences?: number;
     newMemberRegistrations?: number;
     skvRegistrations?: number;
     skvWeapons?: number;
@@ -1149,50 +1144,7 @@ class OnlineSyncService {
       await delay(INTER_BATCH_DELAY_MS);
     }
 
-    // Push member preferences
-    const memberPreferences = this.getModifiedMemberPreferences(fullSync);
-    if (memberPreferences.length > 0) {
-      onProgress?.({
-        phase: 'pushing',
-        message: `Sender præferencer (${memberPreferences.length})...`,
-        current: processedCount,
-        total: totalEntities,
-      });
-
-      const batchId = crypto.randomUUID();
-      const payload: SyncPushPayload = {
-        deviceId,
-        batchId,
-        schemaVersion: SYNC_SCHEMA_VERSION,
-        entities: {
-          memberPreferences: memberPreferences.map(p => memberPreferenceToOnline(p)),
-        },
-      };
-
-      try {
-        const result = await withRateLimitRetry(
-          () => onlineApiService.push(payload),
-          MAX_RATE_LIMIT_RETRIES,
-          (retryAfterSeconds) => {
-            onProgress?.({
-              phase: 'pushing',
-              message: `Rate limited, venter ${retryAfterSeconds}s...`,
-              current: processedCount,
-              total: totalEntities,
-            });
-          }
-        );
-        pushed.memberPreferences = (pushed.memberPreferences || 0) + (result.processed.member_preferences?.inserted || 0);
-        pushed.memberPreferences = (pushed.memberPreferences || 0) + (result.processed.member_preferences?.updated || 0);
-      } catch (error) {
-        if (!(error instanceof ConflictError)) {
-          throw error;
-        }
-      }
-
-      processedCount += memberPreferences.length;
-      await delay(INTER_BATCH_DELAY_MS);
-    }
+    // Member preferences are now derived from PracticeSession — no separate push needed
 
     // Push new member registrations
     const newMemberRegistrations = this.getModifiedNewMemberRegistrations(fullSync);
@@ -1740,14 +1692,7 @@ class OnlineSyncService {
           }
         }
 
-        // Process member preferences (PHP returns 'member_preferences')
-        const memberPreferences = entities['member_preferences'] as OnlineMemberPreference[] | undefined;
-        if (memberPreferences) {
-          for (const pref of memberPreferences) {
-            this.upsertMemberPreferenceFromOnline(pref);
-            pulled.memberPreferences = (pulled.memberPreferences || 0) + 1;
-          }
-        }
+        // Member preferences are now derived from PracticeSession — skip incoming preferences
 
         // Process new member registrations (PHP returns 'new_member_registrations')
         const newMemberRegistrations = entities['new_member_registrations'] as OnlineNewMemberRegistration[] | undefined;
@@ -2025,17 +1970,6 @@ class OnlineSyncService {
        WHERE internalMemberId IS NOT NULL
          AND (createdAtUtc > ? OR syncedAtUtc IS NULL)
        ORDER BY createdAtUtc ASC`,
-      [since]
-    );
-  }
-
-  private getModifiedMemberPreferences(fullSync: boolean): MemberPreference[] {
-    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
-    return query<MemberPreference>(
-      `SELECT memberId, lastPracticeType, lastClassification, updatedAtUtc as modifiedAtUtc
-       FROM MemberPreference
-       WHERE updatedAtUtc > ?
-       ORDER BY updatedAtUtc ASC`,
       [since]
     );
   }
@@ -2847,53 +2781,6 @@ class OnlineSyncService {
     }
   }
 
-  private upsertMemberPreferenceFromOnline(online: OnlineMemberPreference): void {
-    const local = memberPreferenceFromOnline(online);
-    const now = new Date().toISOString();
-
-    // Check if member preference exists
-    const existing = query<{ memberId: string; updatedAtUtc: string }>(
-      'SELECT memberId, updatedAtUtc FROM MemberPreference WHERE memberId = ?',
-      [toSqlValue(local.memberId)]
-    );
-
-    if (existing.length > 0) {
-      // Last-edit-wins: compare timestamps
-      const localTime = new Date(existing[0].updatedAtUtc).getTime();
-      const remoteTime = new Date(online.modified_at_utc).getTime();
-
-      if (remoteTime <= localTime) {
-        return; // Local is newer or same, skip
-      }
-
-      // Update existing
-      execute(
-        `UPDATE MemberPreference SET
-          lastPracticeType = ?, lastClassification = ?, updatedAtUtc = ?
-        WHERE memberId = ?`,
-        [
-          toSqlValue(local.lastPracticeType),
-          toSqlValue(local.lastClassification),
-          now,
-          toSqlValue(local.memberId),
-        ]
-      );
-    } else {
-      // Insert new
-      execute(
-        `INSERT INTO MemberPreference (
-          memberId, lastPracticeType, lastClassification, updatedAtUtc
-        ) VALUES (?, ?, ?, ?)`,
-        [
-          toSqlValue(local.memberId),
-          toSqlValue(local.lastPracticeType),
-          toSqlValue(local.lastClassification),
-          now,
-        ]
-      );
-    }
-  }
-
   private upsertNewMemberRegistrationFromOnline(online: OnlineNewMemberRegistration): void {
     const local = newMemberRegistrationFromOnline(online);
     const now = new Date().toISOString();
@@ -3283,11 +3170,10 @@ class OnlineSyncService {
     };
 
     return {
-      // Core member data (Local: Member, MemberPreference)
+      // Core member data
       // Photos are stored as columns in Member, not separate table
       members: await getCount('SELECT COUNT(*) as cnt FROM Member'),
       member_photos: await getCount('SELECT COUNT(*) as cnt FROM Member WHERE photoPath IS NOT NULL OR photoThumbnail IS NOT NULL'),
-      member_preferences: await getCount('SELECT COUNT(*) as cnt FROM MemberPreference'),
       // Activity data (Local: CheckIn, PracticeSession, ScanEvent)
       check_ins: await getCount('SELECT COUNT(*) as cnt FROM CheckIn'),
       practice_sessions: await getCount('SELECT COUNT(*) as cnt FROM PracticeSession'),

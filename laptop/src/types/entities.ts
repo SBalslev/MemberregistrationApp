@@ -149,15 +149,6 @@ export interface ScanEvent {
   syncVersion: number;
 }
 
-// ===== Member Preference Types =====
-
-export interface MemberPreference {
-  memberId: string;
-  lastPracticeType: string | null;
-  lastClassification: string | null;
-  modifiedAtUtc: string;
-}
-
 // ===== New Member Registration Types =====
 
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';

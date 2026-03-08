@@ -413,7 +413,6 @@ export function OnlineSyncSettings() {
       transaction_lines: { sql: 'SELECT id FROM TransactionLine', idField: 'id' },
       pending_fee_payments: { sql: 'SELECT id FROM PendingFeePayment', idField: 'id' },
       scan_events: { sql: 'SELECT id FROM ScanEvent', idField: 'id' },
-      member_preferences: { sql: 'SELECT memberId FROM MemberPreference', idField: 'memberId' },
       new_member_registrations: { sql: 'SELECT id FROM NewMemberRegistration', idField: 'id' },
       skv_registrations: { sql: 'SELECT id FROM SkvRegistration', idField: 'id' },
       skv_weapons: { sql: 'SELECT id FROM SkvWeapon', idField: 'id' },

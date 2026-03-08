@@ -39,7 +39,6 @@ const mockData: {
   skvWeapons: Array<{ id: string; skvRegistrationId: string }>;
   trainerInfos: Array<{ memberId: string }>;
   trainerDisciplines: Array<{ id: string; memberId: string }>;
-  memberPreferences: Array<{ memberId: string }>;
   transactionLines: Array<{ id: string; memberId: string; fiscalYear: number }>;
 } = {
   members: [],
@@ -52,7 +51,6 @@ const mockData: {
   skvWeapons: [],
   trainerInfos: [],
   trainerDisciplines: [],
-  memberPreferences: [],
   transactionLines: [],
 };
 
@@ -226,12 +224,6 @@ vi.mock('./db', () => ({
       const id = params?.[0];
       return mockData.trainerDisciplines.filter((d) => d.memberId === id).map(d => ({ id: d.id })) as T[];
     }
-    // MemberPreference queries
-    if (sql.includes('FROM MemberPreference') && sql.includes('COUNT(*)')) {
-      const id = params?.[0];
-      const count = mockData.memberPreferences.filter((p) => p.memberId === id).length;
-      return [{ count }] as T[];
-    }
     // TransactionLine queries (for member deletion preview)
     if (sql.includes('FROM TransactionLine') && sql.includes('COUNT(*)') && sql.includes('fiscalYear')) {
       const memberId = params?.[0];
@@ -272,7 +264,6 @@ beforeEach(() => {
   mockData.skvWeapons = [];
   mockData.trainerInfos = [];
   mockData.trainerDisciplines = [];
-  mockData.memberPreferences = [];
   mockData.transactionLines = [];
   vi.clearAllMocks();
 });
@@ -928,9 +919,6 @@ describe('Permanent Member Deletion', () => {
         { id: 'td-1', memberId: 'uuid-inactive' },
         { id: 'td-2', memberId: 'uuid-inactive' },
       ];
-      mockData.memberPreferences = [
-        { memberId: 'uuid-inactive' },
-      ];
       // Transaction lines from previous years (will be orphaned)
       mockData.transactionLines = [
         { id: 'tl-1', memberId: 'uuid-inactive', fiscalYear: 2024 },
@@ -949,7 +937,6 @@ describe('Permanent Member Deletion', () => {
       expect(preview.counts.skvWeapons).toBe(2);
       expect(preview.counts.trainerInfo).toBe(true);
       expect(preview.counts.trainerDisciplines).toBe(2);
-      expect(preview.counts.memberPreferences).toBe(true);
       expect(preview.counts.transactionLines).toBe(2);
     });
   });

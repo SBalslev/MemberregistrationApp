@@ -4,6 +4,23 @@
 
 import { query } from './db';
 
+export interface LastSessionDefaults {
+  practiceType: string;
+  classification: string;
+}
+
+export function getLastSessionDefaults(internalMemberId: string): LastSessionDefaults | null {
+  const rows = query<{ practiceType: string; classification: string }>(
+    `SELECT practiceType, classification
+     FROM PracticeSession
+     WHERE internalMemberId = ?
+     ORDER BY createdAtUtc DESC
+     LIMIT 1`,
+    [internalMemberId]
+  );
+  return rows[0] ?? null;
+}
+
 export type TrialFilter = 'all' | 'without-trial' | 'only-trial';
 
 export type ActivityType =

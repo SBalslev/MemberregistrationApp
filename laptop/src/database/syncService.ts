@@ -246,7 +246,6 @@ export interface SyncResult {
   photosStored: number;
   equipmentItemsProcessed: number;
   equipmentCheckoutsProcessed: number;
-  memberPreferencesProcessed: number;
   trainerInfosProcessed: number;
   trainerDisciplinesProcessed: number;
   errors: string[];
@@ -274,7 +273,6 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     photosStored: 0,
     equipmentItemsProcessed: 0,
     equipmentCheckoutsProcessed: 0,
-    memberPreferencesProcessed: 0,
     trainerInfosProcessed: 0,
     trainerDisciplinesProcessed: 0,
     errors: [],
@@ -421,20 +419,7 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
-  // Process member preferences (from member tablets)
-  if (payload.entities.memberPreferences) {
-    console.log(`[SyncService] Processing ${payload.entities.memberPreferences.length} member preferences`);
-    for (const pref of payload.entities.memberPreferences) {
-      try {
-        const processed = await processMemberPreference(pref);
-        if (processed) result.memberPreferencesProcessed++;
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
-        result.errors.push(`MemberPreference ${pref.memberId}: ${msg}`);
-        console.error(`[SyncService] Error processing member preference ${pref.memberId}:`, error);
-      }
-    }
-  }
+  // Member preferences are now derived from PracticeSession — no separate processing needed
 
   // Process trainer infos
   if (payload.entities.trainerInfos) {
@@ -466,7 +451,7 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
-  console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions added, ${result.sessionsDeleted} sessions deleted, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts, ${result.memberPreferencesProcessed} preferences, ${result.trainerInfosProcessed} trainer infos, ${result.trainerDisciplinesProcessed} trainer disciplines`);
+  console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions added, ${result.sessionsDeleted} sessions deleted, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts, ${result.trainerInfosProcessed} trainer infos, ${result.trainerDisciplinesProcessed} trainer disciplines`);
 
   // FR-3: Record message as processed for idempotency
   if (payload.messageId) {
@@ -1335,62 +1320,23 @@ export function getEquipmentForSync(): { equipmentItems: SyncableEquipmentItem[]
 }
 
 /**
- * Process a member preference from sync payload.
- * Upserts preferences - newer updatedAtUtc wins.
- */
-async function processMemberPreference(pref: SyncableMemberPreference): Promise<boolean> {
-  // Check if already exists
-  const existing = query<{ memberId: string; updatedAtUtc: string }>(
-    'SELECT memberId, updatedAtUtc FROM MemberPreference WHERE memberId = ?',
-    [pref.memberId]
-  );
-
-  if (existing.length > 0) {
-    // Only update if incoming is newer
-    if (existing[0].updatedAtUtc >= pref.updatedAtUtc) {
-      return false; // Our version is same or newer
-    }
-
-    // Update existing preference
-    execute(
-      `UPDATE MemberPreference SET
-        lastPracticeType = ?, lastClassification = ?, updatedAtUtc = ?
-       WHERE memberId = ?`,
-      [
-        pref.lastPracticeType ?? null,
-        pref.lastClassification ?? null,
-        pref.updatedAtUtc,
-        pref.memberId
-      ]
-    );
-    console.log(`[SyncService] Updated member preference for ${pref.memberId}`);
-    return true;
-  }
-
-  // Insert new preference
-  execute(
-    `INSERT INTO MemberPreference (memberId, lastPracticeType, lastClassification, updatedAtUtc)
-     VALUES (?, ?, ?, ?)`,
-    [
-      pref.memberId,
-      pref.lastPracticeType ?? null,
-      pref.lastClassification ?? null,
-      pref.updatedAtUtc
-    ]
-  );
-
-  console.log(`[SyncService] Added member preference for ${pref.memberId}`);
-  return true;
-}
-
-/**
- * Get member preferences for sync to member tablets.
- * Used to transfer preferences when a new tablet is paired.
+ * Derive member preferences for sync to member tablets from last practice session.
+ * No separate MemberPreference table needed — just look at the most recent session per member.
  */
 export function getMemberPreferencesForSync(): SyncableMemberPreference[] {
   return query<SyncableMemberPreference>(
-    `SELECT memberId, lastPracticeType, lastClassification, updatedAtUtc
-     FROM MemberPreference`
+    `SELECT
+       ps.internalMemberId as memberId,
+       ps.practiceType as lastPracticeType,
+       ps.classification as lastClassification,
+       ps.createdAtUtc as updatedAtUtc
+     FROM PracticeSession ps
+     INNER JOIN (
+       SELECT internalMemberId, MAX(createdAtUtc) as maxCreated
+       FROM PracticeSession
+       GROUP BY internalMemberId
+     ) latest ON ps.internalMemberId = latest.internalMemberId
+       AND ps.createdAtUtc = latest.maxCreated`
   );
 }
 
@@ -1558,7 +1504,7 @@ export function getTrainerDataForSync(): { trainerInfos: SyncableTrainerInfo[], 
 /**
  * Get full sync payload for a device that is doing initial sync.
  * Returns all member data to be pushed to the tablet.
- * For MEMBER_TABLET devices, also includes member preferences.
+ * For MEMBER_TABLET devices, also includes member preferences (derived from last practice session).
  */
 export function getFullSyncPayload(deviceType?: string): SyncPayload {
   const members = getMemberDataForFullSync();

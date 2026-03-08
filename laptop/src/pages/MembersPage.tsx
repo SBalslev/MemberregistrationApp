@@ -152,12 +152,14 @@ export function MembersPage() {
     return filteredMembers.findIndex(m => m.internalId === selectedMember.internalId);
   }, [filteredMembers, selectedMember]);
 
-  // Auto-focus list when members view is active and list has items
+  // Auto-focus list when switching to members view
   useEffect(() => {
     if (viewMode === 'members' && filteredMembers.length > 0) {
       listRef.current?.focus();
     }
-  }, [viewMode, filteredMembers.length]);
+    // Only trigger on viewMode change, not on list length changes (which would steal focus from search input)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
 
   // Keyboard navigation for member list
   const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -1585,8 +1587,7 @@ function DeleteMemberDialog({ member, onClose, onDeleted }: DeleteMemberDialogPr
     preview.counts.skvRegistrations > 0 ||
     preview.counts.skvWeapons > 0 ||
     preview.counts.trainerInfo ||
-    preview.counts.trainerDisciplines > 0 ||
-    preview.counts.memberPreferences
+    preview.counts.trainerDisciplines > 0
   );
 
   return (
@@ -1712,12 +1713,6 @@ function DeleteMemberDialog({ member, onClose, onDeleted }: DeleteMemberDialogPr
                       <li className="flex justify-between">
                         <span>Trænerdiscipliner</span>
                         <span className="font-medium text-gray-900">{preview.counts.trainerDisciplines}</span>
-                      </li>
-                    )}
-                    {preview.counts.memberPreferences && (
-                      <li className="flex justify-between">
-                        <span>Præferencer</span>
-                        <span className="font-medium text-gray-900">Ja</span>
                       </li>
                     )}
                   </ul>

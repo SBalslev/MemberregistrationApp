@@ -7,7 +7,7 @@
  * @see /docs/features/online-database-sync/php-api-design.md
  */
 
-import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout, ScanEvent, MemberPreference, NewMemberRegistration } from '../types/entities';
+import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout, ScanEvent, NewMemberRegistration } from '../types/entities';
 import type {
   FinancialTransaction,
   FiscalYear,
@@ -95,7 +95,6 @@ export interface SyncPushPayload {
     transactionLines?: OnlineTransactionLine[];
     pendingFeePayments?: OnlinePendingFeePayment[];
     scanEvents?: OnlineScanEvent[];
-    memberPreferences?: OnlineMemberPreference[];
     newMemberRegistrations?: OnlineNewMemberRegistration[];
     skvRegistrations?: OnlineSkvRegistration[];
     skvWeapons?: OnlineSkvWeapon[];
@@ -135,7 +134,6 @@ export interface SyncPullResult {
     transactionLines?: OnlineTransactionLine[];
     pendingFeePayments?: OnlinePendingFeePayment[];
     scanEvents?: OnlineScanEvent[];
-    memberPreferences?: OnlineMemberPreference[];
     newMemberRegistrations?: OnlineNewMemberRegistration[];
     skvRegistrations?: OnlineSkvRegistration[];
     skvWeapons?: OnlineSkvWeapon[];
@@ -171,7 +169,6 @@ export interface EntityCounts {
   // Core member data
   members: number;
   member_photos: number;
-  member_preferences: number;
   // Activity data
   check_ins: number;
   practice_sessions: number;
@@ -447,15 +444,6 @@ export interface OnlineScanEvent {
   linked_check_in_id: string | null;
   linked_session_id: string | null;
   canceled_flag: boolean;
-  sync_version: number;
-  _action?: 'upsert' | 'delete';
-}
-
-export interface OnlineMemberPreference {
-  member_id: string;
-  last_practice_type: string | null;
-  last_classification: string | null;
-  modified_at_utc: string;
   sync_version: number;
   _action?: 'upsert' | 'delete';
 }
@@ -816,7 +804,7 @@ class OnlineApiService {
    */
   async pull(
     since: string,
-    entities: string[] = ['members', 'check_ins', 'practice_sessions', 'equipment_items', 'equipment_checkouts', 'trainer_infos', 'trainer_disciplines', 'posting_categories', 'fiscal_years', 'fee_rates', 'financial_transactions', 'transaction_lines', 'pending_fee_payments', 'scan_events', 'member_preferences', 'photos', 'new_member_registrations', 'skv_registrations', 'skv_weapons'],
+    entities: string[] = ['members', 'check_ins', 'practice_sessions', 'equipment_items', 'equipment_checkouts', 'trainer_infos', 'trainer_disciplines', 'posting_categories', 'fiscal_years', 'fee_rates', 'financial_transactions', 'transaction_lines', 'pending_fee_payments', 'scan_events', 'photos', 'new_member_registrations', 'skv_registrations', 'skv_weapons'],
     limit: number = 100
   ): Promise<SyncPullResult> {
     const params = new URLSearchParams({
@@ -1852,31 +1840,6 @@ export function scanEventFromOnline(online: OnlineScanEvent): Partial<ScanEvent>
     linkedSessionId: online.linked_session_id,
     canceledFlag: online.canceled_flag,
     syncVersion: online.sync_version,
-  };
-}
-
-// ===== Member Preference Conversion Functions =====
-
-export function memberPreferenceToOnline(
-  pref: MemberPreference,
-  action: 'upsert' | 'delete' = 'upsert'
-): OnlineMemberPreference {
-  return {
-    member_id: pref.memberId,
-    last_practice_type: pref.lastPracticeType,
-    last_classification: pref.lastClassification,
-    modified_at_utc: pref.modifiedAtUtc,
-    sync_version: 1,
-    _action: action,
-  };
-}
-
-export function memberPreferenceFromOnline(online: OnlineMemberPreference): Partial<MemberPreference> {
-  return {
-    memberId: online.member_id,
-    lastPracticeType: online.last_practice_type,
-    lastClassification: online.last_classification,
-    modifiedAtUtc: online.modified_at_utc,
   };
 }
 

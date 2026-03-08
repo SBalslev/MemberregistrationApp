@@ -723,7 +723,6 @@ export interface MemberDeletePreview {
     skvWeapons: number;
     trainerInfo: boolean;
     trainerDisciplines: number;
-    memberPreferences: boolean;
     transactionLines: number; // Will be orphaned, not deleted
   };
 }
@@ -755,7 +754,7 @@ export function getMemberDeletePreview(internalId: string): MemberDeletePreview 
       counts: {
         checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0,
         pendingFeePayments: 0, skvRegistrations: 0, skvWeapons: 0,
-        trainerInfo: false, trainerDisciplines: 0, memberPreferences: false, transactionLines: 0
+        trainerInfo: false, trainerDisciplines: 0, transactionLines: 0
       }
     };
   }
@@ -767,7 +766,7 @@ export function getMemberDeletePreview(internalId: string): MemberDeletePreview 
       counts: {
         checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0,
         pendingFeePayments: 0, skvRegistrations: 0, skvWeapons: 0,
-        trainerInfo: false, trainerDisciplines: 0, memberPreferences: false, transactionLines: 0
+        trainerInfo: false, trainerDisciplines: 0, transactionLines: 0
       }
     };
   }
@@ -789,7 +788,7 @@ export function getMemberDeletePreview(internalId: string): MemberDeletePreview 
       counts: {
         checkIns: 0, practiceSessions: 0, scanEvents: 0, equipmentCheckouts: 0,
         pendingFeePayments: 0, skvRegistrations: 0, skvWeapons: 0,
-        trainerInfo: false, trainerDisciplines: 0, memberPreferences: false, transactionLines: currentYearTxns
+        trainerInfo: false, trainerDisciplines: 0, transactionLines: currentYearTxns
       }
     };
   }
@@ -843,12 +842,6 @@ export function getMemberDeletePreview(internalId: string): MemberDeletePreview 
     [internalId]
   )[0]?.count ?? 0;
 
-  const memberPreferencesResult = query<{ count: number }>(
-    'SELECT COUNT(*) as count FROM MemberPreference WHERE memberId = ?',
-    [internalId]
-  );
-  const memberPreferences = (memberPreferencesResult[0]?.count ?? 0) > 0;
-
   // Count all transaction lines (these will be orphaned, not deleted)
   const transactionLines = query<{ count: number }>(
     `SELECT COUNT(*) as count
@@ -870,7 +863,6 @@ export function getMemberDeletePreview(internalId: string): MemberDeletePreview 
       skvWeapons,
       trainerInfo,
       trainerDisciplines,
-      memberPreferences,
       transactionLines
     }
   };
@@ -891,12 +883,11 @@ export function getMemberDeletePreview(internalId: string): MemberDeletePreview 
  * 4. Delete SKVRegistration
  * 5. Delete TrainerDiscipline
  * 6. Delete TrainerInfo
- * 7. Delete MemberPreference
- * 8. Delete EquipmentCheckout
- * 9. Delete ScanEvent
- * 10. Delete PracticeSession
- * 11. Delete CheckIn
- * 12. Delete photo files
+ * 7. Delete EquipmentCheckout
+ * 8. Delete ScanEvent
+ * 9. Delete PracticeSession
+ * 10. Delete CheckIn
+ * 11. Delete photo files
  * 13. Delete Member
  *
  * @param internalId The member's internalId
@@ -1003,44 +994,38 @@ export async function deleteMemberPermanently(internalId: string): Promise<Membe
         [internalId]
       );
 
-      // 7. Delete member preferences
-      execute(
-        'DELETE FROM MemberPreference WHERE memberId = ?',
-        [internalId]
-      );
-
-      // 8. Delete equipment checkouts
+      // 7. Delete equipment checkouts
       execute(
         'DELETE FROM EquipmentCheckout WHERE internalMemberId = ?',
         [internalId]
       );
 
-      // 9. Delete scan events
+      // 8. Delete scan events
       execute(
         'DELETE FROM ScanEvent WHERE internalMemberId = ?',
         [internalId]
       );
 
-      // 10. Delete practice sessions
+      // 9. Delete practice sessions
       execute(
         'DELETE FROM PracticeSession WHERE internalMemberId = ?',
         [internalId]
       );
 
-      // 11. Delete check-ins
+      // 10. Delete check-ins
       execute(
         'DELETE FROM CheckIn WHERE internalMemberId = ?',
         [internalId]
       );
 
-      // 12. Delete member record
+      // 11. Delete member record
       execute(
         'DELETE FROM Member WHERE internalId = ?',
         [internalId]
       );
     });
 
-    // 13. Delete photo files from disk (outside transaction)
+    // 12. Delete photo files from disk (outside transaction)
     try {
       await deletePhotoFile(internalId);
     } catch (photoError) {
@@ -1048,7 +1033,7 @@ export async function deleteMemberPermanently(internalId: string): Promise<Membe
       console.warn('[MemberRepository] Failed to delete photo file:', photoError);
     }
 
-    // 14. Queue deletion for cloud sync (with retry support)
+    // 13. Queue deletion for cloud sync (with retry support)
     queueMemberDeletion({
       internalId,
       checkInIds: checkInIds.length > 0 ? checkInIds : undefined,

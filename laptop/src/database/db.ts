@@ -415,18 +415,11 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('TrustedDevice.tokenExpiresAt');
   }
 
-  // ===== Migration: MemberPreference table for sync of UI preferences =====
+  // ===== Migration: Drop MemberPreference table (preferences now derived from last PracticeSession) =====
   const memberPrefCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='MemberPreference'");
-  if (memberPrefCheck.length === 0 || memberPrefCheck[0].values.length === 0) {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS MemberPreference (
-        memberId TEXT PRIMARY KEY NOT NULL,
-        lastPracticeType TEXT,
-        lastClassification TEXT,
-        updatedAtUtc TEXT NOT NULL
-      )
-    `);
-    migrationsRun.push('MemberPreference table created');
+  if (memberPrefCheck.length > 0 && memberPrefCheck[0].values.length > 0) {
+    db.run('DROP TABLE MemberPreference');
+    migrationsRun.push('MemberPreference table dropped');
   }
 
   // ===== Migration: Schema v11 - Trainer Experience =====
@@ -913,14 +906,6 @@ async function createSchema(): Promise<void> {
       FOREIGN KEY (transactionId) REFERENCES FinancialTransaction(id),
       FOREIGN KEY (categoryId) REFERENCES PostingCategory(id),
       FOREIGN KEY (memberId) REFERENCES Member(internalId)
-    );
-
-    -- Member preferences for practice type/classification sync
-    CREATE TABLE IF NOT EXISTS MemberPreference (
-      memberId TEXT PRIMARY KEY NOT NULL,
-      lastPracticeType TEXT,
-      lastClassification TEXT,
-      updatedAtUtc TEXT NOT NULL
     );
 
     -- Trainer info table for trainer designations and certifications
