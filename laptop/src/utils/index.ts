@@ -1,5 +1,5 @@
 /**
  * Utility functions barrel export.
  */
-export { exportKassebog } from './excelExport';
+export { exportKassebog, getMissingExportCategoryIds, getMissingExportCategoryCounts } from './excelExport';
 export * from './photoStorage';

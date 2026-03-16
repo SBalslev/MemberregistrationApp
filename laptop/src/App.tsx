@@ -20,7 +20,21 @@ import {
   StatisticsPage,
   MinIdraetSearchPage
 } from './pages';
-import { initDatabase, processSyncPayload, processInitialSyncPayload, getMemberDataForFullSync, getEquipmentForSync, getMemberPreferencesForSync, getTrainerDataForSync, runPhotoMigration, isMigrationNeeded, getTrustedDevices, type SyncPayload } from './database';
+import {
+  initDatabase,
+  processSyncPayload,
+  processInitialSyncPayload,
+  getCheckInsForSync,
+  getMemberDataForFullSync,
+  getPracticeSessionsForSync,
+  getEquipmentForSync,
+  getMemberPreferencesForSync,
+  getTrainerDataForSync,
+  runPhotoMigration,
+  isMigrationNeeded,
+  getTrustedDevices,
+  type SyncPayload
+} from './database';
 import { processAllEligibleIdPhotoDeletions } from './services/idPhotoLifecycleService';
 import { useAppStore } from './store';
 import { isElectron, getElectronAPI } from './types/electron';
@@ -205,8 +219,11 @@ function App() {
           // Handle sync:get-members - main process requests member data
           api?.onGetMembersRequest?.((data) => {
             const deviceType = data?.deviceType || 'MEMBER_TABLET';
+            const since = data?.since;
             console.log(`[App] IPC get-members request for ${deviceType}`);
             const members = getMemberDataForFullSync();
+            const checkIns = getCheckInsForSync(since);
+            const practiceSessions = getPracticeSessionsForSync(since);
             // NOTE: NewMemberRegistration sync deprecated per FR-7.3
             // Trial members now sync as Member entities with memberType = TRIAL
             // Keeping empty array for backward compatibility with older tablets
@@ -218,9 +235,11 @@ function App() {
               ? getMemberPreferencesForSync()
               : [];
             const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
-            console.log(`[App] Returning ${members.length} members, ${equipmentItems.length} equipment items, ${memberPreferences.length} preferences, ${trainerInfos.length} trainer infos, ${trainerDisciplines.length} trainer disciplines for sync`);
+            console.log(`[App] Returning ${members.length} members, ${checkIns.length} check-ins, ${practiceSessions.length} sessions, ${equipmentItems.length} equipment items, ${memberPreferences.length} preferences, ${trainerInfos.length} trainer infos, ${trainerDisciplines.length} trainer disciplines for sync`);
             return {
               members,
+              checkIns,
+              practiceSessions,
               registrations,
               equipmentItems,
               equipmentCheckouts,

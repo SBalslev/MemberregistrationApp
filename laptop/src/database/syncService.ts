@@ -843,6 +843,97 @@ function sanitizeDate(dateStr: string | null | undefined): string | null {
   return dateStr;
 }
 
+export function getCheckInsForSync(since?: string) {
+  const cutoffDate = new Date();
+  cutoffDate.setMonth(cutoffDate.getMonth() - 12);
+  const cutoffIso = cutoffDate.toISOString();
+  const sinceDate = since ? new Date(since) : null;
+  const effectiveSince = sinceDate && !Number.isNaN(sinceDate.getTime()) && sinceDate > cutoffDate
+    ? sinceDate.toISOString()
+    : cutoffIso;
+  const params: string[] = [effectiveSince];
+
+  const rows = query<{
+    id: string;
+    internalMemberId: string;
+    membershipId: string | null;
+    localDate: string;
+    createdAtUtc: string;
+    syncedAtUtc: string | null;
+    syncVersion: number;
+  }>(
+    `SELECT id, internalMemberId, membershipId, localDate, createdAtUtc, syncedAtUtc, syncVersion
+     FROM CheckIn
+     WHERE createdAtUtc > ?
+     ORDER BY createdAtUtc ASC`,
+    params
+  );
+
+  // Laptop DB does not store first-of-day flag, default to true.
+  return rows.map(row => ({
+    id: row.id,
+    internalMemberId: row.internalMemberId,
+    membershipId: row.membershipId ?? null,
+    localDate: row.localDate,
+    firstOfDayFlag: true,
+    deviceId: 'laptop-master',
+    syncVersion: row.syncVersion || 1,
+    createdAtUtc: row.createdAtUtc,
+    modifiedAtUtc: row.createdAtUtc,
+    syncedAtUtc: row.syncedAtUtc ?? null
+  }));
+}
+
+export function getPracticeSessionsForSync(since?: string) {
+  const cutoffDate = new Date();
+  cutoffDate.setMonth(cutoffDate.getMonth() - 12);
+  const cutoffIso = cutoffDate.toISOString();
+  const sinceDate = since ? new Date(since) : null;
+  const effectiveSince = sinceDate && !Number.isNaN(sinceDate.getTime()) && sinceDate > cutoffDate
+    ? sinceDate.toISOString()
+    : cutoffIso;
+  const params: string[] = [effectiveSince];
+
+  const rows = query<{
+    id: string;
+    internalMemberId: string;
+    membershipId: string | null;
+    localDate: string;
+    practiceType: string;
+    classification: string;
+    points: number;
+    krydser: number | null;
+    createdAtUtc: string;
+    syncedAtUtc: string | null;
+    syncVersion: number;
+  }>(
+    `SELECT id, internalMemberId, membershipId, localDate, practiceType, classification, points,
+            krydser, createdAtUtc, syncedAtUtc, syncVersion
+     FROM PracticeSession
+     WHERE createdAtUtc > ?
+     ORDER BY createdAtUtc ASC`,
+    params
+  );
+
+  // Laptop DB does not store session source, default to kiosk.
+  return rows.map(row => ({
+    id: row.id,
+    internalMemberId: row.internalMemberId,
+    membershipId: row.membershipId ?? null,
+    localDate: row.localDate,
+    practiceType: row.practiceType,
+    points: row.points,
+    krydser: row.krydser ?? null,
+    classification: row.classification || null,
+    source: 'kiosk',
+    deviceId: 'laptop-master',
+    syncVersion: row.syncVersion || 1,
+    createdAtUtc: row.createdAtUtc,
+    modifiedAtUtc: row.createdAtUtc,
+    syncedAtUtc: row.syncedAtUtc ?? null
+  }));
+}
+
 export function getMemberDataForFullSync(): SyncableMember[] {
   const members = getAllMembers();
   const now = new Date().toISOString();

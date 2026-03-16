@@ -393,65 +393,108 @@ function startSyncServer() {
     }
   });
 
-  // FR-18.2: GET /api/sync/pull - Send changes to tablets (laptop sends member data)
+  async function buildPullEntities(requestingDeviceType, sinceIso) {
+    const entities = {
+      members: [],
+      checkIns: [],
+      practiceSessions: [],
+      equipmentItems: [],
+      equipmentCheckouts: [],
+      newMemberRegistrations: [],
+      memberPreferences: [],
+      trainerInfos: [],
+      trainerDisciplines: []
+    };
+
+    try {
+      // Pass device type so renderer can include device-specific data
+      const memberData = await requestFromRenderer('sync:get-members', { since: sinceIso, deviceType: requestingDeviceType });
+      if (memberData && memberData.members) {
+        entities.members = memberData.members;
+        console.log(`[Sync] Sending ${entities.members.length} members to tablet`);
+      }
+      if (memberData && memberData.checkIns) {
+        entities.checkIns = memberData.checkIns;
+        console.log(`[Sync] Sending ${entities.checkIns.length} check-ins to tablet`);
+      }
+      if (memberData && memberData.practiceSessions) {
+        entities.practiceSessions = memberData.practiceSessions;
+        console.log(`[Sync] Sending ${entities.practiceSessions.length} practice sessions to tablet`);
+      }
+      // Include approved or rejected registrations so tablets get status updates
+      if (memberData && memberData.registrations) {
+        entities.newMemberRegistrations = memberData.registrations;
+        console.log(`[Sync] Sending ${entities.newMemberRegistrations.length} registrations to tablet`);
+      }
+      // Include equipment data
+      if (memberData && memberData.equipmentItems) {
+        entities.equipmentItems = memberData.equipmentItems;
+        console.log(`[Sync] Sending ${entities.equipmentItems.length} equipment items to tablet`);
+      }
+      if (memberData && memberData.equipmentCheckouts) {
+        entities.equipmentCheckouts = memberData.equipmentCheckouts;
+        console.log(`[Sync] Sending ${entities.equipmentCheckouts.length} equipment checkouts to tablet`);
+      }
+      // Include member preferences for MEMBER_TABLET devices
+      if (memberData && memberData.memberPreferences) {
+        entities.memberPreferences = memberData.memberPreferences;
+        console.log(`[Sync] Sending ${entities.memberPreferences.length} member preferences to tablet`);
+      }
+      if (memberData && memberData.trainerInfos) {
+        entities.trainerInfos = memberData.trainerInfos;
+        console.log(`[Sync] Sending ${entities.trainerInfos.length} trainer infos to tablet`);
+      }
+      if (memberData && memberData.trainerDisciplines) {
+        entities.trainerDisciplines = memberData.trainerDisciplines;
+        console.log(`[Sync] Sending ${entities.trainerDisciplines.length} trainer disciplines to tablet`);
+      }
+    } catch (ipcError) {
+      console.warn('[Sync] Could not get sync payload from renderer:', ipcError.message);
+    }
+
+    return entities;
+  }
+
+  // FR-18.2: POST /api/sync/pull - Send changes to tablets (preferred)
+  // Protected by auth middleware
+  server.post('/api/sync/pull', authMiddleware, async (req, res) => {
+    try {
+      const sinceRaw = req.body?.since;
+      const sinceDate = sinceRaw ? new Date(sinceRaw) : new Date(0);
+      const sinceIso = Number.isNaN(sinceDate.getTime()) ? new Date(0).toISOString() : sinceDate.toISOString();
+      const requestingDeviceType = req.trustedDevice?.deviceType || 'MEMBER_TABLET';
+      console.log(`[Sync] Pull request from ${req.trustedDevice?.name || 'unknown'}, since: ${sinceIso}`);
+
+      const entities = await buildPullEntities(requestingDeviceType, sinceIso);
+
+      res.json({
+        schemaVersion: SCHEMA_VERSION,
+        deviceId: deviceInfo.deviceId,
+        deviceType: deviceInfo.deviceType,
+        timestamp: new Date().toISOString(),
+        entities
+      });
+    } catch (error) {
+      console.error('[Sync] Pull error:', error);
+      res.status(500).json({
+        status: 'ERROR',
+        errorMessage: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // FR-18.2: GET /api/sync/pull - Send changes to tablets (legacy)
   // Protected by auth middleware
   server.get('/api/sync/pull', authMiddleware, async (req, res) => {
     try {
-      const since = req.query.since ? new Date(req.query.since) : new Date(0);
-      console.log(`[Sync] Pull request from ${req.trustedDevice?.name || 'unknown'}, since: ${since.toISOString()}`);
+      const sinceRaw = req.query.since;
+      const sinceDate = sinceRaw ? new Date(sinceRaw) : new Date(0);
+      const sinceIso = Number.isNaN(sinceDate.getTime()) ? new Date(0).toISOString() : sinceDate.toISOString();
+      const requestingDeviceType = req.trustedDevice?.deviceType || 'MEMBER_TABLET';
+      console.log(`[Sync] Pull request from ${req.trustedDevice?.name || 'unknown'}, since: ${sinceIso}`);
 
-      // Request member data from renderer (laptop is master for members)
-      let entities = {
-        members: [],
-        checkIns: [],
-        practiceSessions: [],
-        equipmentItems: [],
-        equipmentCheckouts: [],
-        newMemberRegistrations: [],
-        memberPreferences: [],
-        trainerInfos: [],
-        trainerDisciplines: []
-      };
-
-      try {
-        // Pass device type so renderer can include device-specific data (e.g., member preferences for MEMBER_TABLET)
-        const requestingDeviceType = req.trustedDevice?.deviceType || 'MEMBER_TABLET';
-        const memberData = await requestFromRenderer('sync:get-members', { since: since.toISOString(), deviceType: requestingDeviceType });
-        if (memberData && memberData.members) {
-          entities.members = memberData.members;
-          console.log(`[Sync] Sending ${entities.members.length} members to tablet`);
-        }
-        // Include approved/rejected registrations so tablets get status updates
-        if (memberData && memberData.registrations) {
-          entities.newMemberRegistrations = memberData.registrations;
-          console.log(`[Sync] Sending ${entities.newMemberRegistrations.length} registrations to tablet`);
-        }
-        // Include equipment data
-        if (memberData && memberData.equipmentItems) {
-          entities.equipmentItems = memberData.equipmentItems;
-          console.log(`[Sync] Sending ${entities.equipmentItems.length} equipment items to tablet`);
-        }
-        if (memberData && memberData.equipmentCheckouts) {
-          entities.equipmentCheckouts = memberData.equipmentCheckouts;
-          console.log(`[Sync] Sending ${entities.equipmentCheckouts.length} equipment checkouts to tablet`);
-        }
-        // Include member preferences for MEMBER_TABLET devices
-        if (memberData && memberData.memberPreferences) {
-          entities.memberPreferences = memberData.memberPreferences;
-          console.log(`[Sync] Sending ${entities.memberPreferences.length} member preferences to tablet`);
-        }
-        if (memberData && memberData.trainerInfos) {
-          entities.trainerInfos = memberData.trainerInfos;
-          console.log(`[Sync] Sending ${entities.trainerInfos.length} trainer infos to tablet`);
-        }
-        if (memberData && memberData.trainerDisciplines) {
-          entities.trainerDisciplines = memberData.trainerDisciplines;
-          console.log(`[Sync] Sending ${entities.trainerDisciplines.length} trainer disciplines to tablet`);
-        }
-      } catch (ipcError) {
-        console.warn('[Sync] Could not get members from renderer:', ipcError.message);
-        // Continue with empty members
-      }
+      const entities = await buildPullEntities(requestingDeviceType, sinceIso);
 
       res.json({
         schemaVersion: SCHEMA_VERSION,

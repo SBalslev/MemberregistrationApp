@@ -148,17 +148,21 @@ export interface SyncPushPayload {
 
 export interface SyncableCheckIn {
   id: string;
-  membershipId: string;
+  internalMemberId: string;
+  membershipId?: string | null;
   localDate: string;
   firstOfDayFlag: boolean;
   deviceId: string;
   syncVersion: number;
   createdAtUtc: string;
+  modifiedAtUtc: string;
+  syncedAtUtc?: string | null;
 }
 
 export interface SyncablePracticeSession {
   id: string;
-  membershipId: string;
+  internalMemberId: string;
+  membershipId?: string | null;
   localDate: string;
   practiceType: string;
   points: number;
@@ -168,6 +172,8 @@ export interface SyncablePracticeSession {
   deviceId: string;
   syncVersion: number;
   createdAtUtc: string;
+  modifiedAtUtc: string;
+  syncedAtUtc?: string | null;
 }
 
 export interface SyncableNewMemberRegistration {
@@ -211,6 +217,8 @@ export interface InitialSyncResultPayload {
 
 export interface MemberDataPayload {
   members: SyncableMemberData[];
+  checkIns?: SyncableCheckIn[];
+  practiceSessions?: SyncablePracticeSession[];
   registrations?: unknown[];
   equipmentItems?: unknown[];
   equipmentCheckouts?: unknown[];

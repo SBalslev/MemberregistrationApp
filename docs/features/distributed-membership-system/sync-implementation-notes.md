@@ -1,7 +1,7 @@
 # Sync Implementation Notes
 
 > **Created**: January 18, 2026
-> **Last Updated**: January 26, 2026 by sbalslev
+> **Last Updated**: March 9, 2026 by sbalslev
 > **Status**: Working MVP with pairing and auth in place
 
 ---
@@ -25,8 +25,9 @@ The sync system uses a **peer-to-peer HTTP API** approach with **mDNS service di
 
 ### Data Flow
 
-1. **Laptop → Tablet (Members and Trainers)**: Laptop is master for member and trainer data
+1. **Laptop → Tablet (Members, Trainers, and Backfill Activity)**: Laptop is master for member and trainer data
    - `POST /api/sync/push` with members array
+   - `GET|POST /api/sync/pull` includes check-ins and practice sessions for backfill (last 12 months)
    - Trainer data included: `trainerInfos`, `trainerDisciplines`
    - Tablet applies via `SyncRepository.applySyncPayload()`
 
@@ -106,7 +107,8 @@ app.use('/api/sync', authMiddleware);
 
 4. **Bidirectional Data Sync** (`appStore.ts`, `syncService.ts`)
    - Laptop pushes members to tablets
-   - Laptop pulls check-ins/sessions from tablets
+   - Laptop pulls check-ins and sessions from tablets
+   - Laptop backfills check-ins and sessions to tablets on pull
    - IPC bridge between main process and renderer
 
 ---

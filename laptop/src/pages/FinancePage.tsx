@@ -36,7 +36,7 @@ import {
 import { onlineSyncService } from '../database/onlineSyncService';
 import { getAllMembers } from '../database/memberRepository';
 import { onFeePaymentRecorded } from '../services/idPhotoLifecycleService';
-import { exportKassebog } from '../utils';
+import { exportKassebog, getMissingExportCategoryCounts } from '../utils';
 import { getEffectiveMemberType } from '../utils/feeCategory';
 import { MEMBER_TYPE_LABELS } from '../types';
 import type {
@@ -372,6 +372,14 @@ export function FinancePage() {
     const fiscalYear = getFiscalYear(selectedYear);
     if (!fiscalYear) {
       showWarning('Ingen data at eksportere for dette år');
+      return;
+    }
+    const missingCategoryCounts = getMissingExportCategoryCounts(transactions, categories);
+    if (missingCategoryCounts.length > 0) {
+      const details = missingCategoryCounts
+        .map((item) => `${item.categoryId} (${item.count})`)
+        .join(', ');
+      showWarning(`Eksport stoppet - ukendte kategorier i posteringer: ${details}`);
       return;
     }
     exportKassebog({
