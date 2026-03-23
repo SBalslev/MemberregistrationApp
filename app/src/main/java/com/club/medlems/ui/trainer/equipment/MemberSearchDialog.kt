@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,15 +51,17 @@ import com.club.medlems.data.entity.MemberStatus
  * Dialog for searching and selecting a member for equipment checkout.
  *
  * Features:
+ * - Recent members shown immediately for fast repeat checkouts
  * - Search field with real-time filtering
  * - List of matching members (name, membershipId)
- * - Tap to select and confirm checkout
+ * - Inactive members shown but disabled
  *
  * @see [design.md FR-8.4] - Member Search for Equipment Checkout
  */
 @Composable
 fun MemberSearchDialog(
     searchResults: List<Member>,
+    recentMembers: List<Member> = emptyList(),
     onSearch: (query: String) -> Unit,
     onDismiss: () -> Unit,
     onMemberSelected: (Member) -> Unit
@@ -127,7 +130,7 @@ fun MemberSearchDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Search results
+                // Search results or recent members
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -135,33 +138,22 @@ fun MemberSearchDialog(
                         .heightIn(min = 200.dp, max = 400.dp)
                 ) {
                     when {
-                        searchQuery.length < 2 -> {
-                            // Prompt to search
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.Center
+                        // Active search with results
+                        searchQuery.length >= 2 && searchResults.isNotEmpty() -> {
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(vertical = 4.dp)
                             ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.padding(32.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Search,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(48.dp),
-                                        tint = MaterialTheme.colorScheme.outline
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        "Indtast mindst 2 tegn for at s\u00f8ge",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.outline
+                                items(searchResults, key = { it.internalId }) { member ->
+                                    MemberSearchResultItem(
+                                        member = member,
+                                        onClick = { onMemberSelected(member) }
                                     )
                                 }
                             }
                         }
-                        searchResults.isEmpty() -> {
-                            // No results
+                        // Active search with no results
+                        searchQuery.length >= 2 && searchResults.isEmpty() -> {
                             Box(
                                 modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.Center
@@ -185,16 +177,52 @@ fun MemberSearchDialog(
                                 }
                             }
                         }
-                        else -> {
-                            // Search results list
+                        // No search yet: show recent members if available
+                        recentMembers.isNotEmpty() -> {
                             LazyColumn(
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                                 contentPadding = PaddingValues(vertical = 4.dp)
                             ) {
-                                items(searchResults, key = { it.internalId }) { member ->
+                                item {
+                                    Text(
+                                        text = "Seneste medlemmer",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    HorizontalDivider()
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
+                                items(recentMembers, key = { it.internalId }) { member ->
                                     MemberSearchResultItem(
                                         member = member,
                                         onClick = { onMemberSelected(member) }
+                                    )
+                                }
+                            }
+                        }
+                        // No recent members, prompt to search
+                        else -> {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.padding(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Search,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.outline
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        "Indtast mindst 2 tegn for at s\u00f8ge",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.outline
                                     )
                                 }
                             }

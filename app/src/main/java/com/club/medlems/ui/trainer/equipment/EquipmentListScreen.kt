@@ -21,10 +21,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -36,6 +40,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -60,14 +65,19 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.club.medlems.data.entity.EquipmentStatus
 import com.club.medlems.data.entity.PracticeType
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * Equipment list screen for the trainer tablet.
  *
  * Features:
  * - List of equipment with status indicators (green=Available, orange=CheckedOut)
- * - Filter chips: Alle, Ledige, Udlant
- * - Search by serial number or description
+ * - Filter chips: Alle, Ledige, Aktive udlån, Udlånt
+ * - "Aktive udlån" view with inline return buttons and batch return
+ * - Quick checkout: tap "Udlån" directly on available items
+ * - Search by serial number, description, or member name
  * - FAB to create new equipment
  * - Tap item to navigate to detail screen
  *
@@ -82,9 +92,12 @@ fun EquipmentListScreen(
 ) {
     val equipmentList by viewModel.equipmentList.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
+    val memberSearchResults by viewModel.memberSearchResults.collectAsState()
+    val recentMembers by viewModel.recentMembers.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var showBatchConfirm by remember { mutableStateOf(false) }
 
     // Show snackbar for success/error messages
     LaunchedEffect(uiState.successMessage, uiState.error) {
@@ -137,10 +150,19 @@ fun EquipmentListScreen(
                 onFilterChanged = { viewModel.setStatusFilter(it) }
             )
 
+            // Batch return button when in active checkouts view
+            if (uiState.statusFilter == EquipmentStatusFilter.ActiveCheckouts && equipmentList.isNotEmpty()) {
+                BatchReturnBar(
+                    activeCount = equipmentList.size,
+                    onBatchReturn = { showBatchConfirm = true }
+                )
+            }
+
             // Equipment list
             if (equipmentList.isEmpty()) {
                 EmptyEquipmentState(
-                    hasFilter = uiState.statusFilter != EquipmentStatusFilter.All || uiState.searchQuery.isNotBlank()
+                    hasFilter = uiState.statusFilter != EquipmentStatusFilter.All || uiState.searchQuery.isNotBlank(),
+                    isActiveCheckoutsView = uiState.statusFilter == EquipmentStatusFilter.ActiveCheckouts
                 )
             } else {
                 LazyColumn(
@@ -149,10 +171,26 @@ fun EquipmentListScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(equipmentList, key = { it.equipment.id }) { item ->
-                        EquipmentItemCard(
-                            item = item,
-                            onClick = { onNavigateToDetail(item.equipment.id) }
-                        )
+                        if (uiState.statusFilter == EquipmentStatusFilter.ActiveCheckouts) {
+                            ActiveCheckoutCard(
+                                item = item,
+                                onReturn = { viewModel.quickCheckin(item.equipment.id) },
+                                onClick = { onNavigateToDetail(item.equipment.id) },
+                                isLoading = uiState.isLoading
+                            )
+                        } else {
+                            EquipmentItemCard(
+                                item = item,
+                                onClick = { onNavigateToDetail(item.equipment.id) },
+                                onQuickCheckout = if (item.equipment.status == EquipmentStatus.Available) {
+                                    { viewModel.startQuickCheckout(item.equipment.id) }
+                                } else null,
+                                onQuickReturn = if (item.equipment.status == EquipmentStatus.CheckedOut) {
+                                    { viewModel.quickCheckin(item.equipment.id) }
+                                } else null,
+                                isLoading = uiState.isLoading
+                            )
+                        }
                     }
                 }
             }
@@ -166,6 +204,54 @@ fun EquipmentListScreen(
             onAdd = { serialNumber, description, discipline ->
                 viewModel.createEquipment(serialNumber, description, discipline)
                 showAddDialog = false
+            }
+        )
+    }
+
+    // Quick Checkout: member search dialog
+    if (uiState.quickCheckoutEquipmentId != null) {
+        MemberSearchDialog(
+            searchResults = memberSearchResults,
+            recentMembers = recentMembers,
+            onSearch = { query -> viewModel.searchMembers(query) },
+            onDismiss = {
+                viewModel.cancelQuickCheckout()
+                viewModel.clearMemberSearch()
+            },
+            onMemberSelected = { member ->
+                val equipmentId = uiState.quickCheckoutEquipmentId!!
+                viewModel.cancelQuickCheckout()
+                viewModel.clearMemberSearch()
+                viewModel.checkoutEquipment(equipmentId, member)
+            }
+        )
+    }
+
+    // Batch return confirmation
+    if (showBatchConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBatchConfirm = false },
+            title = { Text("Returner alt udstyr") },
+            text = {
+                Text("Er du sikker p\u00e5 at du vil returnere alle ${equipmentList.size} aktive udl\u00e5n?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showBatchConfirm = false
+                        viewModel.batchCheckinAll()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF4CAF50)
+                    )
+                ) {
+                    Text("Returner alle")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchConfirm = false }) {
+                    Text("Annuller")
+                }
             }
         )
     }
@@ -188,7 +274,7 @@ private fun SearchAndFilterBar(
             value = searchQuery,
             onValueChange = onSearchQueryChanged,
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("S\u00f8g serienummer eller beskrivelse...") },
+            placeholder = { Text("S\u00f8g serienummer, beskrivelse eller medlem...") },
             leadingIcon = {
                 Icon(Icons.Default.Search, contentDescription = null)
             },
@@ -227,6 +313,24 @@ private fun SearchAndFilterBar(
                 )
             )
             FilterChip(
+                selected = statusFilter == EquipmentStatusFilter.ActiveCheckouts,
+                onClick = { onFilterChanged(EquipmentStatusFilter.ActiveCheckouts) },
+                label = { Text("Aktive udl\u00e5n") },
+                leadingIcon = if (statusFilter == EquipmentStatusFilter.ActiveCheckouts) null else {
+                    {
+                        Icon(
+                            Icons.Default.ShoppingCart,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Color(0xFFFFA000).copy(alpha = 0.2f),
+                    selectedLabelColor = Color(0xFFE65100)
+                )
+            )
+            FilterChip(
                 selected = statusFilter == EquipmentStatusFilter.CheckedOut,
                 onClick = { onFilterChanged(EquipmentStatusFilter.CheckedOut) },
                 label = { Text("Udl\u00e5nt") },
@@ -239,28 +343,75 @@ private fun SearchAndFilterBar(
     }
 }
 
+/**
+ * Bar shown above the list in Active Checkouts view with a "Returner alle" button.
+ */
 @Composable
-private fun EmptyEquipmentState(hasFilter: Boolean) {
+private fun BatchReturnBar(
+    activeCount: Int,
+    onBatchReturn: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFFFA000).copy(alpha = 0.1f))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$activeCount aktive udl\u00e5n",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFFE65100)
+        )
+        OutlinedButton(
+            onClick = onBatchReturn,
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = Color(0xFF4CAF50)
+            )
+        ) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Returner alle")
+        }
+    }
+}
+
+@Composable
+private fun EmptyEquipmentState(hasFilter: Boolean, isActiveCheckoutsView: Boolean = false) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                Icons.Default.Build,
+                if (isActiveCheckoutsView) Icons.Default.Check else Icons.Default.Build,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (isActiveCheckoutsView) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = if (hasFilter) "Ingen udstyr matcher filteret" else "Intet udstyr registreret",
+                text = when {
+                    isActiveCheckoutsView -> "Intet udstyr er udl\u00e5nt"
+                    hasFilter -> "Ingen udstyr matcher filteret"
+                    else -> "Intet udstyr registreret"
+                },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = if (hasFilter) "Pr\u00f8v at \u00e6ndre filteret" else "Tryk + for at tilf\u00f8je udstyr",
+                text = when {
+                    isActiveCheckoutsView -> "Alt udstyr er returneret"
+                    hasFilter -> "Pr\u00f8v at \u00e6ndre filteret"
+                    else -> "Tryk + for at tilf\u00f8je udstyr"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -268,10 +419,103 @@ private fun EmptyEquipmentState(hasFilter: Boolean) {
     }
 }
 
+/**
+ * Card for the "Aktive udlån" view - shows member prominently with a return button.
+ */
+@Composable
+private fun ActiveCheckoutCard(
+    item: EquipmentWithCheckout,
+    onReturn: () -> Unit,
+    onClick: () -> Unit,
+    isLoading: Boolean
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left: member + equipment info
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Person,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                    tint = Color(0xFFFFA000)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = item.currentMember?.let {
+                            "${it.firstName} ${it.lastName}".trim()
+                        } ?: "Ukendt medlem",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = item.equipment.serialNumber + (item.equipment.description?.let { " - $it" } ?: ""),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (item.currentCheckout != null) {
+                        Text(
+                            text = "Udl\u00e5nt: ${formatInstant(item.currentCheckout.checkedOutAtUtc)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Right: Return button
+            Spacer(modifier = Modifier.width(12.dp))
+            Button(
+                onClick = onReturn,
+                enabled = !isLoading,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF4CAF50)
+                ),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Returner")
+            }
+        }
+    }
+}
+
+/**
+ * Standard equipment card with inline action buttons.
+ */
 @Composable
 private fun EquipmentItemCard(
     item: EquipmentWithCheckout,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onQuickCheckout: (() -> Unit)?,
+    onQuickReturn: (() -> Unit)?,
+    isLoading: Boolean
 ) {
     Card(
         modifier = Modifier
@@ -340,6 +584,44 @@ private fun EquipmentItemCard(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+                }
+            }
+
+            // Inline action buttons
+            Spacer(modifier = Modifier.width(8.dp))
+            when {
+                onQuickCheckout != null -> {
+                    OutlinedButton(
+                        onClick = onQuickCheckout,
+                        enabled = !isLoading,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Udl\u00e5n", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                onQuickReturn != null -> {
+                    Button(
+                        onClick = onQuickReturn,
+                        enabled = !isLoading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4CAF50)
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Returner", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -474,6 +756,12 @@ private fun AddEquipmentDialog(
             }
         }
     )
+}
+
+private fun formatInstant(instant: Instant): String {
+    val localDateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+    return "${localDateTime.dayOfMonth}/${localDateTime.monthNumber}/${localDateTime.year} " +
+        "${localDateTime.hour.toString().padStart(2, '0')}:${localDateTime.minute.toString().padStart(2, '0')}"
 }
 
 /**

@@ -452,7 +452,11 @@ interface EquipmentCheckoutDao {
 
     @Query("DELETE FROM EquipmentCheckout WHERE internalMemberId = :internalMemberId")
     suspend fun deleteByInternalMemberId(internalMemberId: String)
-    
+
+    /** Get recent checkouts (returned or active) for populating recent members. */
+    @Query("SELECT * FROM EquipmentCheckout ORDER BY checkedOutAtUtc DESC LIMIT :limit")
+    suspend fun recentCheckouts(limit: Int): List<EquipmentCheckout>
+
     // Sync-related queries
     @Query("UPDATE EquipmentCheckout SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
     suspend fun markSynced(id: String, syncedAt: Instant)

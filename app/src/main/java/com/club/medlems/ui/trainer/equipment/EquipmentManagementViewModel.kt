@@ -32,6 +32,7 @@ import javax.inject.Inject
 enum class EquipmentStatusFilter {
     All,
     Available,
+    ActiveCheckouts,
     CheckedOut
 }
 
@@ -47,7 +48,8 @@ data class EquipmentManagementState(
     val selectedEquipmentMember: Member? = null,
     val checkoutHistory: List<CheckoutHistoryItem> = emptyList(),
     val statusFilter: EquipmentStatusFilter = EquipmentStatusFilter.All,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    val quickCheckoutEquipmentId: String? = null
 )
 
 /**
@@ -73,6 +75,9 @@ data class EquipmentWithCheckout(
  * Provides:
  * - Equipment inventory management with status filters
  * - Checkout/checkin workflows with audit trail
+ * - Quick inline checkout/checkin from the list screen
+ * - Batch return for active checkouts
+ * - Recent members for fast checkout
  * - Search by serial number or description
  * - Transaction history
  *
@@ -89,6 +94,7 @@ class EquipmentManagementViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "EquipmentMgmtVM"
+        private const val MAX_RECENT_MEMBERS = 8
     }
 
     // ===== UI State =====
@@ -102,7 +108,8 @@ class EquipmentManagementViewModel @Inject constructor(
     private val activeCheckoutsFlow = equipmentCheckoutDao.allActiveCheckoutsFlow()
 
     /**
-     * Equipment list combined with checkout info, filtered by status and search query.
+     * Equipment list combined with checkout info and resolved member names,
+     * filtered by status and search query.
      */
     val equipmentList: StateFlow<List<EquipmentWithCheckout>> = combine(
         allEquipmentFlow,
@@ -114,31 +121,42 @@ class EquipmentManagementViewModel @Inject constructor(
         equipment
             .map { item ->
                 val checkout = checkoutMap[item.id]
+                val member = if (checkout != null) {
+                    memberDao.getByInternalId(checkout.internalMemberId)
+                } else null
                 EquipmentWithCheckout(
                     equipment = item,
                     currentCheckout = checkout,
-                    currentMember = null // Loaded on demand for performance
+                    currentMember = member
                 )
             }
             .filter { item ->
-                // Apply status filter
                 when (state.statusFilter) {
                     EquipmentStatusFilter.All -> true
                     EquipmentStatusFilter.Available -> item.equipment.status == EquipmentStatus.Available
+                    EquipmentStatusFilter.ActiveCheckouts -> item.equipment.status == EquipmentStatus.CheckedOut
                     EquipmentStatusFilter.CheckedOut -> item.equipment.status == EquipmentStatus.CheckedOut
                 }
             }
             .filter { item ->
-                // Apply search filter
                 if (state.searchQuery.isBlank()) {
                     true
                 } else {
                     val query = state.searchQuery.lowercase()
                     item.equipment.serialNumber.lowercase().contains(query) ||
-                        item.equipment.description?.lowercase()?.contains(query) == true
+                        item.equipment.description?.lowercase()?.contains(query) == true ||
+                        item.currentMember?.let { m ->
+                            "${m.firstName} ${m.lastName}".lowercase().contains(query)
+                        } == true
                 }
             }
-            .sortedBy { it.equipment.serialNumber }
+            .let { list ->
+                if (state.statusFilter == EquipmentStatusFilter.ActiveCheckouts) {
+                    list.sortedByDescending { it.currentCheckout?.checkedOutAtUtc }
+                } else {
+                    list.sortedBy { it.equipment.serialNumber }
+                }
+            }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ===== Member Search for Checkout =====
@@ -146,31 +164,76 @@ class EquipmentManagementViewModel @Inject constructor(
     private val _memberSearchResults = MutableStateFlow<List<Member>>(emptyList())
     val memberSearchResults: StateFlow<List<Member>> = _memberSearchResults.asStateFlow()
 
-    // ===== Filter and Search =====
+    // ===== Recent Members =====
+
+    private val _recentMembers = MutableStateFlow<List<Member>>(emptyList())
+    val recentMembers: StateFlow<List<Member>> = _recentMembers.asStateFlow()
+
+    init {
+        loadRecentMembers()
+    }
 
     /**
-     * Sets the status filter for the equipment list.
+     * Loads recently-used members from recent checkout history.
      */
+    private fun loadRecentMembers() {
+        viewModelScope.launch {
+            try {
+                val recentCheckouts = equipmentCheckoutDao.allActiveCheckouts() +
+                    equipmentCheckoutDao.recentCheckouts(limit = 20)
+                val seenIds = mutableSetOf<String>()
+                val members = mutableListOf<Member>()
+                for (checkout in recentCheckouts.sortedByDescending { it.checkedOutAtUtc }) {
+                    if (checkout.internalMemberId in seenIds) continue
+                    seenIds.add(checkout.internalMemberId)
+                    memberDao.getByInternalId(checkout.internalMemberId)?.let { members.add(it) }
+                    if (members.size >= MAX_RECENT_MEMBERS) break
+                }
+                _recentMembers.value = members
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to load recent members", e)
+            }
+        }
+    }
+
+    /**
+     * Adds a member to the top of the recent members list.
+     */
+    private fun addToRecentMembers(member: Member) {
+        val current = _recentMembers.value.toMutableList()
+        current.removeAll { it.internalId == member.internalId }
+        current.add(0, member)
+        _recentMembers.value = current.take(MAX_RECENT_MEMBERS)
+    }
+
+    // ===== Filter and Search =====
+
     fun setStatusFilter(filter: EquipmentStatusFilter) {
         _uiState.value = _uiState.value.copy(statusFilter = filter)
     }
 
-    /**
-     * Updates the search query for equipment filtering.
-     */
     fun setSearchQuery(query: String) {
         _uiState.value = _uiState.value.copy(searchQuery = query)
     }
 
-    // ===== Equipment CRUD =====
+    // ===== Quick Checkout from List =====
 
     /**
-     * Creates a new equipment item.
-     *
-     * @param serialNumber Human-readable serial number (must be unique)
-     * @param description Optional description
-     * @param discipline Optional discipline association
+     * Opens the member search dialog for quick checkout of the given equipment.
      */
+    fun startQuickCheckout(equipmentId: String) {
+        _uiState.value = _uiState.value.copy(quickCheckoutEquipmentId = equipmentId)
+    }
+
+    /**
+     * Cancels a pending quick checkout.
+     */
+    fun cancelQuickCheckout() {
+        _uiState.value = _uiState.value.copy(quickCheckoutEquipmentId = null)
+    }
+
+    // ===== Equipment CRUD =====
+
     fun createEquipment(
         serialNumber: String,
         description: String? = null,
@@ -180,7 +243,6 @@ class EquipmentManagementViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                // Check for duplicate serial number
                 val existing = equipmentItemDao.getBySerialNumber(serialNumber)
                 if (existing != null) {
                     _uiState.value = _uiState.value.copy(
@@ -225,9 +287,6 @@ class EquipmentManagementViewModel @Inject constructor(
 
     // ===== Equipment Selection and Detail =====
 
-    /**
-     * Selects an equipment item for viewing details.
-     */
     fun selectEquipment(equipmentId: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
@@ -242,13 +301,11 @@ class EquipmentManagementViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Load current checkout and member info if checked out
                 val currentCheckout = equipmentCheckoutDao.getActiveCheckoutForEquipment(equipmentId)
                 val currentMember = currentCheckout?.let { checkout ->
                     memberDao.getByInternalId(checkout.internalMemberId)
                 }
 
-                // Load checkout history
                 val history = equipmentCheckoutDao.checkoutHistoryForEquipment(equipmentId)
                 val historyWithMembers = history.map { checkout ->
                     CheckoutHistoryItem(
@@ -274,9 +331,6 @@ class EquipmentManagementViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Clears the selected equipment.
-     */
     fun clearSelection() {
         _uiState.value = _uiState.value.copy(
             selectedEquipment = null,
@@ -288,13 +342,6 @@ class EquipmentManagementViewModel @Inject constructor(
 
     // ===== Checkout/Checkin =====
 
-    /**
-     * Checks out equipment to a member.
-     *
-     * @param equipmentId The equipment to check out
-     * @param member The member receiving the equipment
-     * @param notes Optional checkout notes
-     */
     fun checkoutEquipment(
         equipmentId: String,
         member: Member,
@@ -321,16 +368,6 @@ class EquipmentManagementViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Check if member already has equipment checked out
-                val existingCheckout = equipmentCheckoutDao.getActiveCheckoutForMember(member.internalId)
-                if (existingCheckout != null) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "Medlem har allerede udstyr udlånt"
-                    )
-                    return@launch
-                }
-
                 val deviceId = trustManager.getThisDeviceId()
                 val now = Clock.System.now()
                 val trainerId = trainerSessionManager.currentTrainerId
@@ -348,24 +385,26 @@ class EquipmentManagementViewModel @Inject constructor(
                     deviceId = deviceId
                 )
 
-                // Update equipment status
                 equipmentItemDao.updateStatus(equipmentId, EquipmentStatus.CheckedOut, now)
-
-                // Create checkout record
                 equipmentCheckoutDao.insert(checkout)
 
                 Log.i(TAG, "Checked out ${equipment.serialNumber} to ${member.firstName} ${member.lastName}")
 
+                addToRecentMembers(member)
+
                 val memberName = "${member.firstName} ${member.lastName}".trim()
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    successMessage = "Udlånt til $memberName",
+                    successMessage = "${equipment.serialNumber} udlånt til $memberName",
                     selectedEquipmentCheckout = checkout,
-                    selectedEquipmentMember = member
+                    selectedEquipmentMember = member,
+                    quickCheckoutEquipmentId = null
                 )
 
-                // Refresh selection to update history
-                selectEquipment(equipmentId)
+                // Refresh selection if on detail screen
+                if (_uiState.value.selectedEquipment?.id == equipmentId) {
+                    selectEquipment(equipmentId)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to checkout equipment", e)
                 _uiState.value = _uiState.value.copy(
@@ -377,10 +416,58 @@ class EquipmentManagementViewModel @Inject constructor(
     }
 
     /**
-     * Checks in (returns) equipment.
-     *
-     * @param checkoutId The checkout record ID
-     * @param notes Optional return notes
+     * Quick check-in from the list screen by equipment ID.
+     */
+    fun quickCheckin(equipmentId: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+            try {
+                val checkout = equipmentCheckoutDao.getActiveCheckoutForEquipment(equipmentId)
+                if (checkout == null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Intet aktivt udlån fundet"
+                    )
+                    return@launch
+                }
+
+                val equipment = equipmentItemDao.get(equipmentId)
+                val member = memberDao.getByInternalId(checkout.internalMemberId)
+                val deviceId = trustManager.getThisDeviceId()
+                val now = Clock.System.now()
+                val trainerId = trainerSessionManager.currentTrainerId
+
+                equipmentCheckoutDao.checkIn(
+                    id = checkout.id,
+                    checkedInAt = now,
+                    deviceId = deviceId,
+                    notes = buildCheckoutNotes(null, trainerId),
+                    modifiedAt = now
+                )
+
+                equipmentItemDao.updateStatus(equipmentId, EquipmentStatus.Available, now)
+
+                val memberName = member?.let { "${it.firstName} ${it.lastName}".trim() } ?: "ukendt"
+                val serial = equipment?.serialNumber ?: equipmentId.take(8)
+                Log.i(TAG, "Quick checked in $serial from $memberName")
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    successMessage = "$serial returneret fra $memberName"
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to quick checkin", e)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Kunne ikke returnere udstyr: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Checks in (returns) equipment by checkout ID (used from detail screen).
      */
     fun checkinEquipment(checkoutId: String, notes: String? = null) {
         viewModelScope.launch {
@@ -408,7 +495,6 @@ class EquipmentManagementViewModel @Inject constructor(
                 val now = Clock.System.now()
                 val trainerId = trainerSessionManager.currentTrainerId
 
-                // Update checkout record
                 equipmentCheckoutDao.checkIn(
                     id = checkoutId,
                     checkedInAt = now,
@@ -417,7 +503,6 @@ class EquipmentManagementViewModel @Inject constructor(
                     modifiedAt = now
                 )
 
-                // Update equipment status back to available
                 equipmentItemDao.updateStatus(checkout.equipmentId, EquipmentStatus.Available, now)
 
                 Log.i(TAG, "Checked in equipment from checkout $checkoutId")
@@ -429,7 +514,6 @@ class EquipmentManagementViewModel @Inject constructor(
                     selectedEquipmentMember = null
                 )
 
-                // Refresh selection to update history
                 selectEquipment(checkout.equipmentId)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to checkin equipment", e)
@@ -442,8 +526,56 @@ class EquipmentManagementViewModel @Inject constructor(
     }
 
     /**
-     * Builds checkout notes with trainer audit info.
+     * Returns all currently checked-out equipment in one batch operation.
      */
+    fun batchCheckinAll() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+            try {
+                val activeCheckouts = equipmentCheckoutDao.allActiveCheckouts()
+                if (activeCheckouts.isEmpty()) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Ingen aktive udlån at returnere"
+                    )
+                    return@launch
+                }
+
+                val deviceId = trustManager.getThisDeviceId()
+                val now = Clock.System.now()
+                val trainerId = trainerSessionManager.currentTrainerId
+                val notes = buildCheckoutNotes(null, trainerId)
+
+                var count = 0
+                for (checkout in activeCheckouts) {
+                    equipmentCheckoutDao.checkIn(
+                        id = checkout.id,
+                        checkedInAt = now,
+                        deviceId = deviceId,
+                        notes = notes,
+                        modifiedAt = now
+                    )
+                    equipmentItemDao.updateStatus(checkout.equipmentId, EquipmentStatus.Available, now)
+                    count++
+                }
+
+                Log.i(TAG, "Batch checked in $count items")
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    successMessage = "$count udlån returneret"
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to batch checkin", e)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Kunne ikke returnere alt udstyr: ${e.message}"
+                )
+            }
+        }
+    }
+
     private fun buildCheckoutNotes(userNotes: String?, trainerId: String?): String? {
         val parts = mutableListOf<String>()
         userNotes?.trim()?.takeIf { it.isNotEmpty() }?.let { parts.add(it) }
@@ -453,9 +585,6 @@ class EquipmentManagementViewModel @Inject constructor(
 
     // ===== Member Search =====
 
-    /**
-     * Searches for members by name or membership ID.
-     */
     fun searchMembers(query: String) {
         viewModelScope.launch {
             if (query.isBlank()) {
@@ -473,9 +602,6 @@ class EquipmentManagementViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Clears member search results.
-     */
     fun clearMemberSearch() {
         _memberSearchResults.value = emptyList()
     }

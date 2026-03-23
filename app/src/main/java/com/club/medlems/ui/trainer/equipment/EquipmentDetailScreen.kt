@@ -82,6 +82,7 @@ fun EquipmentDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val memberSearchResults by viewModel.memberSearchResults.collectAsState()
+    val recentMembers by viewModel.recentMembers.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showMemberSearchDialog by remember { mutableStateOf(false) }
@@ -182,6 +183,7 @@ fun EquipmentDetailScreen(
     if (showMemberSearchDialog) {
         MemberSearchDialog(
             searchResults = memberSearchResults,
+            recentMembers = recentMembers,
             onSearch = { query -> viewModel.searchMembers(query) },
             onDismiss = {
                 showMemberSearchDialog = false
