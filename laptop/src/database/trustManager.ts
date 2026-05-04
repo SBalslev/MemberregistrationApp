@@ -294,6 +294,29 @@ export function saveTrustedDevice(
 }
 
 /**
+ * Update the auth token for an existing trusted device.
+ * Used when the main process refreshes an expired token.
+ */
+export function updateDeviceToken(
+  deviceId: string,
+  newToken: string,
+  tokenExpiresAt: string
+): boolean {
+  const existing = query<TrustedDeviceWithToken>(
+    'SELECT id FROM TrustedDevice WHERE id = ?',
+    [deviceId]
+  );
+  
+  if (existing.length === 0) return false;
+  
+  execute(
+    'UPDATE TrustedDevice SET authToken = ?, tokenExpiresAt = ?, lastSeenUtc = ? WHERE id = ?',
+    [newToken, tokenExpiresAt, new Date().toISOString(), deviceId]
+  );
+  return true;
+}
+
+/**
  * Validate an auth token from a request.
  * Returns the device info if valid, null if invalid.
  */

@@ -198,6 +198,7 @@ function recordFailedPairingAttempt(deviceId) {
 /**
  * Auth middleware for sync endpoints.
  * Validates Bearer token against trusted devices.
+ * Auto-renews tokens within 7 days of expiry.
  */
 function authMiddleware(req, res, next) {
   const auth = req.headers.authorization;
@@ -223,6 +224,27 @@ function authMiddleware(req, res, next) {
         error: 'Token expired', 
         message: 'Auth token has expired. Please re-pair the device.' 
       });
+    }
+    
+    // Auto-renew token if within 7 days of expiry
+    if (cachedDevice.tokenExpiresAt) {
+      const renewThreshold = new Date();
+      renewThreshold.setDate(renewThreshold.getDate() + 7);
+      if (new Date(cachedDevice.tokenExpiresAt) <= renewThreshold) {
+        const newExpiry = new Date();
+        newExpiry.setDate(newExpiry.getDate() + 30);
+        cachedDevice.tokenExpiresAt = newExpiry.toISOString();
+        cachedDevice.lastSeenUtc = new Date().toISOString();
+        // Notify renderer to persist the renewal
+        if (mainWindow) {
+          mainWindow.webContents.send('sync:token-refreshed', {
+            deviceId: cachedDevice.id,
+            newToken: token,
+            tokenExpiresAt: cachedDevice.tokenExpiresAt
+          });
+        }
+        console.log(`[Auth] Auto-renewed token for device ${cachedDevice.name}, new expiry: ${cachedDevice.tokenExpiresAt}`);
+      }
     }
     
     req.trustedDevice = cachedDevice;
@@ -670,6 +692,92 @@ function startSyncServer() {
       console.error('[Pair] Error:', error);
       res.status(500).json({
         error: error.message
+      });
+    }
+  });
+
+  // SEC-5: POST /api/sync/request-token - Token recovery for trusted devices with expired tokens
+  // Allows a previously-paired device to obtain a fresh token without re-pairing.
+  // Requires the old (expired) token as proof of prior trust.
+  server.post('/api/sync/request-token', (req, res) => {
+    try {
+      const { deviceId, deviceName, deviceType } = req.body || {};
+
+      if (!deviceId) {
+        return res.status(400).json({
+          success: false,
+          errorMessage: 'Missing deviceId'
+        });
+      }
+
+      // Check Authorization header for the old (expired) token as proof of prior trust
+      const auth = req.headers.authorization;
+      const oldToken = auth && auth.startsWith('Bearer ') ? auth.split(' ')[1] : null;
+
+      // Find the device in the trusted cache by device ID
+      let trustedDevice = null;
+      let existingToken = null;
+      for (const [token, device] of trustedDevicesCache.entries()) {
+        if (device.id === deviceId) {
+          trustedDevice = device;
+          existingToken = token;
+          break;
+        }
+      }
+
+      if (!trustedDevice) {
+        console.warn(`[TokenRecovery] Device ${deviceId} not found in trusted devices`);
+        return res.status(401).json({
+          success: false,
+          errorMessage: 'Device not recognized. Please pair the device first.'
+        });
+      }
+
+      // Verify old token matches (even if expired) as proof of prior trust
+      if (!oldToken || oldToken !== existingToken) {
+        console.warn(`[TokenRecovery] Token mismatch for device ${deviceId}`);
+        return res.status(401).json({
+          success: false,
+          errorMessage: 'Invalid credentials. Please re-pair the device.'
+        });
+      }
+
+      // Issue a new token
+      const newToken = generateAuthToken();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
+
+      // Remove old token from cache and add new one
+      trustedDevicesCache.delete(existingToken);
+      const updatedDevice = {
+        ...trustedDevice,
+        token: newToken,
+        tokenExpiresAt: expiresAt.toISOString(),
+        lastSeenUtc: new Date().toISOString(),
+        name: deviceName || trustedDevice.name
+      };
+      trustedDevicesCache.set(newToken, updatedDevice);
+
+      // Notify renderer to persist the updated token to database
+      if (mainWindow) {
+        mainWindow.webContents.send('sync:token-refreshed', {
+          deviceId,
+          newToken,
+          tokenExpiresAt: expiresAt.toISOString()
+        });
+      }
+
+      console.log(`[TokenRecovery] Issued new token for device ${deviceName || deviceId}`);
+
+      res.json({
+        success: true,
+        authToken: newToken
+      });
+    } catch (error) {
+      console.error('[TokenRecovery] Error:', error);
+      res.status(500).json({
+        success: false,
+        errorMessage: 'Internal server error'
       });
     }
   });

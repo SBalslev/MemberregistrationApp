@@ -352,6 +352,10 @@ class SyncClient @Inject constructor(
         val thisDeviceInfo = trustManager.getThisDeviceInfo()
             ?: return null
 
+        // Include the old (possibly expired) token as proof of prior trust
+        val oldToken = trustManager.getDeviceToken(targetDeviceId)
+            ?: trustManager.getPersistentToken()
+
         return try {
             val request = TokenRequest(
                 deviceId = thisDeviceInfo.id,
@@ -361,6 +365,9 @@ class SyncClient @Inject constructor(
 
             val response = client.post("$baseUrl/api/sync/request-token") {
                 contentType(ContentType.Application.Json)
+                if (oldToken != null) {
+                    header("Authorization", "Bearer $oldToken")
+                }
                 setBody(SyncJson.json.encodeToString(TokenRequest.serializer(), request))
             }
 

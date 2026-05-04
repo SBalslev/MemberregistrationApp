@@ -33,6 +33,7 @@ import {
   runPhotoMigration,
   isMigrationNeeded,
   getTrustedDevices,
+  updateDeviceToken,
   type SyncPayload
 } from './database';
 import { processAllEligibleIdPhotoDeletions } from './services/idPhotoLifecycleService';
@@ -191,6 +192,29 @@ function App() {
             } catch (err) {
               console.error('[App] Initial sync error:', err);
               showError('Fejl ved indledende synkronisering');
+            }
+          });
+
+          // SEC-5: Listen for token refresh events (expired token renewed)
+          api?.onTokenRefreshed?.((data) => {
+            console.log('[App] Token refreshed for device:', data.deviceId);
+            try {
+              const updated = updateDeviceToken(data.deviceId, data.newToken, data.tokenExpiresAt);
+              if (updated) {
+                // Re-sync the trusted devices cache so main process has the new token
+                const trustedDevices = getTrustedDevices();
+                api?.syncTrustedDevices?.(trustedDevices.map(d => ({
+                  id: d.id,
+                  name: d.name,
+                  type: d.type,
+                  authToken: d.authToken,
+                  tokenExpiresAt: d.tokenExpiresAt,
+                  isTrusted: d.isTrusted
+                })));
+                console.log('[App] Persisted refreshed token for device:', data.deviceId);
+              }
+            } catch (err) {
+              console.error('[App] Failed to persist refreshed token:', err);
             }
           });
 

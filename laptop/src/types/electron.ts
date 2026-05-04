@@ -80,6 +80,9 @@ export interface ElectronAPI {
   /** Listen for successful pairing completion (to save to database) */
   onPairingComplete?: (callback: (deviceData: PairingCompleteData) => void) => void;
 
+  /** Listen for token refresh events (expired token was renewed for a device) */
+  onTokenRefreshed?: (callback: (data: TokenRefreshedData) => void) => void;
+
   // ===== Photo Processing API =====
 
   /** Process a photo: save full resolution and generate thumbnail */
@@ -129,6 +132,13 @@ export interface PairingCompleteData {
   pairingDateUtc: string;
   lastSeenUtc: string;
   isTrusted: boolean;
+}
+
+/** Data returned when a device token is refreshed */
+export interface TokenRefreshedData {
+  deviceId: string;
+  newToken: string;
+  tokenExpiresAt: string;
 }
 
 export interface SyncPushPayload {

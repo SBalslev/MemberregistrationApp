@@ -127,6 +127,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('sync:pairing-complete', (event, deviceData) => callback(deviceData));
   },
 
+  // Listen for token refresh events (expired token was renewed)
+  onTokenRefreshed: (callback) => {
+    ipcRenderer.on('sync:token-refreshed', (event, data) => callback(data));
+  },
+
   // ===== Photo Processing API =====
 
   // Process a photo: save full resolution and generate thumbnail
