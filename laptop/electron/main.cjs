@@ -998,19 +998,25 @@ async function scanSubnet() {
   const interfaces = os.networkInterfaces();
   let localIp = null;
   
-  // Find our local IP - prefer 192.168.x.x (typical home/office Wi-Fi) over virtual interfaces
+  // Find our local IP - prefer real network adapters over virtual/Hyper-V interfaces
   const candidates = [];
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
-        candidates.push({ name, address: iface.address });
+        // Skip virtual adapters (Hyper-V, Docker, WSL, VPN loopback)
+        const isVirtual = /^(vEthernet|docker|vbox|vmnet|WSL)/i.test(name) ||
+                          /loopback|virtual/i.test(name);
+        candidates.push({ name, address: iface.address, isVirtual });
       }
     }
   }
   
-  // Prefer 192.168.x.x, then 10.x.x.x, then anything else
-  const preferred = candidates.find(c => c.address.startsWith('192.168.')) ||
-                    candidates.find(c => c.address.startsWith('10.')) ||
+  // Prefer real interfaces with 192.168.x.x, then 10.x.x.x, then virtual ones as last resort
+  const realCandidates = candidates.filter(c => !c.isVirtual);
+  const preferred = realCandidates.find(c => c.address.startsWith('192.168.')) ||
+                    realCandidates.find(c => c.address.startsWith('10.')) ||
+                    realCandidates[0] ||
+                    candidates.find(c => c.address.startsWith('192.168.')) ||
                     candidates[0];
   
   if (preferred) {
