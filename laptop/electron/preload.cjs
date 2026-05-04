@@ -132,6 +132,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('sync:token-refreshed', (event, data) => callback(data));
   },
 
+  // Listen for device IP updates (captured from incoming push requests)
+  onDeviceIpUpdated: (callback) => {
+    ipcRenderer.on('sync:device-ip-updated', (event, data) => callback(data));
+  },
+
   // ===== Photo Processing API =====
 
   // Process a photo: save full resolution and generate thumbnail

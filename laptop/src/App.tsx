@@ -34,6 +34,7 @@ import {
   isMigrationNeeded,
   getTrustedDevices,
   updateDeviceToken,
+  updateDeviceIpAddress,
   type SyncPayload
 } from './database';
 import { processAllEligibleIdPhotoDeletions } from './services/idPhotoLifecycleService';
@@ -215,6 +216,30 @@ function App() {
               }
             } catch (err) {
               console.error('[App] Failed to persist refreshed token:', err);
+            }
+          });
+
+          // Listen for device IP updates from incoming push connections
+          api?.onDeviceIpUpdated?.((data) => {
+            console.log('[App] Device IP updated:', data.deviceId, '->', data.ipAddress);
+            try {
+              const updated = updateDeviceIpAddress(data.deviceId, data.ipAddress);
+              if (updated) {
+                // Update the paired devices list in the store so the next sync can pull from this IP
+                const currentDevices = useAppStore.getState().pairedDevices;
+                useAppStore.getState().setPairedDevices(
+                  currentDevices.map(d =>
+                    d.id === data.deviceId ? { ...d, ipAddress: data.ipAddress } : d
+                  )
+                );
+                console.log('[App] Persisted IP for device:', data.deviceId);
+                // Trigger a full sync now that we know the device's IP
+                setTimeout(() => {
+                  useAppStore.getState().triggerSync();
+                }, 1000);
+              }
+            } catch (err) {
+              console.error('[App] Failed to persist device IP:', err);
             }
           });
 

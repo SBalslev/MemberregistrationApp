@@ -374,6 +374,23 @@ function startSyncServer() {
         `${payload.entities?.practiceSessions?.length || 0} sessions, ` +
         `${payload.entities?.newMemberRegistrations?.length || 0} registrations`);
 
+      // Capture the tablet's IP address for bi-directional sync
+      const tabletIp = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress;
+      if (tabletIp && req.trustedDevice) {
+        const cleanIp = tabletIp.replace(/^::ffff:/, '');
+        if (cleanIp !== req.trustedDevice.ipAddress) {
+          req.trustedDevice.ipAddress = cleanIp;
+          // Notify renderer to persist the updated IP
+          if (mainWindow) {
+            mainWindow.webContents.send('sync:device-ip-updated', {
+              deviceId: req.trustedDevice.id,
+              ipAddress: cleanIp
+            });
+          }
+          console.log(`[Sync] Updated IP for ${req.trustedDevice.name}: ${cleanIp}`);
+        }
+      }
+
       // Validate schema version
       if (payload.schemaVersion && !isSchemaCompatible(payload.schemaVersion)) {
         return res.status(426).json({

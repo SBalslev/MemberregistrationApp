@@ -317,6 +317,28 @@ export function updateDeviceToken(
 }
 
 /**
+ * Update the IP address for a trusted device.
+ * Used when the device's IP is discovered from an incoming connection.
+ */
+export function updateDeviceIpAddress(
+  deviceId: string,
+  ipAddress: string
+): boolean {
+  const existing = query<TrustedDeviceWithToken>(
+    'SELECT id FROM TrustedDevice WHERE id = ?',
+    [deviceId]
+  );
+  
+  if (existing.length === 0) return false;
+  
+  execute(
+    'UPDATE TrustedDevice SET ipAddress = ?, lastSeenUtc = ? WHERE id = ?',
+    [ipAddress, new Date().toISOString(), deviceId]
+  );
+  return true;
+}
+
+/**
  * Validate an auth token from a request.
  * Returns the device info if valid, null if invalid.
  */

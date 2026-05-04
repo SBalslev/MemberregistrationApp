@@ -83,6 +83,9 @@ export interface ElectronAPI {
   /** Listen for token refresh events (expired token was renewed for a device) */
   onTokenRefreshed?: (callback: (data: TokenRefreshedData) => void) => void;
 
+  /** Listen for device IP address updates (captured from incoming sync pushes) */
+  onDeviceIpUpdated?: (callback: (data: DeviceIpUpdatedData) => void) => void;
+
   // ===== Photo Processing API =====
 
   /** Process a photo: save full resolution and generate thumbnail */
@@ -139,6 +142,11 @@ export interface TokenRefreshedData {
   deviceId: string;
   newToken: string;
   tokenExpiresAt: string;
+}
+
+export interface DeviceIpUpdatedData {
+  deviceId: string;
+  ipAddress: string;
 }
 
 export interface SyncPushPayload {
