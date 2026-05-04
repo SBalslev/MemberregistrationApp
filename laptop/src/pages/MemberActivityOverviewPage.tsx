@@ -149,8 +149,9 @@ export function MemberActivityOverviewPage() {
   }, [attendancePage, attendanceRows]);
 
   const pagedAttendanceCounts = useMemo(() => {
+    const descending = [...attendanceCounts].reverse();
     const start = (countsPage - 1) * DEFAULT_PAGE_SIZE;
-    return attendanceCounts.slice(start, start + DEFAULT_PAGE_SIZE);
+    return descending.slice(start, start + DEFAULT_PAGE_SIZE);
   }, [attendanceCounts, countsPage]);
 
   const attendanceTotalPages = Math.max(1, Math.ceil(attendanceRows.length / DEFAULT_PAGE_SIZE));
@@ -988,7 +989,7 @@ export function MemberActivityOverviewPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedMemberSeries.map((row, index) => (
+                  {[...selectedMemberSeries].reverse().map((row, index) => (
                     <tr key={`${row.localDate}-${row.createdAtUtc}-${index}`}>
                       <td className="border border-gray-300 px-2 py-2">{row.localDate}</td>
                       <td className="border border-gray-300 px-2 py-2">{row.createdAtUtc.substring(11, 16)}</td>
