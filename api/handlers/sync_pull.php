@@ -38,6 +38,7 @@ function handleSyncPull(): void
     $since = $_GET['since'] ?? '1970-01-01T00:00:00Z';
     $entitiesParam = $_GET['entities'] ?? 'members';
     $limit = min((int)($_GET['limit'] ?? 50), 500);
+    $excludeDevice = $_GET['exclude_device'] ?? null;
 
     // Convert since to MySQL datetime format
     $sinceDate = date('Y-m-d H:i:s', strtotime($since));
@@ -58,7 +59,7 @@ function handleSyncPull(): void
     foreach ($entities as $entity) {
         switch ($entity) {
             case 'members':
-                $data = pullMembers($sinceDate, $limit);
+                $data = pullMembers($sinceDate, $limit, $excludeDevice);
                 $result['entities']['members'] = $data['records'];
                 $result['deleted']['members'] = $data['deleted'];
                 if (count($data['records']) >= $limit && !empty($data['records'])) {
@@ -70,53 +71,53 @@ function handleSyncPull(): void
                 break;
 
             case 'check_ins':
-                $result['entities']['check_ins'] = pullCheckIns($sinceDate, $limit);
+                $result['entities']['check_ins'] = pullCheckIns($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'practice_sessions':
-                $result['entities']['practice_sessions'] = pullPracticeSessions($sinceDate, $limit);
+                $result['entities']['practice_sessions'] = pullPracticeSessions($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'equipment_items':
-                $data = pullEquipmentItems($sinceDate, $limit);
+                $data = pullEquipmentItems($sinceDate, $limit, $excludeDevice);
                 $result['entities']['equipment_items'] = $data['records'];
                 $result['deleted']['equipment_items'] = $data['deleted'];
                 break;
 
             case 'equipment_checkouts':
-                $result['entities']['equipment_checkouts'] = pullEquipmentCheckouts($sinceDate, $limit);
+                $result['entities']['equipment_checkouts'] = pullEquipmentCheckouts($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'trainer_infos':
-                $result['entities']['trainer_infos'] = pullTrainerInfos($sinceDate, $limit);
+                $result['entities']['trainer_infos'] = pullTrainerInfos($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'trainer_disciplines':
-                $result['entities']['trainer_disciplines'] = pullTrainerDisciplines($sinceDate, $limit);
+                $result['entities']['trainer_disciplines'] = pullTrainerDisciplines($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'photos':
-                $result['entities']['photos'] = pullPhotoMetadata($sinceDate, $limit);
+                $result['entities']['photos'] = pullPhotoMetadata($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'fiscal_years':
-                $result['entities']['fiscal_years'] = pullFiscalYears($sinceDate, $limit);
+                $result['entities']['fiscal_years'] = pullFiscalYears($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'fee_rates':
-                $result['entities']['fee_rates'] = pullFeeRates($sinceDate, $limit);
+                $result['entities']['fee_rates'] = pullFeeRates($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'posting_categories':
-                $result['entities']['posting_categories'] = pullPostingCategories($sinceDate, $limit);
+                $result['entities']['posting_categories'] = pullPostingCategories($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'transaction_lines':
-                $result['entities']['transaction_lines'] = pullTransactionLines($sinceDate, $limit);
+                $result['entities']['transaction_lines'] = pullTransactionLines($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'pending_fee_payments':
-                $pendingPayments = pullPendingFeePayments($sinceDate, $limit);
+                $pendingPayments = pullPendingFeePayments($sinceDate, $limit, $excludeDevice);
                 $result['entities']['pending_fee_payments'] = $pendingPayments;
                 if (count($pendingPayments) >= $limit && !empty($pendingPayments)) {
                     $lastRecord = end($pendingPayments);
@@ -127,23 +128,23 @@ function handleSyncPull(): void
                 break;
 
             case 'scan_events':
-                $result['entities']['scan_events'] = pullScanEvents($sinceDate, $limit);
+                $result['entities']['scan_events'] = pullScanEvents($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'member_preferences':
-                $result['entities']['member_preferences'] = pullMemberPreferences($sinceDate, $limit);
+                $result['entities']['member_preferences'] = pullMemberPreferences($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'new_member_registrations':
-                $result['entities']['new_member_registrations'] = pullNewMemberRegistrations($sinceDate, $limit);
+                $result['entities']['new_member_registrations'] = pullNewMemberRegistrations($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'skv_registrations':
-                $result['entities']['skv_registrations'] = pullSkvRegistrations($sinceDate, $limit);
+                $result['entities']['skv_registrations'] = pullSkvRegistrations($sinceDate, $limit, $excludeDevice);
                 break;
 
             case 'skv_weapons':
-                $result['entities']['skv_weapons'] = pullSkvWeapons($sinceDate, $limit);
+                $result['entities']['skv_weapons'] = pullSkvWeapons($sinceDate, $limit, $excludeDevice);
                 break;
         }
     }
@@ -169,10 +170,23 @@ function handleSyncPull(): void
 }
 
 /**
+ * Build SQL clause and params for device exclusion.
+ * Returns [clause, params] where clause is either empty or " AND device_id != ?"
+ */
+function deviceExclusionClause(?string $excludeDevice): array
+{
+    if ($excludeDevice === null || $excludeDevice === '') {
+        return ['', []];
+    }
+    return [' AND device_id != ?', [$excludeDevice]];
+}
+
+/**
  * Pull members modified since date
  */
-function pullMembers(string $since, int $limit): array
+function pullMembers(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT
             internal_id, membership_id, member_type, member_fee_type, status,
@@ -185,10 +199,10 @@ function pullMembers(string $since, int $limit): array
             device_id, sync_version,
             created_at_utc, modified_at_utc, synced_at_utc
          FROM members
-         WHERE modified_at_utc > ?
+         WHERE modified_at_utc > ?{$deviceClause}
          ORDER BY modified_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     // Format for client
@@ -242,15 +256,16 @@ function pullMembers(string $since, int $limit): array
 /**
  * Pull check-ins
  */
-function pullCheckIns(string $since, int $limit): array
+function pullCheckIns(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, internal_member_id, created_at_utc, local_date, first_of_day_flag, device_id, sync_version
          FROM check_ins
-         WHERE synced_at_utc > ? OR (synced_at_utc IS NULL AND created_at_utc > ?)
+         WHERE (synced_at_utc > ? OR (synced_at_utc IS NULL AND created_at_utc > ?)){$deviceClause}
          ORDER BY created_at_utc ASC
          LIMIT ?",
-        [$since, $since, $limit]
+        array_merge([$since, $since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -269,15 +284,16 @@ function pullCheckIns(string $since, int $limit): array
 /**
  * Pull practice sessions
  */
-function pullPracticeSessions(string $since, int $limit): array
+function pullPracticeSessions(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, internal_member_id, created_at_utc, local_date, practice_type, points, krydser, classification, source, device_id, sync_version
          FROM practice_sessions
-         WHERE synced_at_utc > ? OR (synced_at_utc IS NULL AND created_at_utc > ?)
+         WHERE (synced_at_utc > ? OR (synced_at_utc IS NULL AND created_at_utc > ?)){$deviceClause}
          ORDER BY created_at_utc ASC
          LIMIT ?",
-        [$since, $since, $limit]
+        array_merge([$since, $since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -300,15 +316,16 @@ function pullPracticeSessions(string $since, int $limit): array
 /**
  * Pull equipment items
  */
-function pullEquipmentItems(string $since, int $limit): array
+function pullEquipmentItems(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, serial_number, type, description, status, discipline, device_id, sync_version, created_at_utc, modified_at_utc
          FROM equipment_items
-         WHERE modified_at_utc > ?
+         WHERE modified_at_utc > ?{$deviceClause}
          ORDER BY modified_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     $formatted = array_map(function ($row) {
@@ -338,15 +355,16 @@ function pullEquipmentItems(string $since, int $limit): array
 /**
  * Pull equipment checkouts
  */
-function pullEquipmentCheckouts(string $since, int $limit): array
+function pullEquipmentCheckouts(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, equipment_id, internal_member_id, checked_out_at_utc, checked_in_at_utc, checkout_notes, checkin_notes, conflict_status, device_id, sync_version
          FROM equipment_checkouts
-         WHERE synced_at_utc > ? OR (synced_at_utc IS NULL AND checked_out_at_utc > ?)
+         WHERE (synced_at_utc > ? OR (synced_at_utc IS NULL AND checked_out_at_utc > ?)){$deviceClause}
          ORDER BY checked_out_at_utc ASC
          LIMIT ?",
-        [$since, $since, $limit]
+        array_merge([$since, $since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -368,15 +386,16 @@ function pullEquipmentCheckouts(string $since, int $limit): array
 /**
  * Pull trainer infos
  */
-function pullTrainerInfos(string $since, int $limit): array
+function pullTrainerInfos(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT internal_member_id, is_trainer, has_skydeleder_certificate, certified_date, notes, device_id, sync_version, created_at_utc, modified_at_utc
          FROM trainer_info
-         WHERE modified_at_utc > ?
+         WHERE modified_at_utc > ?{$deviceClause}
          ORDER BY modified_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -397,15 +416,16 @@ function pullTrainerInfos(string $since, int $limit): array
 /**
  * Pull trainer disciplines
  */
-function pullTrainerDisciplines(string $since, int $limit): array
+function pullTrainerDisciplines(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, internal_member_id, discipline, level, certified_date, device_id, sync_version, created_at_utc
          FROM trainer_disciplines
-         WHERE created_at_utc > ?
+         WHERE created_at_utc > ?{$deviceClause}
          ORDER BY created_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -425,15 +445,16 @@ function pullTrainerDisciplines(string $since, int $limit): array
 /**
  * Pull photo metadata (not binary data)
  */
-function pullPhotoMetadata(string $since, int $limit): array
+function pullPhotoMetadata(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, internal_member_id, photo_type, content_hash, mime_type, file_size, width, height, device_id, sync_version, created_at_utc
          FROM member_photos
-         WHERE created_at_utc > ?
+         WHERE created_at_utc > ?{$deviceClause}
          ORDER BY created_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -456,15 +477,16 @@ function pullPhotoMetadata(string $since, int $limit): array
 /**
  * Pull fiscal years
  */
-function pullFiscalYears(string $since, int $limit): array
+function pullFiscalYears(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT year, opening_cash_balance, opening_bank_balance, is_closed, device_id, sync_version, created_at_utc, modified_at_utc
          FROM fiscal_years
-         WHERE modified_at_utc > ?
+         WHERE modified_at_utc > ?{$deviceClause}
          ORDER BY year ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -484,16 +506,17 @@ function pullFiscalYears(string $since, int $limit): array
 /**
  * Pull fee rates
  */
-function pullFeeRates(string $since, int $limit): array
+function pullFeeRates(string $since, int $limit, ?string $excludeDevice = null): array
 {
     // Fee rates don't have timestamps, pull all for fiscal years modified since
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT fr.fiscal_year, fr.member_type, fr.fee_amount
          FROM fee_rates fr
          JOIN fiscal_years fy ON fr.fiscal_year = fy.year
-         WHERE fy.modified_at_utc > ?
+         WHERE fy.modified_at_utc > ?{$deviceClause}
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -508,15 +531,16 @@ function pullFeeRates(string $since, int $limit): array
 /**
  * Pull posting categories
  */
-function pullPostingCategories(string $since, int $limit): array
+function pullPostingCategories(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, name, description, sort_order, is_active, device_id, sync_version, created_at_utc, modified_at_utc
          FROM posting_categories
-         WHERE modified_at_utc > ?
+         WHERE modified_at_utc > ?{$deviceClause}
          ORDER BY sort_order ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -537,16 +561,17 @@ function pullPostingCategories(string $since, int $limit): array
 /**
  * Pull transaction lines
  */
-function pullTransactionLines(string $since, int $limit): array
+function pullTransactionLines(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT tl.id, tl.transaction_id, tl.category_id, tl.amount, tl.is_income, tl.source, tl.member_id, tl.line_description
          FROM transaction_lines tl
          JOIN financial_transactions ft ON tl.transaction_id = ft.id
-         WHERE ft.modified_at_utc > ?
+         WHERE ft.modified_at_utc > ?{$deviceClause}
          ORDER BY ft.sequence_number ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -566,15 +591,16 @@ function pullTransactionLines(string $since, int $limit): array
 /**
  * Pull pending fee payments
  */
-function pullPendingFeePayments(string $since, int $limit): array
+function pullPendingFeePayments(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, fiscal_year, member_id, amount, payment_date, payment_method, notes, is_consolidated, consolidated_transaction_id, device_id, sync_version, created_at_utc, modified_at_utc
          FROM pending_fee_payments
-         WHERE modified_at_utc > ?
+         WHERE modified_at_utc > ?{$deviceClause}
          ORDER BY modified_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -599,15 +625,16 @@ function pullPendingFeePayments(string $since, int $limit): array
 /**
  * Pull scan events
  */
-function pullScanEvents(string $since, int $limit): array
+function pullScanEvents(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, internal_member_id, scan_type, linked_check_in_id, linked_session_id, canceled_flag, device_id, sync_version, created_at_utc, synced_at_utc
          FROM scan_events
-         WHERE synced_at_utc > ? OR (synced_at_utc IS NULL AND created_at_utc > ?)
+         WHERE (synced_at_utc > ? OR (synced_at_utc IS NULL AND created_at_utc > ?)){$deviceClause}
          ORDER BY created_at_utc ASC
          LIMIT ?",
-        [$since, $since, $limit]
+        array_merge([$since, $since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -629,15 +656,16 @@ function pullScanEvents(string $since, int $limit): array
 /**
  * Pull member preferences
  */
-function pullMemberPreferences(string $since, int $limit): array
+function pullMemberPreferences(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT member_id, last_practice_type, last_classification, device_id, sync_version, modified_at_utc
          FROM member_preferences
-         WHERE modified_at_utc > ?
+         WHERE modified_at_utc > ?{$deviceClause}
          ORDER BY modified_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -655,8 +683,9 @@ function pullMemberPreferences(string $since, int $limit): array
 /**
  * Pull new member registrations
  */
-function pullNewMemberRegistrations(string $since, int $limit): array
+function pullNewMemberRegistrations(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, first_name, last_name, birthday, gender,
                 email, phone, address, zip_code, city, notes, photo_path,
@@ -666,10 +695,10 @@ function pullNewMemberRegistrations(string $since, int $limit): array
                 rejection_reason, created_member_id, created_at_utc,
                 device_id, sync_version, modified_at_utc
          FROM new_member_registrations
-         WHERE modified_at_utc > ?
+         WHERE modified_at_utc > ?{$deviceClause}
          ORDER BY modified_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -707,16 +736,17 @@ function pullNewMemberRegistrations(string $since, int $limit): array
 /**
  * Pull SKV registrations
  */
-function pullSkvRegistrations(string $since, int $limit): array
+function pullSkvRegistrations(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, member_id, skv_level, status, last_approved_date,
                 created_at_utc, updated_at_utc, device_id, sync_version
          FROM skv_registrations
-         WHERE updated_at_utc > ?
+         WHERE updated_at_utc > ?{$deviceClause}
          ORDER BY updated_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
@@ -737,16 +767,17 @@ function pullSkvRegistrations(string $since, int $limit): array
 /**
  * Pull SKV weapons
  */
-function pullSkvWeapons(string $since, int $limit): array
+function pullSkvWeapons(string $since, int $limit, ?string $excludeDevice = null): array
 {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
         "SELECT id, skv_registration_id, model, description, serial, type, caliber,
                 last_reviewed_date, created_at_utc, updated_at_utc, device_id, sync_version
          FROM skv_weapons
-         WHERE updated_at_utc > ?
+         WHERE updated_at_utc > ?{$deviceClause}
          ORDER BY updated_at_utc ASC
          LIMIT ?",
-        [$since, $limit]
+        array_merge([$since], $deviceParams, [$limit])
     );
 
     return array_map(function ($row) {
