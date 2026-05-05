@@ -2,6 +2,7 @@ package com.club.medlems.data.sync
 
 import com.club.medlems.data.entity.MemberStatus
 import com.club.medlems.data.entity.MemberType
+import com.club.medlems.data.entity.PolicyViolationType
 import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.entity.ScanEventType
 import com.club.medlems.data.entity.SessionSource
@@ -66,6 +67,13 @@ data class SyncableMember(
 
     // === Merge Tracking (per DD-10) ===
     val mergedIntoId: String? = null,
+
+    // === Membership Card Tracking ===
+    val cardStatus: String? = null,
+    val cardFileReference: String? = null,
+    val cardPrintedAtUtc: String? = null,
+    val cardRequestedAtUtc: String? = null,
+    val cardRequestedByDeviceId: String? = null,
     
     // Sync metadata
     override val deviceId: String,
@@ -115,6 +123,28 @@ data class SyncablePracticeSession(
     val classification: String? = null,
     val source: SessionSource,
     
+    // Sync metadata
+    override val deviceId: String,
+    override val syncVersion: Long,
+    override val createdAtUtc: Instant,
+    override val modifiedAtUtc: Instant,
+    override val syncedAtUtc: Instant? = null
+) : SyncMetadata
+
+/**
+ * Syncable wrapper for PolicyViolation entity.
+ */
+@Serializable
+data class SyncablePolicyViolation(
+    val id: String,
+    val violationType: PolicyViolationType,
+    val internalMemberId: String,
+    val membershipId: String? = null,
+    val practiceType: PracticeType? = null,
+    val sessionId: String? = null,
+    val occurredAtUtc: Instant,
+    val notes: String? = null,
+
     // Sync metadata
     override val deviceId: String,
     override val syncVersion: Long,

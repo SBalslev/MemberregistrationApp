@@ -107,10 +107,10 @@ function toSqlValue(value: unknown): SqlValue {
 
 // ===== Configuration =====
 
-const DEFAULT_BATCH_SIZE = 50;
+const DEFAULT_BATCH_SIZE = 200;
 const SYNC_STATE_KEY = 'onlineSyncState';
-const INTER_BATCH_DELAY_MS = 1500; // Delay between batches to avoid rate limiting
-const MAX_RATE_LIMIT_RETRIES = 5;
+const INTER_BATCH_DELAY_MS = 500; // Delay between batches to avoid rate limiting
+const MAX_RATE_LIMIT_RETRIES = 8;
 
 // ===== Rate Limit Helper =====
 
@@ -384,7 +384,18 @@ class OnlineSyncService {
         total: 1,
       });
 
-      const compatibility = await onlineApiService.checkSchemaCompatibility(SYNC_SCHEMA_VERSION);
+      const compatibility = await withRateLimitRetry(
+        () => onlineApiService.checkSchemaCompatibility(SYNC_SCHEMA_VERSION),
+        MAX_RATE_LIMIT_RETRIES,
+        (retryAfterSeconds) => {
+          onProgress?.({
+            phase: 'checking',
+            message: `Rate limited, venter ${retryAfterSeconds}s...`,
+            current: 0,
+            total: 1,
+          });
+        }
+      );
       if (!compatibility.compatible) {
         throw new SchemaVersionError(SYNC_SCHEMA_VERSION, compatibility.serverVersion);
       }
@@ -404,6 +415,9 @@ class OnlineSyncService {
       // Update last push time
       this.state.lastPushTime = new Date().toISOString();
       saveSyncState(this.state);
+
+      // Cooldown between push and pull to respect rate limits
+      await delay(INTER_BATCH_DELAY_MS);
 
       // Phase 3: Pull remote changes
       onProgress?.({
@@ -1563,7 +1577,18 @@ class OnlineSyncService {
         total: totalPulled + 1, // Unknown total
       });
 
-      const result: SyncPullResult = await onlineApiService.pull(cursor);
+      const result: SyncPullResult = await withRateLimitRetry(
+        () => onlineApiService.pull(cursor),
+        MAX_RATE_LIMIT_RETRIES,
+        (retryAfterSeconds) => {
+          onProgress?.({
+            phase: 'pulling',
+            message: `Rate limited, venter ${retryAfterSeconds}s...`,
+            current: totalPulled,
+            total: totalPulled + 1,
+          });
+        }
+      );
 
       // Process pulled entities
       // Note: PHP returns snake_case keys, access them with type assertion
@@ -2041,6 +2066,8 @@ class OnlineSyncService {
           email = ?, phone = ?, address = ?, zipCode = ?, city = ?,
           guardianName = ?, guardianPhone = ?, guardianEmail = ?,
           expiresOn = ?, memberType = ?, mergedIntoId = ?,
+          cardStatus = ?, cardFileReference = ?, cardPrintedAtUtc = ?,
+          cardRequestedAtUtc = ?, cardRequestedByDeviceId = ?,
           updatedAtUtc = ?, syncedAtUtc = ?, syncVersion = ?
         WHERE internalId = ?`,
         [
@@ -2062,6 +2089,11 @@ class OnlineSyncService {
           toSqlValue(local.expiresOn),
           toSqlValue(local.memberType),
           toSqlValue(local.mergedIntoId),
+          toSqlValue(local.cardStatus || 'none'),
+          toSqlValue(local.cardFileReference),
+          toSqlValue(local.cardPrintedAtUtc),
+          toSqlValue(local.cardRequestedAtUtc),
+          toSqlValue(local.cardRequestedByDeviceId),
           toSqlValue(local.updatedAtUtc),
           now,
           toSqlValue(local.syncVersion),
@@ -2076,8 +2108,9 @@ class OnlineSyncService {
           firstName, lastName, birthDate, gender, email, phone,
           address, zipCode, city, guardianName, guardianPhone, guardianEmail,
           expiresOn, memberType, mergedIntoId,
+          cardStatus, cardFileReference, cardPrintedAtUtc, cardRequestedAtUtc, cardRequestedByDeviceId,
           createdAtUtc, updatedAtUtc, syncedAtUtc, syncVersion
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           toSqlValue(local.internalId),
           toSqlValue(local.membershipId),
@@ -2098,6 +2131,11 @@ class OnlineSyncService {
           toSqlValue(local.expiresOn),
           toSqlValue(local.memberType),
           toSqlValue(local.mergedIntoId),
+          toSqlValue(local.cardStatus || 'none'),
+          toSqlValue(local.cardFileReference),
+          toSqlValue(local.cardPrintedAtUtc),
+          toSqlValue(local.cardRequestedAtUtc),
+          toSqlValue(local.cardRequestedByDeviceId),
           toSqlValue(local.createdAtUtc),
           toSqlValue(local.updatedAtUtc),
           now,

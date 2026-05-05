@@ -11,7 +11,9 @@ import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.j
 // v14: Added idPhotoPath and idPhotoThumbnail for adult ID verification
 // v15: Added AuditLog table for ID photo deletion tracking
 // v16: Seed missing default posting categories
-const SCHEMA_VERSION = 16;
+// v17: Added PolicyViolation table
+// v18: Added membership card tracking fields
+const SCHEMA_VERSION = 18;
 
 // SQL.js instance (singleton)
 let SQL: SqlJsStatic | null = null;
@@ -24,10 +26,27 @@ let db: Database | null = null;
 export async function initDatabase(): Promise<void> {
   if (db) return; // Already initialized
 
-  // Load sql.js with WASM
-  SQL = await initSqlJs({
-    locateFile: (file) => `https://sql.js.org/dist/${file}`
+  // Load sql.js WASM binary.
+  // Electron file:// protocol doesn't support fetch(), so we load the WASM
+  // as an ArrayBuffer via XMLHttpRequest which works with both http and file protocols.
+  // Resolve relative to the current page so it works with both http:// and file:// origins.
+  const wasmUrl = new URL('./sql-wasm.wasm', window.location.href).href;
+  const wasmBinary = await new Promise<ArrayBuffer>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', wasmUrl, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = () => {
+      if (xhr.status === 200 || xhr.status === 0) { // status 0 for file:// protocol
+        resolve(xhr.response);
+      } else {
+        reject(new Error(`Failed to load WASM: HTTP ${xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Failed to load WASM file'));
+    xhr.send();
   });
+
+  SQL = await initSqlJs({ wasmBinary });
 
   // Try to load existing database from IndexedDB
   const savedData = await loadFromIndexedDB();
@@ -628,6 +647,28 @@ async function runMigrations(): Promise<void> {
     migrationsRun.push('PracticeSessionDeletion table created');
   }
 
+  const policyViolationCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='PolicyViolation'");
+  if (policyViolationCheck.length === 0 || policyViolationCheck[0].values.length === 0) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS PolicyViolation (
+        id TEXT PRIMARY KEY NOT NULL,
+        violationType TEXT NOT NULL,
+        internalMemberId TEXT NOT NULL,
+        membershipId TEXT,
+        practiceType TEXT,
+        sessionId TEXT,
+        occurredAtUtc TEXT NOT NULL,
+        deviceId TEXT,
+        notes TEXT,
+        FOREIGN KEY (internalMemberId) REFERENCES Member(internalId)
+      )
+    `);
+    db.run('CREATE INDEX IF NOT EXISTS idx_PolicyViolation_member ON PolicyViolation(internalMemberId)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_PolicyViolation_occurred ON PolicyViolation(occurredAtUtc)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_PolicyViolation_type ON PolicyViolation(violationType)');
+    migrationsRun.push('PolicyViolation table created');
+  }
+
   if (schemaVersion < 16) {
     const postingCategoryCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='PostingCategory'");
     if (postingCategoryCheck.length > 0 && postingCategoryCheck[0].values.length > 0) {
@@ -635,6 +676,36 @@ async function runMigrations(): Promise<void> {
       migrationsRun.push('Schema v16 seed default categories');
     }
     setSchemaVersion(16);
+  }
+
+  if (schemaVersion < 17) {
+    setSchemaVersion(17);
+  }
+
+  // ===== Migration: Schema v18 - Membership Card Tracking =====
+  if (!existingMemberColumns.includes('cardStatus')) {
+    db.run("ALTER TABLE Member ADD COLUMN cardStatus TEXT NOT NULL DEFAULT 'none'");
+    migrationsRun.push('Member.cardStatus');
+  }
+  if (!existingMemberColumns.includes('cardFileReference')) {
+    db.run("ALTER TABLE Member ADD COLUMN cardFileReference TEXT");
+    migrationsRun.push('Member.cardFileReference');
+  }
+  if (!existingMemberColumns.includes('cardPrintedAtUtc')) {
+    db.run("ALTER TABLE Member ADD COLUMN cardPrintedAtUtc TEXT");
+    migrationsRun.push('Member.cardPrintedAtUtc');
+  }
+  if (!existingMemberColumns.includes('cardRequestedAtUtc')) {
+    db.run("ALTER TABLE Member ADD COLUMN cardRequestedAtUtc TEXT");
+    migrationsRun.push('Member.cardRequestedAtUtc');
+  }
+  if (!existingMemberColumns.includes('cardRequestedByDeviceId')) {
+    db.run("ALTER TABLE Member ADD COLUMN cardRequestedByDeviceId TEXT");
+    migrationsRun.push('Member.cardRequestedByDeviceId');
+  }
+
+  if (schemaVersion < 18) {
+    setSchemaVersion(18);
   }
 
   if (migrationsRun.length > 0) {
@@ -676,6 +747,11 @@ async function createSchema(): Promise<void> {
       idPhotoThumbnail TEXT,
       mergedIntoId TEXT,
       memberType TEXT DEFAULT 'ADULT',
+      cardStatus TEXT NOT NULL DEFAULT 'none',
+      cardFileReference TEXT,
+      cardPrintedAtUtc TEXT,
+      cardRequestedAtUtc TEXT,
+      cardRequestedByDeviceId TEXT,
       createdAtUtc TEXT NOT NULL,
       updatedAtUtc TEXT NOT NULL,
       syncedAtUtc TEXT,
@@ -1038,6 +1114,24 @@ async function createSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_AuditLog_entityType_action ON AuditLog(entityType, action);
     CREATE INDEX IF NOT EXISTS idx_AuditLog_createdAtUtc ON AuditLog(createdAtUtc);
+
+    -- ===== Policy violations =====
+
+    CREATE TABLE IF NOT EXISTS PolicyViolation (
+      id TEXT PRIMARY KEY NOT NULL,
+      violationType TEXT NOT NULL,
+      internalMemberId TEXT NOT NULL,
+      membershipId TEXT,
+      practiceType TEXT,
+      sessionId TEXT,
+      occurredAtUtc TEXT NOT NULL,
+      deviceId TEXT,
+      notes TEXT,
+      FOREIGN KEY (internalMemberId) REFERENCES Member(internalId)
+    );
+    CREATE INDEX IF NOT EXISTS idx_PolicyViolation_member ON PolicyViolation(internalMemberId);
+    CREATE INDEX IF NOT EXISTS idx_PolicyViolation_occurred ON PolicyViolation(occurredAtUtc);
+    CREATE INDEX IF NOT EXISTS idx_PolicyViolation_type ON PolicyViolation(violationType);
 
     -- ===== Practice Session Deletion Tracking =====
 

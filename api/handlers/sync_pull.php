@@ -181,6 +181,7 @@ function pullMembers(string $since, int $limit): array
             guardian_name, guardian_phone, guardian_email,
             expires_on, merged_into_id,
             id_photo_path, id_photo_thumbnail,
+            card_status, card_file_reference, card_printed_at_utc, card_requested_at_utc, card_requested_by_device_id,
             device_id, sync_version,
             created_at_utc, modified_at_utc, synced_at_utc
          FROM members
@@ -214,6 +215,11 @@ function pullMembers(string $since, int $limit): array
             'merged_into_id' => $row['merged_into_id'],
             'id_photo_path' => $row['id_photo_path'],
             'id_photo_thumbnail' => $row['id_photo_thumbnail'],
+            'card_status' => $row['card_status'] ?? 'none',
+            'card_file_reference' => $row['card_file_reference'],
+            'card_printed_at_utc' => formatDatetime($row['card_printed_at_utc']),
+            'card_requested_at_utc' => formatDatetime($row['card_requested_at_utc']),
+            'card_requested_by_device_id' => $row['card_requested_by_device_id'],
             'device_id' => $row['device_id'],
             'sync_version' => (int)$row['sync_version'],
             'created_at_utc' => formatDatetime($row['created_at_utc']),

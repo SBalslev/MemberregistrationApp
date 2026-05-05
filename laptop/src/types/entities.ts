@@ -17,6 +17,9 @@ export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 /** Fee category for membership dues calculation */
 export type FeeCategoryType = 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY';
 
+/** Membership card status */
+export type CardStatus = 'none' | 'requested' | 'printed' | 'delivered';
+
 export interface Member {
   /** Immutable UUID, primary key across all devices */
   internalId: string;
@@ -66,6 +69,13 @@ export interface Member {
 
   // Merge tracking (per DD-10)
   mergedIntoId: string | null;
+
+  // Membership card tracking
+  cardStatus: CardStatus;
+  cardFileReference: string | null;
+  cardPrintedAtUtc: string | null;
+  cardRequestedAtUtc: string | null;
+  cardRequestedByDeviceId: string | null;
 
   // Timestamps
   createdAtUtc: string; // ISO datetime

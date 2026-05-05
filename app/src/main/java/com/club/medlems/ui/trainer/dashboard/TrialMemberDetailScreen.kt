@@ -260,6 +260,48 @@ class TrialMemberDetailViewModel @Inject constructor(
     fun clearError() {
         _state.value = _state.value.copy(errorMessage = null)
     }
+
+    fun requestCard() {
+        viewModelScope.launch {
+            val member = _state.value.member ?: return@launch
+            _state.value = _state.value.copy(isSaving = true)
+
+            try {
+                val now = Clock.System.now()
+                val updatedMember = member.copy(
+                    cardStatus = "requested",
+                    cardRequestedAtUtc = now.toString(),
+                    cardRequestedByDeviceId = trustManager.getThisDeviceId(),
+                    updatedAtUtc = now
+                )
+
+                withContext(Dispatchers.IO) {
+                    memberDao.upsert(updatedMember)
+                    syncOutboxManager.queueMember(
+                        updatedMember,
+                        trustManager.getThisDeviceId(),
+                        OutboxOperation.UPDATE
+                    )
+                    syncManager.notifyEntityChanged("Member", updatedMember.internalId)
+                }
+
+                _state.value = _state.value.copy(
+                    member = updatedMember,
+                    isSaving = false,
+                    saveSuccess = true
+                )
+
+                kotlinx.coroutines.delay(2000)
+                _state.value = _state.value.copy(saveSuccess = false)
+
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    isSaving = false,
+                    errorMessage = "Fejl ved anmodning: ${e.message}"
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -504,6 +546,15 @@ fun TrialMemberDetailScreen(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Membership Card Section
+                CardRequestSection(
+                    cardStatus = state.member?.cardStatus ?: "none",
+                    onRequestCard = { viewModel.requestCard() },
+                    isSaving = state.isSaving
+                )
             }
         }
     }
@@ -713,6 +764,70 @@ private fun PhotoSection(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(if (hasPhoto) "Tag nyt billede" else "Tag billede")
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardRequestSection(
+    cardStatus: String,
+    onRequestCard: () -> Unit,
+    isSaving: Boolean
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Medlemskort",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val statusText = when (cardStatus) {
+                "requested" -> "Anmodet - afventer print"
+                "printed" -> "Printet - afventer udlevering"
+                "delivered" -> "Udleveret"
+                else -> "Intet kort"
+            }
+
+            val statusColor = when (cardStatus) {
+                "requested" -> MaterialTheme.colorScheme.tertiary
+                "printed" -> MaterialTheme.colorScheme.primary
+                "delivered" -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = when (cardStatus) {
+                        "delivered" -> Icons.Default.CheckCircle
+                        "requested", "printed" -> Icons.Default.Refresh
+                        else -> Icons.Default.Info
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = statusColor
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = statusColor
+                )
+            }
+
+            if (cardStatus == "none" || cardStatus == "delivered") {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onRequestCard,
+                    enabled = !isSaving
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (cardStatus == "none") "Anmod om kort" else "Anmod om nyt kort")
+                }
             }
         }
     }

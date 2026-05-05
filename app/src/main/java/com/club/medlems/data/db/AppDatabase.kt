@@ -19,6 +19,7 @@ import com.club.medlems.data.entity.EquipmentItem
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberPreference
 import com.club.medlems.data.entity.NewMemberRegistration
+import com.club.medlems.data.entity.PolicyViolation
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.ScanEvent
 import com.club.medlems.data.entity.TrainerDiscipline
@@ -43,11 +44,12 @@ import com.club.medlems.data.sync.SyncProcessedMessage
         MemberPreference::class,
         TrainerInfo::class,
         TrainerDiscipline::class,
+        PolicyViolation::class,
         SyncOutboxEntry::class,
         SyncOutboxDelivery::class,
         SyncProcessedMessage::class
     ],
-    version = 16,
+    version = 18,
     exportSchema = true
 )
 @TypeConverters(AppConverters::class)
@@ -63,5 +65,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun memberPreferenceDao(): MemberPreferenceDao
     abstract fun trainerInfoDao(): TrainerInfoDao
     abstract fun trainerDisciplineDao(): TrainerDisciplineDao
+    abstract fun policyViolationDao(): com.club.medlems.data.dao.PolicyViolationDao
     abstract fun syncOutboxDao(): SyncOutboxDao
 }

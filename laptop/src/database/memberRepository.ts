@@ -187,8 +187,9 @@ export function upsertMember(member: Member, skipOutbox = false): void {
       firstName, lastName, birthDate, gender, email, phone, address,
       zipCode, city, guardianName, guardianPhone, guardianEmail,
       memberType, expiresOn, photoPath, photoThumbnail, idPhotoPath, idPhotoThumbnail,
-      mergedIntoId, createdAtUtc, updatedAtUtc, syncedAtUtc, syncVersion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      mergedIntoId, cardStatus, cardFileReference, cardPrintedAtUtc, cardRequestedAtUtc, cardRequestedByDeviceId,
+      createdAtUtc, updatedAtUtc, syncedAtUtc, syncVersion
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(internalId) DO UPDATE SET
       membershipId = excluded.membershipId,
       memberLifecycleStage = excluded.memberLifecycleStage,
@@ -212,6 +213,11 @@ export function upsertMember(member: Member, skipOutbox = false): void {
       idPhotoPath = excluded.idPhotoPath,
       idPhotoThumbnail = excluded.idPhotoThumbnail,
       mergedIntoId = excluded.mergedIntoId,
+      cardStatus = excluded.cardStatus,
+      cardFileReference = excluded.cardFileReference,
+      cardPrintedAtUtc = excluded.cardPrintedAtUtc,
+      cardRequestedAtUtc = excluded.cardRequestedAtUtc,
+      cardRequestedByDeviceId = excluded.cardRequestedByDeviceId,
       updatedAtUtc = excluded.updatedAtUtc,
       syncVersion = syncVersion + 1`,
     [
@@ -238,6 +244,11 @@ export function upsertMember(member: Member, skipOutbox = false): void {
       member.idPhotoPath,
       member.idPhotoThumbnail,
       member.mergedIntoId,
+      member.cardStatus || 'none',
+      member.cardFileReference,
+      member.cardPrintedAtUtc,
+      member.cardRequestedAtUtc,
+      member.cardRequestedByDeviceId,
       member.createdAtUtc || now,
       now,
       member.syncedAtUtc,

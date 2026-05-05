@@ -252,6 +252,12 @@ export interface OnlineMember {
   // ID photo fields for adult verification (v1.5.0)
   id_photo_path: string | null;
   id_photo_thumbnail: string | null;
+  // Membership card tracking
+  card_status: string | null;
+  card_file_reference: string | null;
+  card_printed_at_utc: string | null;
+  card_requested_at_utc: string | null;
+  card_requested_by_device_id: string | null;
   created_at_utc: string;
   modified_at_utc: string;
   sync_version: number;
@@ -1495,6 +1501,11 @@ export function memberToOnline(member: Member, action: 'upsert' | 'delete' = 'up
     photo_hash: null, // Photo handled separately
     id_photo_path: member.idPhotoPath,
     id_photo_thumbnail: member.idPhotoThumbnail,
+    card_status: member.cardStatus || 'none',
+    card_file_reference: member.cardFileReference,
+    card_printed_at_utc: member.cardPrintedAtUtc,
+    card_requested_at_utc: member.cardRequestedAtUtc,
+    card_requested_by_device_id: member.cardRequestedByDeviceId,
     created_at_utc: member.createdAtUtc,
     modified_at_utc: member.updatedAtUtc,
     sync_version: member.syncVersion,
@@ -1528,6 +1539,11 @@ export function memberFromOnline(online: OnlineMember): Partial<Member> {
     mergedIntoId: online.merged_into_id,
     idPhotoPath: online.id_photo_path,
     idPhotoThumbnail: online.id_photo_thumbnail,
+    cardStatus: (online.card_status as 'none' | 'requested' | 'printed' | 'delivered') || 'none',
+    cardFileReference: online.card_file_reference,
+    cardPrintedAtUtc: online.card_printed_at_utc,
+    cardRequestedAtUtc: online.card_requested_at_utc,
+    cardRequestedByDeviceId: online.card_requested_by_device_id,
     createdAtUtc: online.created_at_utc,
     updatedAtUtc: online.modified_at_utc,
     syncVersion: online.sync_version,

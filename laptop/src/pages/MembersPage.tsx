@@ -1090,6 +1090,114 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
         </div>
       )}
 
+      {/* Medlemskort */}
+      <div className="mt-6 pt-4 border-t border-gray-200">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+            <CreditCard className="w-4 h-4" />
+            Medlemskort
+          </h3>
+        </div>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-gray-500 w-16">Status:</span>
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+              member.cardStatus === 'delivered' ? 'bg-green-100 text-green-700' :
+              member.cardStatus === 'printed' ? 'bg-blue-100 text-blue-700' :
+              member.cardStatus === 'requested' ? 'bg-yellow-100 text-yellow-700' :
+              'bg-gray-100 text-gray-600'
+            }`}>
+              {member.cardStatus === 'delivered' && <><CheckCircle2 className="w-3 h-3" /> Afleveret</>}
+              {member.cardStatus === 'printed' && <><CheckCircle2 className="w-3 h-3" /> Printet</>}
+              {member.cardStatus === 'requested' && <><Clock className="w-3 h-3" /> Anmodet</>}
+              {member.cardStatus === 'none' && <><AlertCircle className="w-3 h-3" /> Intet kort</>}
+            </span>
+          </div>
+          {member.cardFileReference && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-500 w-16">Fil:</span>
+              <span className="text-xs text-gray-700">{member.cardFileReference}</span>
+            </div>
+          )}
+          {member.cardRequestedAtUtc && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-500 w-16">Anmodet:</span>
+              <span className="text-xs text-gray-700">{new Date(member.cardRequestedAtUtc).toLocaleDateString('da-DK')}</span>
+            </div>
+          )}
+          {member.cardPrintedAtUtc && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-500 w-16">Printet:</span>
+              <span className="text-xs text-gray-700">{new Date(member.cardPrintedAtUtc).toLocaleDateString('da-DK')}</span>
+            </div>
+          )}
+
+          {/* Card action buttons */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {(member.cardStatus === 'none' || member.cardStatus === 'delivered') && (
+              <button
+                onClick={() => {
+                  const updated = { ...member, cardStatus: 'requested' as const, cardRequestedAtUtc: new Date().toISOString(), cardRequestedByDeviceId: 'laptop-master', updatedAtUtc: new Date().toISOString() };
+                  upsertMember(updated);
+                  setSelectedMember(updated);
+                  onMemberUpdated();
+                  showSuccess('Kort anmodet');
+                }}
+                className="px-2 py-1 text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 rounded hover:bg-yellow-100"
+              >
+                Anmod kort
+              </button>
+            )}
+            {member.cardStatus === 'requested' && (
+              <button
+                onClick={() => {
+                  const fileRef = prompt('Kort-fil reference (f.eks. "batch-2026-01"):');
+                  if (fileRef === null) return;
+                  const updated = { ...member, cardStatus: 'printed' as const, cardFileReference: fileRef || member.cardFileReference, cardPrintedAtUtc: new Date().toISOString(), updatedAtUtc: new Date().toISOString() };
+                  upsertMember(updated);
+                  setSelectedMember(updated);
+                  onMemberUpdated();
+                  showSuccess('Kort markeret som printet');
+                }}
+                className="px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100"
+              >
+                Markér printet
+              </button>
+            )}
+            {member.cardStatus === 'printed' && (
+              <button
+                onClick={() => {
+                  const updated = { ...member, cardStatus: 'delivered' as const, updatedAtUtc: new Date().toISOString() };
+                  upsertMember(updated);
+                  setSelectedMember(updated);
+                  onMemberUpdated();
+                  showSuccess('Kort markeret som afleveret');
+                }}
+                className="px-2 py-1 text-xs bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100"
+              >
+                Markér afleveret
+              </button>
+            )}
+            {member.cardFileReference && (
+              <button
+                onClick={() => {
+                  const fileRef = prompt('Ny kort-fil reference:', member.cardFileReference || '');
+                  if (fileRef === null) return;
+                  const updated = { ...member, cardFileReference: fileRef, updatedAtUtc: new Date().toISOString() };
+                  upsertMember(updated);
+                  setSelectedMember(updated);
+                  onMemberUpdated();
+                  showSuccess('Fil-reference opdateret');
+                }}
+                className="px-2 py-1 text-xs bg-gray-50 text-gray-600 border border-gray-200 rounded hover:bg-gray-100"
+              >
+                Redigér fil-ref
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* SKV */}
       <div className="mt-6 pt-4 border-t border-gray-200">
         <div className="flex items-center justify-between mb-3">
@@ -2320,6 +2428,11 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
       idPhotoPath: null,
       idPhotoThumbnail: null,
       mergedIntoId: null,
+      cardStatus: 'none',
+      cardFileReference: null,
+      cardPrintedAtUtc: null,
+      cardRequestedAtUtc: null,
+      cardRequestedByDeviceId: null,
       createdAtUtc: now,
       updatedAtUtc: now,
       syncedAtUtc: null,

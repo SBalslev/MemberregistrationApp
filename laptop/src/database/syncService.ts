@@ -11,6 +11,7 @@
  */
 
 import { execute, query } from './db';
+import { upsertPolicyViolation } from './policyViolationRepository';
 import type { NewMemberRegistration } from '../types/entities';
 import { getAllMembers } from './memberRepository';
 import { processPhoto } from '../utils/photoStorage';
@@ -19,7 +20,7 @@ import { hasPendingMemberDeletion, isMessageProcessed, recordProcessedMessage, q
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
-export const SYNC_SCHEMA_VERSION = '1.7.0'; // 1.7.0: Added practice session deletions to sync payload
+export const SYNC_SCHEMA_VERSION = '1.8.0'; // 1.8.0: Added policy violations to sync payload
 export const SYNC_SCHEMA_MAJOR = 1;
 
 /**
@@ -52,6 +53,7 @@ export interface SyncPayload {
     checkIns?: SyncableCheckIn[];
     practiceSessions?: SyncablePracticeSession[];
     practiceSessionDeletions?: SyncablePracticeSessionDeletion[];
+    policyViolations?: SyncablePolicyViolation[];
     newMemberRegistrations?: SyncableNewMemberRegistration[];
     equipmentItems?: SyncableEquipmentItem[];
     equipmentCheckouts?: SyncableEquipmentCheckout[];
@@ -94,6 +96,12 @@ interface SyncableMember {
   /** ID photo as base64 for sync transfer (adults only) */
   idPhotoBase64?: string | null;
   mergedIntoId?: string | null;
+  // Membership card tracking
+  cardStatus?: string | null;
+  cardFileReference?: string | null;
+  cardPrintedAtUtc?: string | null;
+  cardRequestedAtUtc?: string | null;
+  cardRequestedByDeviceId?: string | null;
   // Sync metadata
   deviceId: string;
   syncVersion: number;
@@ -107,6 +115,21 @@ interface SyncableMemberDeletion {
 
 interface SyncablePracticeSessionDeletion {
   id: string;
+}
+
+interface SyncablePolicyViolation {
+  id: string;
+  violationType: 'TRIAL_REG_WEAPON_REQUIRES_LOG' | 'TRIAL_LIMIT_EXCEEDED';
+  internalMemberId: string;
+  membershipId?: string | null;
+  practiceType?: string | null;
+  sessionId?: string | null;
+  occurredAtUtc: string;
+  notes?: string | null;
+  deviceId: string;
+  syncVersion: number;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
 }
 
 interface SyncableCheckIn {
@@ -243,6 +266,7 @@ export interface SyncResult {
   checkInsAdded: number;
   sessionsAdded: number;
   sessionsDeleted: number;
+  policyViolationsProcessed: number;
   photosStored: number;
   equipmentItemsProcessed: number;
   equipmentCheckoutsProcessed: number;
@@ -270,6 +294,7 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     checkInsAdded: 0,
     sessionsAdded: 0,
     sessionsDeleted: 0,
+    policyViolationsProcessed: 0,
     photosStored: 0,
     equipmentItemsProcessed: 0,
     equipmentCheckoutsProcessed: 0,
@@ -389,6 +414,31 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
+  // Process policy violations
+  if (payload.entities.policyViolations) {
+    console.log(`[SyncService] Processing ${payload.entities.policyViolations.length} policy violations`);
+    for (const violation of payload.entities.policyViolations) {
+      try {
+        upsertPolicyViolation({
+          id: violation.id,
+          violationType: violation.violationType,
+          internalMemberId: violation.internalMemberId,
+          membershipId: violation.membershipId ?? null,
+          practiceType: violation.practiceType ?? null,
+          sessionId: violation.sessionId ?? null,
+          occurredAtUtc: violation.occurredAtUtc,
+          deviceId: violation.deviceId ?? null,
+          notes: violation.notes ?? null
+        });
+        result.policyViolationsProcessed++;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`PolicyViolation ${violation.id}: ${msg}`);
+        console.error(`[SyncService] Error processing policy violation ${violation.id}:`, error);
+      }
+    }
+  }
+
   // Process equipment items
   if (payload.entities.equipmentItems) {
     console.log(`[SyncService] Processing ${payload.entities.equipmentItems.length} equipment items`);
@@ -451,7 +501,7 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     }
   }
 
-  console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions added, ${result.sessionsDeleted} sessions deleted, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts, ${result.trainerInfosProcessed} trainer infos, ${result.trainerDisciplinesProcessed} trainer disciplines`);
+  console.log(`[SyncService] Sync complete: ${result.membersAdded} members added, ${result.membersUpdated} members updated, ${result.registrationsAdded} registrations, ${result.checkInsAdded} check-ins, ${result.sessionsAdded} sessions added, ${result.sessionsDeleted} sessions deleted, ${result.policyViolationsProcessed} policy violations, ${result.equipmentItemsProcessed} equipment items, ${result.equipmentCheckoutsProcessed} checkouts, ${result.trainerInfosProcessed} trainer infos, ${result.trainerDisciplinesProcessed} trainer disciplines`);
 
   // FR-3: Record message as processed for idempotency
   if (payload.messageId) {
@@ -689,6 +739,11 @@ async function processMember(
         guardianName = ?, guardianPhone = ?, guardianEmail = ?,
         expiresOn = ?, photoPath = ?, photoThumbnail = ?,
         idPhotoPath = ?, idPhotoThumbnail = ?, mergedIntoId = ?,
+        cardStatus = COALESCE(?, cardStatus),
+        cardFileReference = COALESCE(?, cardFileReference),
+        cardPrintedAtUtc = COALESCE(?, cardPrintedAtUtc),
+        cardRequestedAtUtc = COALESCE(?, cardRequestedAtUtc),
+        cardRequestedByDeviceId = COALESCE(?, cardRequestedByDeviceId),
         syncVersion = ?, updatedAtUtc = ?, syncedAtUtc = ?
        WHERE internalId = ?`,
       [
@@ -713,6 +768,11 @@ async function processMember(
         idPhotoPath,
         idPhotoThumbnail,
         member.mergedIntoId ?? null,
+        member.cardStatus ?? null,
+        member.cardFileReference ?? null,
+        member.cardPrintedAtUtc ?? null,
+        member.cardRequestedAtUtc ?? null,
+        member.cardRequestedByDeviceId ?? null,
         member.syncVersion,
         member.modifiedAtUtc,
         now,
@@ -730,8 +790,10 @@ async function processMember(
       firstName, lastName, birthDate, gender, email, phone,
       address, zipCode, city, guardianName, guardianPhone, guardianEmail,
       expiresOn, photoPath, photoThumbnail, idPhotoPath, idPhotoThumbnail,
-      mergedIntoId, memberType, createdAtUtc, updatedAtUtc, syncVersion, syncedAtUtc
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      mergedIntoId, memberType, cardStatus, cardFileReference, cardPrintedAtUtc,
+      cardRequestedAtUtc, cardRequestedByDeviceId,
+      createdAtUtc, updatedAtUtc, syncVersion, syncedAtUtc
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       member.internalId,
       member.membershipId ?? null,
@@ -756,6 +818,11 @@ async function processMember(
       idPhotoThumbnail,
       member.mergedIntoId ?? null,
       getFeeCategoryFromBirthDate(member.birthDate ?? null),
+      member.cardStatus ?? 'none',
+      member.cardFileReference ?? null,
+      member.cardPrintedAtUtc ?? null,
+      member.cardRequestedAtUtc ?? null,
+      member.cardRequestedByDeviceId ?? null,
       member.createdAtUtc,
       member.modifiedAtUtc,
       member.syncVersion,
@@ -960,6 +1027,11 @@ export function getMemberDataForFullSync(): SyncableMember[] {
     registrationPhotoPath: m.registrationPhotoPath,
     // Don't send photoBase64 from laptop - photos are stored as data URLs already
     mergedIntoId: m.mergedIntoId,
+    cardStatus: m.cardStatus,
+    cardFileReference: m.cardFileReference,
+    cardPrintedAtUtc: m.cardPrintedAtUtc,
+    cardRequestedAtUtc: m.cardRequestedAtUtc,
+    cardRequestedByDeviceId: m.cardRequestedByDeviceId,
     deviceId: 'laptop-master',
     syncVersion: m.syncVersion || 1,
     createdAtUtc: m.createdAtUtc || now,
@@ -1008,6 +1080,28 @@ export async function processInitialSyncPayload(payload: SyncPayload): Promise<I
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
         result.errors.push(`Session ${session.id}: ${msg}`);
+      }
+    }
+  }
+
+  // Process policy violations from tablet
+  if (payload.entities.policyViolations) {
+    for (const violation of payload.entities.policyViolations) {
+      try {
+        upsertPolicyViolation({
+          id: violation.id,
+          violationType: violation.violationType,
+          internalMemberId: violation.internalMemberId,
+          membershipId: violation.membershipId ?? null,
+          practiceType: violation.practiceType ?? null,
+          sessionId: violation.sessionId ?? null,
+          occurredAtUtc: violation.occurredAtUtc,
+          deviceId: violation.deviceId ?? null,
+          notes: violation.notes ?? null
+        });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        result.errors.push(`PolicyViolation ${violation.id}: ${msg}`);
       }
     }
   }

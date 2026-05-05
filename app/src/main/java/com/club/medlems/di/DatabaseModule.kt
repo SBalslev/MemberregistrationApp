@@ -575,13 +575,47 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * MIGRATION_16_17: Policy violation log table
+     */
+    private val MIGRATION_16_17 = object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS PolicyViolation (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    violationType TEXT NOT NULL,
+                    internalMemberId TEXT NOT NULL,
+                    membershipId TEXT,
+                    practiceType TEXT,
+                    sessionId TEXT,
+                    occurredAtUtc TEXT NOT NULL,
+                    deviceId TEXT,
+                    notes TEXT
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_PolicyViolation_internalMemberId ON PolicyViolation(internalMemberId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_PolicyViolation_occurredAtUtc ON PolicyViolation(occurredAtUtc)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_PolicyViolation_violationType ON PolicyViolation(violationType)")
+        }
+    }
+
+    private val MIGRATION_17_18 = object : Migration(17, 18) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE Member ADD COLUMN cardStatus TEXT NOT NULL DEFAULT 'none'")
+            db.execSQL("ALTER TABLE Member ADD COLUMN cardFileReference TEXT")
+            db.execSQL("ALTER TABLE Member ADD COLUMN cardPrintedAtUtc TEXT")
+            db.execSQL("ALTER TABLE Member ADD COLUMN cardRequestedAtUtc TEXT")
+            db.execSQL("ALTER TABLE Member ADD COLUMN cardRequestedByDeviceId TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16).fallbackToDestructiveMigration().build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18).build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()
@@ -605,6 +639,8 @@ object DatabaseModule {
     fun trainerInfoDao(db: AppDatabase) = db.trainerInfoDao()
     @Provides
     fun trainerDisciplineDao(db: AppDatabase) = db.trainerDisciplineDao()
+    @Provides
+    fun policyViolationDao(db: AppDatabase) = db.policyViolationDao()
     @Provides
     fun syncOutboxDao(db: AppDatabase) = db.syncOutboxDao()
 

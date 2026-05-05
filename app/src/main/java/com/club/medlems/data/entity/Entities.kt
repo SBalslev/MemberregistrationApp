@@ -21,6 +21,7 @@ enum class PracticeType { Riffel, Pistol, LuftRiffel, LuftPistol, Andet }
 enum class TrainerLevel { FULL, ASSISTANT }
 enum class ScanEventType { FIRST_SCAN, REPEAT_SCAN }
 enum class SessionSource { kiosk, attendant }
+enum class PolicyViolationType { TRIAL_REG_WEAPON_REQUIRES_LOG, TRIAL_LIMIT_EXCEEDED }
 
 /** Registration approval status for new member registrations - DEPRECATED: Use MemberType instead */
 @Deprecated("Use MemberType instead. Will be removed after migration.")
@@ -75,6 +76,13 @@ data class Member(
     // === Merge Tracking (per DD-10) ===
     /** If merged into another member, points to surviving member's internalId */
     val mergedIntoId: String? = null,
+
+    // === Membership Card Tracking ===
+    val cardStatus: String = "none",
+    val cardFileReference: String? = null,
+    val cardPrintedAtUtc: String? = null,
+    val cardRequestedAtUtc: String? = null,
+    val cardRequestedByDeviceId: String? = null,
     
     // === Timestamps ===
     val createdAtUtc: Instant,
@@ -135,6 +143,23 @@ data class PracticeSession(
     val deviceId: String? = null,
     val syncVersion: Long = 0,
     val syncedAtUtc: Instant? = null
+)
+
+@Entity(indices = [
+    androidx.room.Index(value = ["internalMemberId"]),
+    androidx.room.Index(value = ["occurredAtUtc"]),
+    androidx.room.Index(value = ["violationType"])
+])
+data class PolicyViolation(
+    @PrimaryKey val id: String,
+    val violationType: PolicyViolationType,
+    val internalMemberId: String,
+    val membershipId: String? = null,
+    val practiceType: PracticeType? = null,
+    val sessionId: String? = null,
+    val occurredAtUtc: Instant,
+    val deviceId: String? = null,
+    val notes: String? = null
 )
 
 @Entity(indices = [

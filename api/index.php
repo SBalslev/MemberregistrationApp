@@ -44,7 +44,14 @@ if (!checkIpAllowlist($clientIp, $config['security']['ip_allowlist'] ?? [])) {
 }
 
 // 2. Rate limiting check
-if (!checkRateLimit($clientIp, $config['security'])) {
+// Authenticated sync endpoints get a higher rate limit to allow bulk operations
+$requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+$isSyncEndpoint = strpos($requestUri, '/sync/') !== false;
+$rateLimitConfig = $config['security'];
+if ($isSyncEndpoint) {
+    $rateLimitConfig['rate_limit_requests'] = ($config['security']['rate_limit_requests'] ?? 60) * 5;
+}
+if (!checkRateLimit($clientIp, $rateLimitConfig)) {
     logSecurityEvent('rate_limited', $clientIp, 'Too many requests');
     errorResponse('Too many requests. Please wait.', 429);
 }

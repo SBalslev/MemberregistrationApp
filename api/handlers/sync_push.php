@@ -378,6 +378,7 @@ function insertMember(array $member, string $deviceId): void
         guardian_name, guardian_phone, guardian_email,
         member_fee_type, expires_on, merged_into_id,
         id_photo_path, id_photo_thumbnail,
+        card_status, card_file_reference, card_printed_at_utc, card_requested_at_utc, card_requested_by_device_id,
         device_id, sync_version, created_at_utc, modified_at_utc, synced_at_utc
     ) VALUES (
         ?, ?, ?, ?,
@@ -386,6 +387,7 @@ function insertMember(array $member, string $deviceId): void
         ?, ?, ?,
         ?, ?, ?,
         ?, ?,
+        ?, ?, ?, ?, ?,
         ?, ?, ?, ?, NOW()
     )";
 
@@ -411,6 +413,11 @@ function insertMember(array $member, string $deviceId): void
         $member['merged_into_id'] ?? null,
         $member['id_photo_path'] ?? null,
         $member['id_photo_thumbnail'] ?? null,
+        $member['card_status'] ?? 'none',
+        $member['card_file_reference'] ?? null,
+        toMySqlDateTime($member['card_printed_at_utc'] ?? null),
+        toMySqlDateTime($member['card_requested_at_utc'] ?? null),
+        $member['card_requested_by_device_id'] ?? null,
         $deviceId,
         $member['sync_version'] ?? 1,
         toMySqlDateTime($member['created_at_utc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
@@ -444,6 +451,11 @@ function updateMember(array $member, string $deviceId): void
         merged_into_id = ?,
         id_photo_path = ?,
         id_photo_thumbnail = ?,
+        card_status = ?,
+        card_file_reference = ?,
+        card_printed_at_utc = ?,
+        card_requested_at_utc = ?,
+        card_requested_by_device_id = ?,
         device_id = ?,
         sync_version = ?,
         modified_at_utc = ?,
@@ -471,6 +483,11 @@ function updateMember(array $member, string $deviceId): void
         $member['merged_into_id'] ?? null,
         $member['id_photo_path'] ?? null,
         $member['id_photo_thumbnail'] ?? null,
+        $member['card_status'] ?? 'none',
+        $member['card_file_reference'] ?? null,
+        toMySqlDateTime($member['card_printed_at_utc'] ?? null),
+        toMySqlDateTime($member['card_requested_at_utc'] ?? null),
+        $member['card_requested_by_device_id'] ?? null,
         $deviceId,
         $member['sync_version'] ?? 1,
         toMySqlDateTime($member['modified_at_utc'] ?? $member['updated_at_utc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
