@@ -109,8 +109,8 @@ function toSqlValue(value: unknown): SqlValue {
 
 const DEFAULT_BATCH_SIZE = 50;
 const SYNC_STATE_KEY = 'onlineSyncState';
-const INTER_BATCH_DELAY_MS = 100; // Delay between batches to avoid rate limiting
-const MAX_RATE_LIMIT_RETRIES = 3;
+const INTER_BATCH_DELAY_MS = 1500; // Delay between batches to avoid rate limiting
+const MAX_RATE_LIMIT_RETRIES = 5;
 
 // ===== Rate Limit Helper =====
 
