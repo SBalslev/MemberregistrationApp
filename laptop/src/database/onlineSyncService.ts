@@ -419,7 +419,8 @@ class OnlineSyncService {
       // Cooldown between push and pull to respect rate limits
       await delay(INTER_BATCH_DELAY_MS);
 
-      // Phase 3: Pull remote changes
+      // Phase 3: Pull remote changes (exclude own device to avoid echo)
+      const deviceId = await this.getDeviceId();
       onProgress?.({
         phase: 'pulling',
         message: 'Henter endringer fra server...',
@@ -428,7 +429,7 @@ class OnlineSyncService {
       });
 
       const sinceTime = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPullTime || '1970-01-01T00:00:00Z';
-      const pullResult = await this.pullChanges(sinceTime, onProgress);
+      const pullResult = await this.pullChanges(sinceTime, deviceId, onProgress);
       result.pulled = pullResult.pulled;
       result.deleted = pullResult.deleted;
       result.pendingDeletes = pullResult.pendingDeletes;
@@ -1409,6 +1410,20 @@ class OnlineSyncService {
     // Process pending member deletions from outbox
     await this.processPendingMemberDeletions(onProgress);
 
+    // Mark all pushed entities as synced to prevent re-pushing
+    const syncedNow = new Date().toISOString();
+    const pushSince = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    transaction(() => {
+      execute(`UPDATE Member SET syncedAtUtc = ? WHERE updatedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
+      execute(`UPDATE CheckIn SET syncedAtUtc = ? WHERE (createdAtUtc > ? OR syncedAtUtc IS NULL) AND internalMemberId IS NOT NULL`, [syncedNow, pushSince]);
+      execute(`UPDATE PracticeSession SET syncedAtUtc = ? WHERE (createdAtUtc > ? OR syncedAtUtc IS NULL) AND internalMemberId IS NOT NULL`, [syncedNow, pushSince]);
+      execute(`UPDATE ScanEvent SET syncedAtUtc = ? WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
+      execute(`UPDATE EquipmentItem SET syncedAtUtc = ? WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
+      execute(`UPDATE EquipmentCheckout SET syncedAtUtc = ? WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
+      execute(`UPDATE TrainerInfo SET syncedAtUtc = ? WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
+      execute(`UPDATE TrainerDiscipline SET syncedAtUtc = ? WHERE createdAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
+    });
+
     return { pushed, conflicts };
   }
 
@@ -1537,6 +1552,7 @@ class OnlineSyncService {
    */
   private async pullChanges(
     since: string,
+    deviceId: string,
     onProgress?: OnlineSyncProgressCallback
   ): Promise<{
     pulled: OnlineSyncResult['pulled'];
@@ -1578,7 +1594,7 @@ class OnlineSyncService {
       });
 
       const result: SyncPullResult = await withRateLimitRetry(
-        () => onlineApiService.pull(cursor),
+        () => onlineApiService.pull(cursor, undefined, undefined, deviceId),
         MAX_RATE_LIMIT_RETRIES,
         (retryAfterSeconds) => {
           onProgress?.({

@@ -811,13 +811,17 @@ class OnlineApiService {
   async pull(
     since: string,
     entities: string[] = ['members', 'check_ins', 'practice_sessions', 'equipment_items', 'equipment_checkouts', 'trainer_infos', 'trainer_disciplines', 'posting_categories', 'fiscal_years', 'fee_rates', 'financial_transactions', 'transaction_lines', 'pending_fee_payments', 'scan_events', 'photos', 'new_member_registrations', 'skv_registrations', 'skv_weapons'],
-    limit: number = 100
+    limit: number = 100,
+    excludeDevice?: string
   ): Promise<SyncPullResult> {
     const params = new URLSearchParams({
       since,
       entities: entities.join(','),
       limit: String(limit),
     });
+    if (excludeDevice) {
+      params.set('exclude_device', excludeDevice);
+    }
 
     const response = await this.request<{
       has_more: boolean;
