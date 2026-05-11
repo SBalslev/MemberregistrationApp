@@ -42,6 +42,7 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
     var sessionsCsv by remember { mutableStateOf<String?>(null) }
     var checkInsCsv by remember { mutableStateOf<String?>(null) }
     var scanEventsCsv by remember { mutableStateOf<String?>(null) }
+    var policyViolationsCsv by remember { mutableStateOf<String?>(null) }
     var importResult by remember { mutableStateOf<String?>(null) }
     var importing by remember { mutableStateOf(false) }
     var sessionImportResult by remember { mutableStateOf<String?>(null) }
@@ -220,6 +221,14 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                         }
                         if (scanEventsCsv != null) OutlinedButton(onClick = { scanEventsCsv = null }) { Text("Ryd") }
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { scope.launch { policyViolationsCsv = csvService.exportPolicyViolations() } }) {
+                            Icon(Icons.Default.FileDownload, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Policy logs")
+                        }
+                        if (policyViolationsCsv != null) OutlinedButton(onClick = { policyViolationsCsv = null }) { Text("Ryd") }
+                    }
                 }
                 // Previews
                 @Composable
@@ -256,6 +265,7 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                 PreviewBlock("Skydninger", sessionsCsv)
                 PreviewBlock("Check-ins", checkInsCsv)
                 PreviewBlock("Scanninger", scanEventsCsv)
+                PreviewBlock("Policy logs", policyViolationsCsv)
             }
         }
 
@@ -294,6 +304,10 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("scanevents", csvService.exportScanEvents()); val pathLabel = r.absolutePublicPath ?: r.publicPath ?: r.file.absolutePath; Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show() } }) { Text("Scanninger") }
                     Button(onClick = { scope.launch { val r = exporter.saveCsv("scanevents", csvService.exportScanEvents()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { scope.launch { val r = exporter.saveCsv("policy_violations", csvService.exportPolicyViolations()); val pathLabel = r.absolutePublicPath ?: r.publicPath ?: r.file.absolutePath; Toast.makeText(context, "Gemt $pathLabel", Toast.LENGTH_LONG).show() } }) { Text("Policy logs") }
+                    Button(onClick = { scope.launch { val r = exporter.saveCsv("policy_violations", csvService.exportPolicyViolations()); context.startActivity(exporter.shareIntent(r.file)) } }) { Icon(Icons.Default.Share, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Del") }
+                }
             }
         }
 
@@ -309,7 +323,8 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                                 "members" to csvService.exportMembers(),
                                 "sessions" to csvService.exportSessions(),
                                 "checkins" to csvService.exportCheckIns(),
-                                "scanevents" to csvService.exportScanEvents()
+                                "scanevents" to csvService.exportScanEvents(),
+                                "policy_violations" to csvService.exportPolicyViolations()
                             )
                             val zip = exporter.saveZip(bundle)
                             val pathLabel = zip.absolutePublicPath ?: zip.publicPath ?: zip.file.absolutePath
@@ -322,7 +337,8 @@ fun ImportExportScreen(onBack: () -> Unit, viewModel: ImportExportViewModel = hi
                                 "members" to csvService.exportMembers(),
                                 "sessions" to csvService.exportSessions(),
                                 "checkins" to csvService.exportCheckIns(),
-                                "scanevents" to csvService.exportScanEvents()
+                                "scanevents" to csvService.exportScanEvents(),
+                                "policy_violations" to csvService.exportPolicyViolations()
                             )
                             val zip = exporter.saveZip(bundle)
                             context.startActivity(exporter.shareZipIntent(zip.file))

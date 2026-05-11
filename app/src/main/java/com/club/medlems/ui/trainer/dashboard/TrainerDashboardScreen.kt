@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.text.input.KeyboardType
@@ -40,9 +41,15 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.club.medlems.data.dao.PracticeSessionDao
+import com.club.medlems.data.dao.MemberDao
+import com.club.medlems.data.dao.PolicyViolationDao
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.entity.SessionSource
+import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.MemberType
+import com.club.medlems.data.entity.PolicyViolation
+import com.club.medlems.data.entity.PolicyViolationType
 import com.club.medlems.data.sync.SyncManager
 import com.club.medlems.data.sync.SyncOutboxManager
 import com.club.medlems.domain.ClassificationOptions
@@ -54,6 +61,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import kotlinx.datetime.DatePeriod
 import java.util.UUID
 import javax.inject.Inject
 import androidx.compose.ui.Alignment
@@ -64,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.club.medlems.ui.common.displayName
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 
 /**
@@ -198,6 +207,11 @@ fun TrainerDashboardScreen(
                         onNavigateToTrialMemberDetail(member.member.internalId)
                     }
                 )
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            if (state.policyViolations.isNotEmpty()) {
+                PolicyViolationsSection(violations = state.policyViolations)
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
@@ -796,6 +810,99 @@ private fun TrialMemberCard(
 }
 
 // ═══════════════════════════════════════════════════════════
+// Policy Violations Section
+// ═══════════════════════════════════════════════════════════
+
+@Composable
+private fun PolicyViolationsSection(
+    violations: List<PolicyViolationListItem>
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "POLICY ADVARSLER",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            AssistChip(
+                onClick = { },
+                label = { Text("${violations.size}") }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            violations.take(4).forEach { violation ->
+                PolicyViolationCard(violation)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PolicyViolationCard(item: PolicyViolationListItem) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = item.occurredAt,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "${item.memberName} (${item.memberId})",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (!item.practiceType.isNullOrBlank()) {
+                Text(
+                    text = item.practiceType,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (!item.notes.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = item.notes,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 // Add Session Dialog (for checked-in members)
 // ═══════════════════════════════════════════════════════════
 
@@ -808,7 +915,8 @@ data class AddSessionState(
     val practicePoints: String = "",
     val isSaving: Boolean = false,
     val isSaved: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val policyWarnings: List<String> = emptyList()
 )
 
 /**
@@ -817,16 +925,21 @@ data class AddSessionState(
 @HiltViewModel
 class AddSessionViewModel @Inject constructor(
     private val practiceSessionDao: PracticeSessionDao,
+    private val memberDao: MemberDao,
+    private val policyViolationDao: PolicyViolationDao,
     private val syncOutboxManager: SyncOutboxManager,
     private val syncManager: SyncManager,
     private val trustManager: TrustManager,
     private val lastClassificationStore: LastClassificationStore
 ) : ViewModel() {
 
+    private var currentMemberId: String? = null
+
     private val _state = MutableStateFlow(AddSessionState())
     val state: StateFlow<AddSessionState> = _state.asStateFlow()
 
     fun loadLastSelection(internalMemberId: String) {
+        currentMemberId = internalMemberId
         val (lastType, lastClassification) = lastClassificationStore.get(internalMemberId)
         val type = lastType ?: PracticeType.Riffel
         // Only use the saved classification if it's valid for the type
@@ -840,6 +953,7 @@ class AddSessionViewModel @Inject constructor(
             selectedPracticeType = type,
             selectedClassification = validClassification
         )
+        updatePolicyWarnings()
     }
 
     fun selectPracticeType(type: PracticeType) {
@@ -847,6 +961,7 @@ class AddSessionViewModel @Inject constructor(
             selectedPracticeType = type,
             selectedClassification = null
         )
+        updatePolicyWarnings()
     }
 
     fun selectClassification(classification: String) {
@@ -857,6 +972,102 @@ class AddSessionViewModel @Inject constructor(
         if (points.isEmpty() || points.all { it.isDigit() }) {
             _state.value = _state.value.copy(practicePoints = points)
         }
+    }
+
+    private fun isRegistreringspligtig(type: PracticeType): Boolean {
+        return when (type) {
+            PracticeType.LuftRiffel, PracticeType.LuftPistol -> false
+            else -> true
+        }
+    }
+
+    private fun registreringspligtigTypes(): List<PracticeType> {
+        return listOf(PracticeType.Riffel, PracticeType.Pistol, PracticeType.Andet)
+    }
+
+    private fun updatePolicyWarnings() {
+        val memberId = currentMemberId ?: return
+        val practiceType = _state.value.selectedPracticeType
+        viewModelScope.launch {
+            val member = memberDao.getByInternalId(memberId) ?: return@launch
+            val warnings = buildPolicyWarnings(member, practiceType, getToday())
+            _state.value = _state.value.copy(policyWarnings = warnings)
+        }
+    }
+
+    private suspend fun buildPolicyWarnings(
+        member: Member,
+        practiceType: PracticeType,
+        today: kotlinx.datetime.LocalDate
+    ): List<String> {
+        if (member.memberType != MemberType.TRIAL) return emptyList()
+        if (!isRegistreringspligtig(practiceType)) return emptyList()
+
+        val start = today.minus(DatePeriod(months = 12))
+        val trialCount = practiceSessionDao.countSessionsForMemberByTypes(
+            member.internalId,
+            start,
+            today,
+            registreringspligtigTypes()
+        )
+
+        val warnings = mutableListOf<String>()
+        warnings += "Prøvemedlem med registreringspligtige våben kræver logbog og max 3 prøveskydninger pr. 12 måneder."
+        if (trialCount >= 3) {
+            warnings += "Denne skytte har allerede $trialCount registreringspligtige prøveskydninger de seneste 12 måneder."
+        }
+        return warnings
+    }
+
+    private suspend fun logPolicyViolations(
+        member: Member,
+        session: PracticeSession,
+        warnings: List<String>,
+        today: kotlinx.datetime.LocalDate
+    ) {
+        val deviceId = trustManager.getThisDeviceId()
+        val now = Clock.System.now()
+
+        val requiresLogViolation = PolicyViolation(
+            id = UUID.randomUUID().toString(),
+            violationType = PolicyViolationType.TRIAL_REG_WEAPON_REQUIRES_LOG,
+            internalMemberId = member.internalId,
+            membershipId = member.membershipId,
+            practiceType = session.practiceType,
+            sessionId = session.id,
+            occurredAtUtc = now,
+            deviceId = deviceId,
+            notes = warnings.firstOrNull()
+        )
+        policyViolationDao.insert(requiresLogViolation)
+        syncOutboxManager.queuePolicyViolation(requiresLogViolation, deviceId)
+
+        val start = today.minus(DatePeriod(months = 12))
+        val trialCount = practiceSessionDao.countSessionsForMemberByTypes(
+            member.internalId,
+            start,
+            today,
+            registreringspligtigTypes()
+        )
+        if (trialCount >= 3) {
+            val trialLimitViolation = PolicyViolation(
+                id = UUID.randomUUID().toString(),
+                violationType = PolicyViolationType.TRIAL_LIMIT_EXCEEDED,
+                internalMemberId = member.internalId,
+                membershipId = member.membershipId,
+                practiceType = session.practiceType,
+                sessionId = session.id,
+                occurredAtUtc = now,
+                deviceId = deviceId,
+                notes = "Registreringspligtige prøveskydninger i 12 måneder: $trialCount"
+            )
+            policyViolationDao.insert(trialLimitViolation)
+            syncOutboxManager.queuePolicyViolation(trialLimitViolation, deviceId)
+        }
+    }
+
+    private fun getToday(): kotlinx.datetime.LocalDate {
+        return Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     }
 
     fun saveSession(internalMemberId: String, membershipId: String?, onSuccess: () -> Unit) {
@@ -898,6 +1109,15 @@ class AddSessionViewModel @Inject constructor(
                 syncOutboxManager.queuePracticeSession(session, trustManager.getThisDeviceId())
                 syncManager.notifyEntityChanged("PracticeSession", session.id)
 
+                val member = memberDao.getByInternalId(internalMemberId)
+                if (member != null) {
+                    val warnings = buildPolicyWarnings(member, _state.value.selectedPracticeType, today)
+                    if (warnings.isNotEmpty()) {
+                        logPolicyViolations(member, session, warnings, today)
+                    }
+                    _state.value = _state.value.copy(policyWarnings = warnings)
+                }
+
                 _state.value = _state.value.copy(isSaving = false, isSaved = true)
 
                 // Call success callback directly
@@ -912,6 +1132,7 @@ class AddSessionViewModel @Inject constructor(
     }
 
     fun reset() {
+        currentMemberId = null
         _state.value = AddSessionState()
     }
 }
@@ -1055,6 +1276,41 @@ fun AddSessionDialog(
                                     onClick = { viewModel.selectClassification(option) },
                                     label = { Text(option) }
                                 )
+                            }
+                        }
+                    }
+
+                    if (state.policyWarnings.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Policy advarsel",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                state.policyWarnings.forEach { warning ->
+                                    Text(
+                                        text = warning,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
                             }
                         }
                     }

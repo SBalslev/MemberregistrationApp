@@ -4,7 +4,7 @@
  */
 
 import { useMemo, useState, useCallback } from 'react';
-import { Check, X, AlertCircle, Filter, Clock, CreditCard, Search, CheckSquare, Square, MinusSquare } from 'lucide-react';
+import { Check, X, AlertCircle, Filter, Clock, CreditCard, Search, CheckSquare, Square, MinusSquare, ExternalLink } from 'lucide-react';
 import type { TransactionWithLines, FeeRate, PendingFeePaymentWithMember, MemberType } from '../../types';
 import type { Member } from '../../types/entities';
 import { MEMBER_TYPE_LABELS } from '../../types';
@@ -37,6 +37,7 @@ interface MemberFeeStatusTableProps {
   externallyPaidPayments?: PendingFeePaymentWithMember[];
   onMemberClick?: (memberId: string) => void;
   onQuickPayment?: (memberId: string) => void;
+  onMarkPaidExternally?: (memberId: string) => void;
   onBatchPayment?: (memberIds: string[]) => void;
 }
 
@@ -51,6 +52,7 @@ export function MemberFeeStatusTable({
   externallyPaidPayments = [],
   onMemberClick,
   onQuickPayment,
+  onMarkPaidExternally,
   onBatchPayment,
 }: MemberFeeStatusTableProps) {
   const [filter, setFilter] = useState<FilterType>('all');
@@ -386,7 +388,7 @@ export function MemberFeeStatusTable({
                 <th className="px-4 py-3 text-right font-medium text-gray-600">Udestående</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Betalingsdato</th>
                 <th className="px-4 py-3 text-center font-medium text-gray-600">Status</th>
-                {onQuickPayment && (
+                {(onQuickPayment || onMarkPaidExternally) && (
                   <th className="px-4 py-3 text-center font-medium text-gray-600">Handling</th>
                 )}
               </tr>
@@ -394,7 +396,7 @@ export function MemberFeeStatusTable({
             <tbody>
               {filteredStatuses.length === 0 ? (
                 <tr>
-                  <td colSpan={onQuickPayment ? 10 : onBatchPayment ? 9 : 8} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={(onQuickPayment || onMarkPaidExternally) ? 10 : onBatchPayment ? 9 : 8} className="px-4 py-8 text-center text-gray-500">
                     Ingen medlemmer matcher filteret
                   </td>
                 </tr>
@@ -505,20 +507,37 @@ export function MemberFeeStatusTable({
                         </span>
                       )}
                     </td>
-                    {onQuickPayment && (
+                    {(onQuickPayment || onMarkPaidExternally) && (
                       <td className="px-4 py-3 text-center">
                         {!status.isPaidInFull && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onQuickPayment(status.memberId);
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
-                            title="Registrer betaling"
-                          >
-                            <CreditCard className="w-3 h-3" />
-                            Betal
-                          </button>
+                          <div className="flex items-center justify-center gap-1">
+                            {onQuickPayment && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onQuickPayment(status.memberId);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                                title="Registrer betaling"
+                              >
+                                <CreditCard className="w-3 h-3" />
+                                Betal
+                              </button>
+                            )}
+                            {onMarkPaidExternally && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onMarkPaidExternally(status.memberId);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded transition-colors"
+                                title="Marker som betalt eksternt"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                Ekstern
+                              </button>
+                            )}
+                          </div>
                         )}
                       </td>
                     )}

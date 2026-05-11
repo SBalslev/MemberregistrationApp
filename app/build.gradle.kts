@@ -21,15 +21,14 @@ android {
         applicationId = "com.club.medlems"
         minSdk = 23
         targetSdk = 34
-    // Auto-incrementing versionCode: use epoch seconds so each build is higher
-    versionCode = (System.currentTimeMillis() / 1000L).toInt()
+        versionCode = 10332 // Semantic: major*10000 + minor*100 + patch
         versionName = "1.3.32"
 
         buildConfigField("String", "MINIDRAET_API_BASE_URL", "\"https://iss-skydning.dk/api/v1\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        setProperty("archivesBaseName", "ISS-Skydning-Registrering-v${versionName}")
+        setProperty("archivesBaseName", "ISS-Sportsskytter-v${versionName}")
     }
     
     // Product flavors for different device roles
@@ -39,7 +38,7 @@ android {
             dimension = "deviceRole"
             applicationIdSuffix = ""
             // Member tablet - default app name from main resources
-            resValue("string", "app_name_flavor", "ISS Skydning")
+            resValue("string", "app_name_flavor", "ISS Sportsskytter")
             buildConfigField("String", "DEVICE_ROLE", "\"MEMBER_TABLET\"")
             buildConfigField("Boolean", "EQUIPMENT_ENABLED", "false")
             buildConfigField("Boolean", "DISPLAY_MODE", "false")
@@ -48,7 +47,7 @@ android {
             dimension = "deviceRole"
             applicationIdSuffix = ".trainer"
             // Trainer tablet - distinct app name
-            resValue("string", "app_name_flavor", "ISS Skydning Træner")
+            resValue("string", "app_name_flavor", "ISS Sportsskytter Træner")
             buildConfigField("String", "DEVICE_ROLE", "\"TRAINER_TABLET\"")
             buildConfigField("Boolean", "EQUIPMENT_ENABLED", "true")
             buildConfigField("Boolean", "DISPLAY_MODE", "false")
@@ -57,7 +56,7 @@ android {
             dimension = "deviceRole"
             applicationIdSuffix = ".display.equipment"
             // Equipment display tablet - read-only status board
-            resValue("string", "app_name_flavor", "ISS Udstyr Display")
+            resValue("string", "app_name_flavor", "ISS Sportsskytter Udstyr")
             buildConfigField("String", "DEVICE_ROLE", "\"EQUIPMENT_DISPLAY\"")
             buildConfigField("Boolean", "EQUIPMENT_ENABLED", "true")
             buildConfigField("Boolean", "DISPLAY_MODE", "true")
@@ -66,7 +65,7 @@ android {
             dimension = "deviceRole"
             applicationIdSuffix = ".display.practice"
             // Practice display tablet - leaderboards and session stats
-            resValue("string", "app_name_flavor", "ISS Træning Display")
+            resValue("string", "app_name_flavor", "ISS Sportsskytter Træning")
             buildConfigField("String", "DEVICE_ROLE", "\"PRACTICE_DISPLAY\"")
             buildConfigField("Boolean", "EQUIPMENT_ENABLED", "false")
             buildConfigField("Boolean", "DISPLAY_MODE", "true")
@@ -75,19 +74,20 @@ android {
 
     buildTypes {
         release {
+            // TODO: Enable R8 minification before production distribution.
+            //  Requires testing all screens and sync flows after enabling.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // TODO: Replace with a proper release keystore before publishing.
+            //  Debug signing config is NOT suitable for production/Play Store.
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-        }
-        // Use debug signing for release builds (temporary - create proper keystore later)
-        release {
-            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

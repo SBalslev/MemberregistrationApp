@@ -30,6 +30,19 @@
 				"$gradle"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Assemble Debug (no daemon, plain)",
+			"type": "shell",
+			"command": "./gradlew.bat",
+			"args": [
+				":app:assembleDebug",
+				"--stacktrace",
+				"--console=plain",
+				"--no-daemon"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

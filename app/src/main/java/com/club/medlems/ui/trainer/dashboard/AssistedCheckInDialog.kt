@@ -30,10 +30,14 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.club.medlems.data.dao.CheckInDao
 import com.club.medlems.data.dao.MemberDao
+import com.club.medlems.data.dao.PolicyViolationDao
 import com.club.medlems.data.dao.PracticeSessionDao
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberStatus
+import com.club.medlems.data.entity.MemberType
+import com.club.medlems.data.entity.PolicyViolation
+import com.club.medlems.data.entity.PolicyViolationType
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.entity.SessionSource
@@ -48,8 +52,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 import java.io.File
 import java.util.UUID
@@ -72,7 +78,8 @@ data class AssistedCheckInState(
     val selectedClassification: String? = null,
     val practicePoints: String = "",
     val isSavingSession: Boolean = false,
-    val sessionSaved: Boolean = false
+    val sessionSaved: Boolean = false,
+    val policyWarnings: List<String> = emptyList()
 )
 
 sealed class CheckInResult {
@@ -88,6 +95,7 @@ class AssistedCheckInViewModel @Inject constructor(
     private val memberDao: MemberDao,
     private val checkInDao: CheckInDao,
     private val practiceSessionDao: PracticeSessionDao,
+    private val policyViolationDao: PolicyViolationDao,
     private val syncOutboxManager: SyncOutboxManager,
     private val syncManager: SyncManager,
     private val trustManager: TrustManager,
@@ -119,6 +127,7 @@ class AssistedCheckInViewModel @Inject constructor(
 
     fun selectMember(member: Member) {
         _state.value = _state.value.copy(selectedMember = member)
+        updatePolicyWarnings()
     }
 
     fun clearSelection() {
@@ -201,6 +210,7 @@ class AssistedCheckInViewModel @Inject constructor(
             selectedPracticeType = type,
             selectedClassification = validClassification
         )
+        updatePolicyWarnings()
     }
 
     fun hidePracticeForm() {
@@ -212,6 +222,7 @@ class AssistedCheckInViewModel @Inject constructor(
             selectedPracticeType = type,
             selectedClassification = null
         )
+        updatePolicyWarnings()
     }
 
     fun selectClassification(classification: String) {
@@ -266,10 +277,16 @@ class AssistedCheckInViewModel @Inject constructor(
                 syncOutboxManager.queuePracticeSession(session, trustManager.getThisDeviceId())
                 syncManager.notifyEntityChanged("PracticeSession", session.id)
 
+                val warnings = buildPolicyWarnings(member, _state.value.selectedPracticeType, today)
+                if (warnings.isNotEmpty()) {
+                    logPolicyViolations(member, session, warnings, today)
+                }
+
                 _state.value = _state.value.copy(
                     isSavingSession = false,
                     sessionSaved = true,
-                    showPracticeForm = false
+                    showPracticeForm = false,
+                    policyWarnings = warnings
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
@@ -278,6 +295,101 @@ class AssistedCheckInViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    private fun isRegistreringspligtig(type: PracticeType): Boolean {
+        return when (type) {
+            PracticeType.LuftRiffel, PracticeType.LuftPistol -> false
+            else -> true
+        }
+    }
+
+    private fun registreringspligtigTypes(): List<PracticeType> {
+        return listOf(PracticeType.Riffel, PracticeType.Pistol, PracticeType.Andet)
+    }
+
+    private fun updatePolicyWarnings() {
+        val member = _state.value.selectedMember ?: return
+        val practiceType = _state.value.selectedPracticeType
+        viewModelScope.launch {
+            val warnings = buildPolicyWarnings(member, practiceType, getToday())
+            _state.value = _state.value.copy(policyWarnings = warnings)
+        }
+    }
+
+    private suspend fun buildPolicyWarnings(
+        member: Member,
+        practiceType: PracticeType,
+        today: LocalDate
+    ): List<String> {
+        if (member.memberType != MemberType.TRIAL) return emptyList()
+        if (!isRegistreringspligtig(practiceType)) return emptyList()
+
+        val start = today.minus(DatePeriod(months = 12))
+        val trialCount = practiceSessionDao.countSessionsForMemberByTypes(
+            member.internalId,
+            start,
+            today,
+            registreringspligtigTypes()
+        )
+
+        val warnings = mutableListOf<String>()
+        warnings += "Prøvemedlem med registreringspligtige våben kræver logbog og max 3 prøveskydninger pr. 12 måneder."
+        if (trialCount >= 3) {
+            warnings += "Denne skytte har allerede $trialCount registreringspligtige prøveskydninger de seneste 12 måneder."
+        }
+        return warnings
+    }
+
+    private suspend fun logPolicyViolations(
+        member: Member,
+        session: PracticeSession,
+        warnings: List<String>,
+        today: LocalDate
+    ) {
+        val deviceId = trustManager.getThisDeviceId()
+        val now = Clock.System.now()
+
+        val requiresLogViolation = PolicyViolation(
+            id = UUID.randomUUID().toString(),
+            violationType = PolicyViolationType.TRIAL_REG_WEAPON_REQUIRES_LOG,
+            internalMemberId = member.internalId,
+            membershipId = member.membershipId,
+            practiceType = session.practiceType,
+            sessionId = session.id,
+            occurredAtUtc = now,
+            deviceId = deviceId,
+            notes = warnings.firstOrNull()
+        )
+        policyViolationDao.insert(requiresLogViolation)
+        syncOutboxManager.queuePolicyViolation(requiresLogViolation, deviceId)
+
+        val start = today.minus(DatePeriod(months = 12))
+        val trialCount = practiceSessionDao.countSessionsForMemberByTypes(
+            member.internalId,
+            start,
+            today,
+            registreringspligtigTypes()
+        )
+        if (trialCount >= 3) {
+            val trialLimitViolation = PolicyViolation(
+                id = UUID.randomUUID().toString(),
+                violationType = PolicyViolationType.TRIAL_LIMIT_EXCEEDED,
+                internalMemberId = member.internalId,
+                membershipId = member.membershipId,
+                practiceType = session.practiceType,
+                sessionId = session.id,
+                occurredAtUtc = now,
+                deviceId = deviceId,
+                notes = "Registreringspligtige prøveskydninger i 12 måneder: $trialCount"
+            )
+            policyViolationDao.insert(trialLimitViolation)
+            syncOutboxManager.queuePolicyViolation(trialLimitViolation, deviceId)
+        }
+    }
+
+    private fun getToday(): LocalDate {
+        return Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     }
 }
 
@@ -453,6 +565,41 @@ fun AssistedCheckInDialog(
                                                         onClick = { viewModel.selectClassification(option) },
                                                         label = { Text(option) }
                                                     )
+                                                }
+                                            }
+                                        }
+
+                                        if (state.policyWarnings.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = CardDefaults.cardColors(
+                                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                                )
+                                            ) {
+                                                Column(modifier = Modifier.padding(12.dp)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Icon(
+                                                            Icons.Default.Warning,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.onErrorContainer
+                                                        )
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text(
+                                                            text = "Policy advarsel",
+                                                            style = MaterialTheme.typography.titleSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    state.policyWarnings.forEach { warning ->
+                                                        Text(
+                                                            text = warning,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }

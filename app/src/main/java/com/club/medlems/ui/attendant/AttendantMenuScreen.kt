@@ -520,7 +520,7 @@ fun AttendantMenuScreen(
                 title = { Text("Om") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("ISS Skydning Registrering")
+                        Text("ISS Sportsskytter")
             Text("© 2025 Balslev.biz (CVR 32402402)")
             Text("Licens: MIT – fri brug, kopiering og ændring med angivelse af ophavsret og licens.")
                     }

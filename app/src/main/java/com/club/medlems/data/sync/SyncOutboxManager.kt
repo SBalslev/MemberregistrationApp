@@ -6,6 +6,7 @@ import com.club.medlems.data.entity.EquipmentCheckout
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberType
 import com.club.medlems.data.entity.NewMemberRegistration
+import com.club.medlems.data.entity.PolicyViolation
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.ScanEvent
 import kotlinx.coroutines.flow.Flow
@@ -138,6 +139,7 @@ class SyncOutboxManager @Inject constructor(
         val checkIns = mutableListOf<SyncableCheckIn>()
         val practiceSessions = mutableListOf<SyncablePracticeSession>()
         val practiceSessionDeletions = mutableListOf<SyncablePracticeSessionDeletion>()
+        val policyViolations = mutableListOf<SyncablePolicyViolation>()
         val scanEvents = mutableListOf<SyncableScanEvent>()
         val members = mutableListOf<SyncableMember>()
         val equipmentCheckouts = mutableListOf<SyncableEquipmentCheckout>()
@@ -158,6 +160,10 @@ class SyncOutboxManager @Inject constructor(
                         } else {
                             practiceSessions.add(json.decodeFromString<SyncablePracticeSession>(entry.payload))
                         }
+                        outboxIds.add(entry.id)
+                    }
+                    "PolicyViolation" -> {
+                        policyViolations.add(json.decodeFromString<SyncablePolicyViolation>(entry.payload))
                         outboxIds.add(entry.id)
                     }
                     "ScanEvent" -> {
@@ -195,6 +201,7 @@ class SyncOutboxManager @Inject constructor(
             checkIns = checkIns,
             practiceSessions = practiceSessions,
             practiceSessionDeletions = practiceSessionDeletions,
+            policyViolations = policyViolations,
             scanEvents = scanEvents,
             members = members,
             equipmentCheckouts = equipmentCheckouts,
@@ -203,7 +210,7 @@ class SyncOutboxManager @Inject constructor(
 
         Log.d(TAG, "Collected ${outboxIds.size} outbox entries for $deviceId: " +
             "${checkIns.size} check-ins, ${practiceSessions.size} sessions, " +
-            "${practiceSessionDeletions.size} session deletions, " +
+            "${practiceSessionDeletions.size} session deletions, ${policyViolations.size} policy violations, " +
             "${members.size} members, ${equipmentCheckouts.size} checkouts")
 
         return Pair(entities, outboxIds)
@@ -471,6 +478,36 @@ class SyncOutboxManager @Inject constructor(
         queueForSync(
             entityType = "PracticeSession",
             entityId = session.id,
+            operation = OutboxOperation.INSERT,
+            entity = syncable
+        )
+    }
+
+    /**
+     * Queues a PolicyViolation for sync after local insert.
+     *
+     * @param violation The PolicyViolation entity that was just inserted
+     * @param deviceId The device ID creating this violation
+     */
+    suspend fun queuePolicyViolation(violation: PolicyViolation, deviceId: String) {
+        val syncable = SyncablePolicyViolation(
+            id = violation.id,
+            violationType = violation.violationType,
+            internalMemberId = violation.internalMemberId,
+            membershipId = violation.membershipId,
+            practiceType = violation.practiceType,
+            sessionId = violation.sessionId,
+            occurredAtUtc = violation.occurredAtUtc,
+            notes = violation.notes,
+            deviceId = deviceId,
+            syncVersion = 1,
+            createdAtUtc = violation.occurredAtUtc,
+            modifiedAtUtc = violation.occurredAtUtc,
+            syncedAtUtc = null
+        )
+        queueForSync(
+            entityType = "PolicyViolation",
+            entityId = violation.id,
             operation = OutboxOperation.INSERT,
             entity = syncable
         )

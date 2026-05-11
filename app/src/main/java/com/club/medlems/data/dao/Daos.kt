@@ -10,6 +10,7 @@ import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberPreference
 import com.club.medlems.data.entity.MemberStatus
 import com.club.medlems.data.entity.NewMemberRegistration
+import com.club.medlems.data.entity.PolicyViolation
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.PracticeType
 import com.club.medlems.data.entity.ScanEvent
@@ -219,6 +220,14 @@ interface PracticeSessionDao {
         practiceType: PracticeType
     ): Int
 
+    @Query("SELECT COUNT(*) FROM PracticeSession WHERE internalMemberId = :internalMemberId AND localDate BETWEEN :start AND :end AND practiceType IN (:practiceTypes)")
+    suspend fun countSessionsForMemberByTypes(
+        internalMemberId: String,
+        start: LocalDate,
+        end: LocalDate,
+        practiceTypes: List<PracticeType>
+    ): Int
+
     @Query("SELECT * FROM PracticeSession")
     suspend fun allSessions(): List<PracticeSession>
 
@@ -247,6 +256,21 @@ interface PracticeSessionDao {
     
     @Query("SELECT * FROM PracticeSession WHERE syncedAtUtc IS NULL")
     suspend fun getUnsynced(): List<PracticeSession>
+}
+
+@Dao
+interface PolicyViolationDao {
+    @Insert
+    suspend fun insert(violation: PolicyViolation)
+
+    @Query("SELECT * FROM PolicyViolation ORDER BY occurredAtUtc DESC")
+    suspend fun allViolations(): List<PolicyViolation>
+
+    @Query("SELECT * FROM PolicyViolation WHERE occurredAtUtc >= :since ORDER BY occurredAtUtc DESC")
+    suspend fun recentViolations(since: Instant): List<PolicyViolation>
+
+    @Query("SELECT COUNT(*) FROM PolicyViolation WHERE occurredAtUtc >= :since")
+    suspend fun countSince(since: Instant): Int
 }
 
 @Dao

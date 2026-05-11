@@ -789,6 +789,31 @@ export function markPaymentAsPaidExternally(paymentId: string, paidInYear: numbe
 }
 
 /**
+ * Create a pending fee payment for a member and immediately mark it as paid externally.
+ * This is a convenience function for members who paid outside the system.
+ */
+export function markMemberFeePaidExternally(
+  memberId: string,
+  fiscalYear: number,
+  amount: number,
+  paidInYear: number
+): string {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const today = now.split('T')[0];
+  const notes = `Betalt eksternt i ${paidInYear}`;
+
+  execute(
+    `INSERT INTO PendingFeePayment
+     (id, fiscalYear, memberId, amount, paymentDate, paymentMethod, notes, isConsolidated, consolidatedTransactionId, createdAtUtc, updatedAtUtc)
+     VALUES (?, ?, ?, ?, ?, 'CASH', ?, 1, NULL, ?, ?)`,
+    [id, fiscalYear, memberId, amount, today, notes, now, now]
+  );
+
+  return id;
+}
+
+/**
  * Get fee payments that were marked as "paid externally" (in a different year).
  * These are consolidated payments without a transaction ID - they still count toward
  * the member's fee status for the year they were registered.

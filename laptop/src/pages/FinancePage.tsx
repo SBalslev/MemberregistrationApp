@@ -32,6 +32,7 @@ import {
   deletePendingFeePayment,
   markPaymentsAsConsolidated,
   markPaymentAsPaidExternally,
+  markMemberFeePaidExternally,
 } from '../database';
 import { onlineSyncService } from '../database/onlineSyncService';
 import { getAllMembers } from '../database/memberRepository';
@@ -456,6 +457,21 @@ export function FinancePage() {
     showSuccess(`Betaling markeret som betalt i ${paidInYear}`);
   };
 
+  // Handle marking a member's fee as paid externally (directly from the fee status table)
+  const handleMarkMemberPaidExternally = async (memberId: string) => {
+    const member = members.find(m => m.internalId === memberId);
+    if (!member) return;
+    const rate = feeRates.find(r => r.memberType === getEffectiveMemberType(member));
+    if (!rate) {
+      showWarning('Ingen kontingentsats fundet for dette medlem');
+      return;
+    }
+    const paymentId = markMemberFeePaidExternally(memberId, selectedYear, rate.feeAmount, selectedYear);
+    await onlineSyncService.pushPendingFeePaymentUpdate(paymentId);
+    loadData();
+    showSuccess(`${member.firstName} ${member.lastName} markeret som betalt eksternt`);
+  };
+
   // Open quick payment with optional preselected member
   const openQuickPayment = (memberId?: string) => {
     setQuickPaymentMemberId(memberId);
@@ -844,6 +860,7 @@ export function FinancePage() {
               externallyPaidPayments={externallyPaidPayments}
               onMemberClick={(memberId) => setSelectedMemberId(memberId)}
               onQuickPayment={openQuickPayment}
+              onMarkPaidExternally={handleMarkMemberPaidExternally}
               onBatchPayment={handleBatchPayment}
             />
           </div>

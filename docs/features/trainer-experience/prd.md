@@ -3,8 +3,8 @@
 **Feature:** Trainer Experience & Practice Management
 **Version:** 1.0
 **Status:** ✅ Complete
-**Last Updated:** 2026-02-03
-**Updated By:** Claude
+**Last Updated:** 2026-03-30
+**Updated By:** sbalslev
 **Created:** 2026-01-21
 
 ---
@@ -237,6 +237,13 @@ Discipline-specific trainer levels shall be tracked in a separate `TrainerDiscip
 - Update member record with new photo path
 - Trigger sync to propagate change
 - Record trainer ID as operator for audit
+
+### FR-10: Policy compliance alerts and logs
+
+- Trainers shall see warnings when a trial member uses registreringspligtige practice types.
+- Warnings shall remind that logbook is required and limit is three trial sessions per 12 months.
+- Each warning shall be logged with member ID, practice type, and timestamp.
+- Policy logs shall be exportable from the trainer tablet and the admin laptop.
 
 ### FR-10: Assisted Check-in
 - Search members by name (fuzzy match) or exact internalId

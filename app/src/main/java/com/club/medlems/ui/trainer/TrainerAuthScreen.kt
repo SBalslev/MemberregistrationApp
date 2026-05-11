@@ -61,15 +61,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.club.medlems.domain.QrParser
-import com.google.zxing.BarcodeFormat
-import com.journeyapps.barcodescanner.BarcodeCallback
-import com.journeyapps.barcodescanner.BarcodeResult
-import com.journeyapps.barcodescanner.DecoratedBarcodeView
-import com.journeyapps.barcodescanner.DefaultDecoderFactory
+
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -354,53 +350,11 @@ private fun ScannerView(
                 .weight(1f)
                 .background(MaterialTheme.colorScheme.surface)
         ) {
-            var barcodeView by remember { mutableStateOf<DecoratedBarcodeView?>(null) }
-
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    Log.i(TAG, "Creating DecoratedBarcodeView for trainer auth")
-                    DecoratedBarcodeView(ctx).apply {
-                        val formats = listOf(BarcodeFormat.QR_CODE)
-                        barcodeView = this
-                        decoderFactory = DefaultDecoderFactory(formats)
-
-                        val settings = barcodeView?.cameraSettings
-                        settings?.requestedCameraId = 1 // Front camera
-                        settings?.isAutoFocusEnabled = true
-                        settings?.isContinuousFocusEnabled = true
-                        barcodeView?.cameraSettings = settings
-
-                        val callback = object : BarcodeCallback {
-                            override fun barcodeResult(result: BarcodeResult?) {
-                                result?.text?.let { raw ->
-                                    Log.i(TAG, "QR detected: ${raw.take(50)}")
-                                    onQrScanned(raw)
-                                }
-                            }
-
-                            override fun possibleResultPoints(
-                                resultPoints: MutableList<com.google.zxing.ResultPoint>?
-                            ) {
-                                // Frames being processed
-                            }
-                        }
-
-                        decodeContinuous(callback)
-                        Log.i(TAG, "Trainer auth scanner initialized")
-                    }
-                }
+            com.club.medlems.ui.common.QrScannerView(
+                useBackCamera = false,
+                onQrScanned = onQrScanned,
+                modifier = Modifier.fillMaxSize()
             )
-
-            // Start/stop scanning based on lifecycle
-            DisposableEffect(Unit) {
-                Log.i(TAG, "Starting trainer auth camera")
-                barcodeView?.resume()
-                onDispose {
-                    Log.i(TAG, "Stopping trainer auth camera")
-                    barcodeView?.pause()
-                }
-            }
 
             // Scanning overlay
             if (isScanning) {

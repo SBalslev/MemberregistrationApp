@@ -4,12 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.club.medlems.data.dao.CheckInDao
 import com.club.medlems.data.dao.MemberDao
+import com.club.medlems.data.dao.PolicyViolationDao
 import com.club.medlems.data.dao.PracticeSessionDao
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.PolicyViolation
+import com.club.medlems.data.entity.PolicyViolationType
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.sync.SyncManager
 import com.club.medlems.domain.trainer.TrainerSessionManager
+import com.club.medlems.ui.common.displayName
 import com.club.medlems.util.BirthDateValidator
 import kotlin.time.Duration.Companion.days
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -69,6 +73,19 @@ data class TrialMemberListItem(
 )
 
 /**
+ * Represents a policy violation for the trainer dashboard list.
+ */
+data class PolicyViolationListItem(
+    val violation: PolicyViolation,
+    val memberName: String,
+    val memberId: String,
+    val occurredAt: String,
+    val title: String,
+    val practiceType: String?,
+    val notes: String?
+)
+
+/**
  * UI state for the trainer dashboard.
  */
 data class TrainerDashboardState(
@@ -83,6 +100,8 @@ data class TrainerDashboardState(
     val filteredSessions: List<PracticeSessionWithMember> = emptyList(),
     /** Recent trial members (last 7 days) */
     val trialMembers: List<TrialMemberListItem> = emptyList(),
+    /** Recent policy violations (last 30 days) */
+    val policyViolations: List<PolicyViolationListItem> = emptyList(),
     val stats: DashboardStats = DashboardStats(),
     val searchQuery: String = "",
     val isLoading: Boolean = false,
@@ -112,6 +131,7 @@ class TrainerDashboardViewModel @Inject constructor(
     private val checkInDao: CheckInDao,
     private val practiceSessionDao: PracticeSessionDao,
     private val memberDao: MemberDao,
+    private val policyViolationDao: PolicyViolationDao,
     private val trainerSessionManager: TrainerSessionManager,
     private val syncManager: SyncManager
 ) : ViewModel() {
@@ -146,6 +166,9 @@ class TrainerDashboardViewModel @Inject constructor(
 
         // Load trial members (not yet reactive)
         loadTrialMembers()
+
+        // Load policy violations (not yet reactive)
+        loadPolicyViolations()
 
         // Start auto-refresh for trial members only (they don't have Flow query yet)
         startAutoRefresh()
@@ -266,6 +289,51 @@ class TrainerDashboardViewModel @Inject constructor(
     }
 
     /**
+     * Loads recent policy violations (not yet using Flow-based observation).
+     */
+    private fun loadPolicyViolations() {
+        viewModelScope.launch {
+            val now = Clock.System.now()
+            val since = now - 30.days
+            val violations = policyViolationDao.recentViolations(since)
+
+            val memberIds = violations.map { it.internalMemberId }.distinct()
+            val memberNames = if (memberIds.isNotEmpty()) {
+                memberDao.getMemberNames(memberIds)
+            } else {
+                emptyList()
+            }
+            val nameMap = memberNames.associateBy { it.internalId }
+
+            val items = violations.take(20).map { violation ->
+                val member = nameMap[violation.internalMemberId]
+                val occurred = violation.occurredAtUtc.toLocalDateTime(TimeZone.currentSystemDefault())
+                val timeStr = String.format(
+                    "%02d/%02d %02d:%02d",
+                    occurred.dayOfMonth,
+                    occurred.monthNumber,
+                    occurred.hour,
+                    occurred.minute
+                )
+
+                PolicyViolationListItem(
+                    violation = violation,
+                    memberName = member?.let {
+                        listOfNotNull(it.firstName, it.lastName).joinToString(" ").trim()
+                    }?.ifEmpty { "Ukendt medlem" } ?: "Ukendt medlem",
+                    memberId = member?.membershipId ?: violation.membershipId ?: violation.internalMemberId,
+                    occurredAt = timeStr,
+                    title = policyViolationTitle(violation.violationType),
+                    practiceType = violation.practiceType?.displayName,
+                    notes = violation.notes
+                )
+            }
+
+            _state.value = _state.value.copy(policyViolations = items)
+        }
+    }
+
+    /**
      * Updates the search query and filters the displayed data.
      */
     fun onSearchQueryChanged(query: String) {
@@ -283,6 +351,7 @@ class TrainerDashboardViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = _state.value.copy(isRefreshing = true)
             loadTrialMembers()
+            loadPolicyViolations()
             _state.value = _state.value.copy(isRefreshing = false)
         }
     }
@@ -363,8 +432,18 @@ class TrainerDashboardViewModel @Inject constructor(
                 if (trainerSessionManager.isSessionActive) {
                     // Only refresh trial members - check-ins and sessions update via Flow
                     loadTrialMembers()
+                    loadPolicyViolations()
                 }
             }
+        }
+    }
+
+    private fun policyViolationTitle(type: PolicyViolationType): String {
+        return when (type) {
+            PolicyViolationType.TRIAL_REG_WEAPON_REQUIRES_LOG ->
+                "Prøvemedlem med registreringspligtige våben"
+            PolicyViolationType.TRIAL_LIMIT_EXCEEDED ->
+                "Prøvemedlem over 3 prøveskydninger"
         }
     }
 

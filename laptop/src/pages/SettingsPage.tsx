@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import { Settings, Database, Wifi, Download, Upload, Trash2, CheckCircle, AlertCircle, HardDrive, FileSpreadsheet, Edit2, Save, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { isElectron, getElectronAPI } from '../types/electron';
-import { exportDatabase, importDatabase, clearDatabase, getUniqueMemberEmailsByFeeCategory } from '../database';
+import { exportDatabase, importDatabase, clearDatabase, getUniqueMemberEmailsByFeeCategory, getPolicyViolationsForExport } from '../database';
 import { buildSkvExportWorkbook } from '../utils/skvExport';
 import { OnlineSyncSettings } from '../components/settings';
 import { ConfirmDialog } from '../components';
@@ -60,6 +60,7 @@ export function SettingsPage({ initialTab }: { initialTab?: 'settings' | 'import
   const [importStatus, setImportStatus] = useState<'idle' | 'importing' | 'success' | 'error'>('idle');
   const [skvExportStatus, setSkvExportStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
   const [emailExportStatus, setEmailExportStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
+  const [policyExportStatus, setPolicyExportStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
   const [showClearDbConfirm, setShowClearDbConfirm] = useState(false);
   const [showFinalClearConfirm, setShowFinalClearConfirm] = useState(false);
 
@@ -253,6 +254,54 @@ export function SettingsPage({ initialTab }: { initialTab?: 'settings' | 'import
       console.error('Email export failed:', error);
       setEmailExportStatus('error');
       setTimeout(() => setEmailExportStatus('idle'), 3000);
+    }
+  }
+
+  function handlePolicyExport() {
+    setPolicyExportStatus('exporting');
+    try {
+      const rows = getPolicyViolationsForExport();
+      const escapeCsvValue = (value: string): string => {
+        if (value.includes('"') || value.includes(',') || value.includes('\n')) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const lines = [
+        'occurredAtUtc,violationType,memberName,memberId,practiceType,notes,deviceId,sessionId'
+      ];
+      for (const row of rows) {
+        const memberName = [row.memberFirstName, row.memberLastName].filter(Boolean).join(' ');
+        const memberId = row.memberNumber || row.membershipId || row.internalMemberId;
+        lines.push([
+          row.occurredAtUtc,
+          row.violationType,
+          escapeCsvValue(memberName),
+          escapeCsvValue(memberId),
+          escapeCsvValue(row.practiceType ?? ''),
+          escapeCsvValue(row.notes ?? ''),
+          escapeCsvValue(row.deviceId ?? ''),
+          escapeCsvValue(row.sessionId ?? '')
+        ].join(','));
+      }
+
+      const csv = lines.join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `policy-logs-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+
+      URL.revokeObjectURL(url);
+      setPolicyExportStatus('success');
+      setTimeout(() => setPolicyExportStatus('idle'), 3000);
+    } catch (error) {
+      console.error('Policy export failed:', error);
+      setPolicyExportStatus('error');
+      setTimeout(() => setPolicyExportStatus('idle'), 3000);
     }
   }
 
@@ -451,6 +500,29 @@ export function SettingsPage({ initialTab }: { initialTab?: 'settings' | 'import
               </button>
             </div>
             {emailExportStatus === 'error' && (
+              <div className="px-4 pb-4 text-sm text-red-600">Eksport mislykkedes. Prøv igen.</div>
+            )}
+            <div className="border-t border-gray-100 p-4 flex items-center justify-between">
+              <div>
+                <div className="font-medium text-gray-900">Policy log eksport</div>
+                <div className="text-sm text-gray-500">Prøvemedlem- og våbenpolitik fra trainer tablets</div>
+              </div>
+              <button
+                onClick={handlePolicyExport}
+                disabled={policyExportStatus === 'exporting'}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                {policyExportStatus === 'exporting' ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : policyExportStatus === 'success' ? (
+                  <CheckCircle className="w-5 h-5" />
+                ) : (
+                  <Download className="w-5 h-5" />
+                )}
+                {policyExportStatus === 'success' ? 'Eksporteret!' : 'Eksporter policy logs'}
+              </button>
+            </div>
+            {policyExportStatus === 'error' && (
               <div className="px-4 pb-4 text-sm text-red-600">Eksport mislykkedes. Prøv igen.</div>
             )}
           </div>

@@ -41,7 +41,8 @@ class CsvService @Inject constructor(
     private val memberDao: MemberDao,
     private val checkInDao: CheckInDao,
     private val sessionDao: PracticeSessionDao,
-    private val scanEventDao: ScanEventDao
+    private val scanEventDao: ScanEventDao,
+    private val policyViolationDao: PolicyViolationDao
 ) {
     private val version = "2"
 
@@ -175,6 +176,39 @@ class CsvService @Inject constructor(
             appendLine(header.joinToString(","))
             list.forEach { e ->
                 appendLine(listOf(version,e.id,e.membershipId,e.createdAtUtc.toString(),e.type.name,e.linkedCheckInId.orEmpty(),e.linkedSessionId.orEmpty(),e.canceledFlag.toString()).joinToString(","))
+            }
+        }
+    }
+
+    suspend fun exportPolicyViolations(): String = withContext(Dispatchers.IO) {
+        val violations = policyViolationDao.allViolations()
+        val header = listOf(
+            "FORMAT_VERSION",
+            "violation_id",
+            "violation_type",
+            "internal_member_id",
+            "membership_id",
+            "practice_type",
+            "session_id",
+            "occurred_at_utc",
+            "device_id",
+            "notes"
+        )
+        buildString {
+            appendLine(header.joinToString(","))
+            violations.forEach { v ->
+                appendLine(listOf(
+                    version,
+                    v.id,
+                    v.violationType.name,
+                    v.internalMemberId,
+                    v.membershipId.orEmpty(),
+                    v.practiceType?.name.orEmpty(),
+                    v.sessionId.orEmpty(),
+                    v.occurredAtUtc.toString(),
+                    v.deviceId.orEmpty(),
+                    v.notes.orEmpty()
+                ).joinToString(","))
             }
         }
     }
