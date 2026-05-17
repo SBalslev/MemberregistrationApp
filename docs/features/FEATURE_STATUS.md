@@ -1,8 +1,8 @@
 # Feature Status Overview
 
 **Project:** Medlemscheckin (Club Member Check-in System)
-**Last Updated:** February 3, 2026
-**Updated By:** Claude
+**Last Updated:** 2026-05-17
+**Updated By:** sbalslev
 
 ---
 
@@ -54,6 +54,7 @@
 | **Photo Storage Optimization** | ✅ Complete | 2026-01-20 | [tasks.md](photo-storage-optimization/tasks.md) |
 | **Financial Transactions** | ✅ Complete | 2026-01-20 | [tasks.md](financial-transactions/tasks.md) |
 | **Tablet UX Improvements** | ✅ Complete | 2026-01-20 | [tasks.md](tablet-ux-improvements/tasks.md) |
+| **Celebration Carousel & Achievements** | ✅ Complete | 2026-05-17 | [FEATURE-COMPLETION-SUMMARY.md](celebration-carousel/completion/FEATURE-COMPLETION-SUMMARY.md) |
 | **Member Preference Sync** | ✅ Complete | 2026-01-21 | [tasks.md](member-preference-sync/tasks.md) |
 | **Member Deletion** | ✅ Complete | 2026-02-01 | [design.md](member-deletion/design.md) |
 | **UI/UX Improvements (Feb 2026)** | ✅ Complete | 2026-02-01 | See below |
