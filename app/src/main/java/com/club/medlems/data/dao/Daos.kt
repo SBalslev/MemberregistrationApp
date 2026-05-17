@@ -235,8 +235,17 @@ interface PracticeSessionDao {
     @Query("SELECT COUNT(*) FROM PracticeSession WHERE createdAtUtc > :since")
     suspend fun countSessionsCreatedAfter(since: Instant): Int
 
-        @Query("DELETE FROM PracticeSession")
-        suspend fun deleteAllSessions()
+    @Query("SELECT * FROM PracticeSession WHERE localDate BETWEEN :start AND :end AND points > 0 ORDER BY createdAtUtc DESC")
+    suspend fun allWithPointsInRange(start: LocalDate, end: LocalDate): List<PracticeSession>
+
+    @Query("SELECT * FROM PracticeSession WHERE internalMemberId = :internalMemberId AND practiceType = :type AND points > 0 ORDER BY createdAtUtc DESC")
+    suspend fun allTimeForMemberAndType(internalMemberId: String, type: PracticeType): List<PracticeSession>
+
+    @Query("SELECT COUNT(*) FROM PracticeSession WHERE internalMemberId = :internalMemberId AND localDate BETWEEN :yearStart AND :yearEnd AND points > 0")
+    suspend fun countForMemberInYear(internalMemberId: String, yearStart: LocalDate, yearEnd: LocalDate): Int
+
+    @Query("DELETE FROM PracticeSession")
+    suspend fun deleteAllSessions()
 
     @Query("DELETE FROM PracticeSession WHERE internalMemberId = :internalMemberId")
     suspend fun deleteByInternalMemberId(internalMemberId: String)
