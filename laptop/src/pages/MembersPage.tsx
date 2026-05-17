@@ -4,7 +4,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Search, Plus, ChevronRight, User, X, Camera, Trash2, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
-import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, getMemberDeletePreview, deleteMemberPermanently, type ActivityType } from '../database';
+import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, getMemberDeletePreview, deleteMemberPermanently, getMemberFeeStatus, query, type ActivityType } from '../database';
 import type { Member, Gender } from '../types';
 import { getIdPhotoStatus } from '../types/entities';
 import { onMembershipIdAssigned } from '../services/idPhotoLifecycleService';
@@ -27,6 +27,9 @@ export function MembersPage() {
   const [memberTypeFilter, setMemberTypeFilter] = useState<'all' | 'TRIAL' | 'FULL'>('all');
   const [idPhotoFilter, setIdPhotoFilter] = useState<'all' | 'has_id' | 'needs_id' | 'not_required'>('all');
   const [feeCategoryFilter, setFeeCategoryFilter] = useState<'all' | 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY'>('all');
+  const [cardStatusFilter, setCardStatusFilter] = useState<'all' | 'requested' | 'missing'>('all');
+  const [activityFilter, setActivityFilter] = useState<'all' | 'inactive_unpaid'>('all');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [viewMode, setViewMode] = useState<'members' | 'duplicates'>('members');
   const listRef = useRef<HTMLUListElement>(null);
   const [enlargedPhoto, setEnlargedPhoto] = useState<{ src: string; title: string } | null>(null);
@@ -83,6 +86,26 @@ export function MembersPage() {
       result = result.filter((m) => m.memberType === feeCategoryFilter);
     }
 
+    // Apply card status filter
+    if (cardStatusFilter !== 'all') {
+      result = result.filter((m) => {
+        if (cardStatusFilter === 'requested') return m.cardStatus === 'requested';
+        return m.cardStatus === 'none';
+      });
+    }
+
+    // Apply activity filter
+    if (activityFilter !== 'all') {
+      result = result.filter((m) => {
+        if (m.status !== 'ACTIVE') return false;
+        if (m.memberType === 'HONORARY') return false;
+        const isPaid = feePaidByMemberId.get(m.internalId) ?? false;
+        if (isPaid) return false;
+        const lastCheckInDate = lastCheckInByMemberId.get(m.internalId);
+        return !lastCheckInDate || lastCheckInDate < inactiveCutoffDate;
+      });
+    }
+
     // Sort: active first, then by first name, then last name
     result = [...result].sort((a, b) => {
       // Active members first
@@ -97,7 +120,7 @@ export function MembersPage() {
     });
 
     return result;
-  }, [members, searchQuery, statusFilter, memberTypeFilter, idPhotoFilter, feeCategoryFilter]);
+  }, [members, searchQuery, statusFilter, memberTypeFilter, idPhotoFilter, feeCategoryFilter, cardStatusFilter, activityFilter, feePaidByMemberId, lastCheckInByMemberId, inactiveCutoffDate]);
 
   // Count trial members for badge
   const trialMemberCount = useMemo(() => {
@@ -146,6 +169,56 @@ export function MembersPage() {
     });
     return counts;
   }, [members]);
+
+  // Count members by card status for filter labels
+  const cardStatusCounts = useMemo(() => {
+    const counts = { requested: 0, missing: 0 };
+    members.forEach((m) => {
+      if (m.cardStatus === 'requested') counts.requested++;
+      else if (m.cardStatus === 'none') counts.missing++;
+    });
+    return counts;
+  }, [members]);
+
+  const currentFiscalYear = useMemo(() => new Date().getFullYear(), []);
+  const inactiveCutoffDate = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    return cutoff.toISOString().slice(0, 10);
+  }, []);
+
+  const feePaidByMemberId = useMemo(() => {
+    const status = getMemberFeeStatus(currentFiscalYear);
+    const map = new Map<string, boolean>();
+    status.forEach((row) => {
+      map.set(row.memberId, row.outstanding <= 0);
+    });
+    return map;
+  }, [currentFiscalYear, members.length]);
+
+  const lastCheckInByMemberId = useMemo(() => {
+    const rows = query<{ internalMemberId: string; lastCheckInDate: string | null }>(
+      'SELECT internalMemberId, MAX(localDate) as lastCheckInDate FROM CheckIn GROUP BY internalMemberId'
+    );
+    const map = new Map<string, string | null>();
+    rows.forEach((row) => {
+      map.set(row.internalMemberId, row.lastCheckInDate);
+    });
+    return map;
+  }, [members.length]);
+
+  const activityFilterCounts = useMemo(() => {
+    let inactiveUnpaid = 0;
+    members.forEach((m) => {
+      if (m.status !== 'ACTIVE') return;
+      if (m.memberType === 'HONORARY') return;
+      const isPaid = feePaidByMemberId.get(m.internalId) ?? false;
+      if (isPaid) return;
+      const lastCheckInDate = lastCheckInByMemberId.get(m.internalId);
+      if (!lastCheckInDate || lastCheckInDate < inactiveCutoffDate) inactiveUnpaid++;
+    });
+    return { inactiveUnpaid };
+  }, [members, feePaidByMemberId, lastCheckInByMemberId, inactiveCutoffDate]);
 
   const selectedIndex = useMemo(() => {
     if (!selectedMember) return -1;
@@ -287,7 +360,7 @@ export function MembersPage() {
               />
             </div>
             {/* Compact filter row */}
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               <select
                 value={memberTypeFilter}
                 onChange={(e) => setMemberTypeFilter(e.target.value as 'all' | 'TRIAL' | 'FULL')}
@@ -308,30 +381,60 @@ export function MembersPage() {
                 <option value="ACTIVE">Aktive ({statusCounts.active})</option>
                 <option value="INACTIVE">Inaktive ({statusCounts.inactive})</option>
               </select>
-              <select
-                value={idPhotoFilter}
-                onChange={(e) => setIdPhotoFilter(e.target.value as 'all' | 'has_id' | 'needs_id' | 'not_required')}
-                aria-label="Filtrer efter ID-billede status"
-                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
+              <button
+                type="button"
+                onClick={() => setShowAdvancedFilters((current) => !current)}
+                className="px-2 py-1 text-xs border border-gray-300 rounded bg-white text-gray-600 hover:bg-gray-50"
               >
-                <option value="all">ID: Alle</option>
-                <option value="has_id">Har ID ({idPhotoStatusCounts.has_id})</option>
-                <option value="needs_id">Mangler ({idPhotoStatusCounts.needs_id})</option>
-                <option value="not_required">Ej krævet ({idPhotoStatusCounts.not_required})</option>
-              </select>
-              <select
-                value={feeCategoryFilter}
-                onChange={(e) => setFeeCategoryFilter(e.target.value as 'all' | 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY')}
-                aria-label="Filtrer efter kontingenttype"
-                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
-              >
-                <option value="all">Kont: Alle</option>
-                <option value="ADULT">Voksen ({feeCategoryCounts.ADULT})</option>
-                <option value="CHILD">Barn ({feeCategoryCounts.CHILD})</option>
-                <option value="CHILD_PLUS">Barn+ ({feeCategoryCounts.CHILD_PLUS})</option>
-                <option value="HONORARY">Æresmedlem ({feeCategoryCounts.HONORARY})</option>
-              </select>
+                {showAdvancedFilters ? 'Skjul filtre' : 'Flere filtre'}
+              </button>
             </div>
+            {showAdvancedFilters && (
+              <div className="flex flex-wrap gap-1.5">
+                <select
+                  value={idPhotoFilter}
+                  onChange={(e) => setIdPhotoFilter(e.target.value as 'all' | 'has_id' | 'needs_id' | 'not_required')}
+                  aria-label="Filtrer efter ID-billede status"
+                  className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
+                >
+                  <option value="all">ID: Alle</option>
+                  <option value="has_id">Har ID ({idPhotoStatusCounts.has_id})</option>
+                  <option value="needs_id">Mangler ({idPhotoStatusCounts.needs_id})</option>
+                  <option value="not_required">Ej krævet ({idPhotoStatusCounts.not_required})</option>
+                </select>
+                <select
+                  value={feeCategoryFilter}
+                  onChange={(e) => setFeeCategoryFilter(e.target.value as 'all' | 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY')}
+                  aria-label="Filtrer efter kontingenttype"
+                  className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
+                >
+                  <option value="all">Kont: Alle</option>
+                  <option value="ADULT">Voksen ({feeCategoryCounts.ADULT})</option>
+                  <option value="CHILD">Barn ({feeCategoryCounts.CHILD})</option>
+                  <option value="CHILD_PLUS">Barn+ ({feeCategoryCounts.CHILD_PLUS})</option>
+                  <option value="HONORARY">Æresmedlem ({feeCategoryCounts.HONORARY})</option>
+                </select>
+                <select
+                  value={cardStatusFilter}
+                  onChange={(e) => setCardStatusFilter(e.target.value as 'all' | 'requested' | 'missing')}
+                  aria-label="Filtrer efter medlemskort status"
+                  className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
+                >
+                  <option value="all">Kort: Alle</option>
+                  <option value="requested">Kort: Anmodet ({cardStatusCounts.requested})</option>
+                  <option value="missing">Kort: Mangler ({cardStatusCounts.missing})</option>
+                </select>
+                <select
+                  value={activityFilter}
+                  onChange={(e) => setActivityFilter(e.target.value as 'all' | 'inactive_unpaid')}
+                  aria-label="Filtrer efter aktivitet"
+                  className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
+                >
+                  <option value="all">Aktivitet: Alle</option>
+                  <option value="inactive_unpaid">Mangler kontingent + ingen check-in 30d (ink. trial) ({activityFilterCounts.inactiveUnpaid})</option>
+                </select>
+              </div>
+            )}
           </div>
           )}
         </div>
@@ -608,6 +711,10 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
     return registration ? getSkvWeaponsByRegistrationId(registration.id) : [];
   });
   const [showWeaponModal, setShowWeaponModal] = useState(false);
+  const [showCardFileRefDialog, setShowCardFileRefDialog] = useState(false);
+  const [cardFileRefValue, setCardFileRefValue] = useState('');
+  const [cardFileRefMode, setCardFileRefMode] = useState<'print' | 'edit'>('print');
+  const [cardFileRefMember, setCardFileRefMember] = useState<Member | null>(null);
 
   // Inline assign membership ID state (replaces modal)
   const [isAssigningId, setIsAssigningId] = useState(false);
@@ -635,6 +742,13 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
   const [activityEndDate, setActivityEndDate] = useState(season.endDate);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const { setSelectedMember } = useAppStore();
+
+  function openCardFileRefDialog(mode: 'print' | 'edit', targetMember: Member) {
+    setCardFileRefMode(mode);
+    setCardFileRefValue(mode === 'edit' ? targetMember.cardFileReference || '' : '');
+    setCardFileRefMember(targetMember);
+    setShowCardFileRefDialog(true);
+  }
 
   // Calculate days since registration for trial members
   const daysSinceRegistration = member.memberLifecycleStage === 'TRIAL' && member.createdAtUtc
@@ -1151,13 +1265,7 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
             {member.cardStatus === 'requested' && (
               <button
                 onClick={() => {
-                  const fileRef = prompt('Kort-fil reference (f.eks. "batch-2026-01"):');
-                  if (fileRef === null) return;
-                  const updated = { ...member, cardStatus: 'printed' as const, cardFileReference: fileRef || member.cardFileReference, cardPrintedAtUtc: new Date().toISOString(), updatedAtUtc: new Date().toISOString() };
-                  upsertMember(updated);
-                  setSelectedMember(updated);
-                  onMemberUpdated();
-                  showSuccess('Kort markeret som printet');
+                  openCardFileRefDialog('print', member);
                 }}
                 className="px-2 py-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100"
               >
@@ -1181,13 +1289,7 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
             {member.cardFileReference && (
               <button
                 onClick={() => {
-                  const fileRef = prompt('Ny kort-fil reference:', member.cardFileReference || '');
-                  if (fileRef === null) return;
-                  const updated = { ...member, cardFileReference: fileRef, updatedAtUtc: new Date().toISOString() };
-                  upsertMember(updated);
-                  setSelectedMember(updated);
-                  onMemberUpdated();
-                  showSuccess('Fil-reference opdateret');
+                  openCardFileRefDialog('edit', member);
                 }}
                 className="px-2 py-1 text-xs bg-gray-50 text-gray-600 border border-gray-200 rounded hover:bg-gray-100"
               >
@@ -1564,6 +1666,116 @@ function MemberDetailPanel({ member, onMemberUpdated, onEnlargePhoto, onClose }:
             onMemberUpdated();
           }}
         />
+      )}
+
+      {/* Card File Reference Dialog */}
+      {showCardFileRefDialog && cardFileRefMember && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {cardFileRefMode === 'print' ? 'Markér kort som printet' : 'Redigér fil-reference'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowCardFileRefDialog(false);
+                  setCardFileRefValue('');
+                  setCardFileRefMember(null);
+                }}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                aria-label="Luk"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Kort-fil reference</label>
+                <input
+                  type="text"
+                  value={cardFileRefValue}
+                  onChange={(event) => setCardFileRefValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      const now = new Date().toISOString();
+                      const updated = cardFileRefMode === 'print'
+                        ? {
+                          ...cardFileRefMember,
+                          cardStatus: 'printed' as const,
+                          cardFileReference: cardFileRefValue || cardFileRefMember.cardFileReference,
+                          cardPrintedAtUtc: now,
+                          updatedAtUtc: now
+                        }
+                        : {
+                          ...cardFileRefMember,
+                          cardFileReference: cardFileRefValue,
+                          updatedAtUtc: now
+                        };
+                      upsertMember(updated);
+                      setSelectedMember(updated);
+                      onMemberUpdated();
+                      showSuccess(cardFileRefMode === 'print' ? 'Kort markeret som printet' : 'Fil-reference opdateret');
+                      setShowCardFileRefDialog(false);
+                      setCardFileRefValue('');
+                      setCardFileRefMember(null);
+                    }
+                    if (event.key === 'Escape') {
+                      setShowCardFileRefDialog(false);
+                      setCardFileRefValue('');
+                      setCardFileRefMember(null);
+                    }
+                  }}
+                  placeholder="f.eks. batch-2026-01"
+                  autoFocus
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+                {cardFileRefMode === 'print' && (
+                  <p className="text-xs text-gray-500 mt-1">Feltet kan være tomt hvis du ikke bruger batch-referencer.</p>
+                )}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setShowCardFileRefDialog(false);
+                    setCardFileRefValue('');
+                    setCardFileRefMember(null);
+                  }}
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Annuller
+                </button>
+                <button
+                  onClick={() => {
+                    const now = new Date().toISOString();
+                    const updated = cardFileRefMode === 'print'
+                      ? {
+                        ...cardFileRefMember,
+                        cardStatus: 'printed' as const,
+                        cardFileReference: cardFileRefValue || cardFileRefMember.cardFileReference,
+                        cardPrintedAtUtc: now,
+                        updatedAtUtc: now
+                      }
+                      : {
+                        ...cardFileRefMember,
+                        cardFileReference: cardFileRefValue,
+                        updatedAtUtc: now
+                      };
+                    upsertMember(updated);
+                    setSelectedMember(updated);
+                    onMemberUpdated();
+                    showSuccess(cardFileRefMode === 'print' ? 'Kort markeret som printet' : 'Fil-reference opdateret');
+                    setShowCardFileRefDialog(false);
+                    setCardFileRefValue('');
+                    setCardFileRefMember(null);
+                  }}
+                  className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Gem
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete Weapon Confirmation */}

@@ -36,7 +36,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -97,6 +96,7 @@ fun EquipmentListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var prefillSerialNumber by remember { mutableStateOf("") }
     var showBatchConfirm by remember { mutableStateOf(false) }
 
     // Show snackbar for success/error messages
@@ -114,7 +114,7 @@ fun EquipmentListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Udstyrsstyring") },
+                title = { Text("Udstyr") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Tilbage")
@@ -126,14 +126,6 @@ fun EquipmentListScreen(
                     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Tilf\u00f8j udstyr")
-            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
@@ -162,7 +154,10 @@ fun EquipmentListScreen(
             if (equipmentList.isEmpty()) {
                 EmptyEquipmentState(
                     hasFilter = uiState.statusFilter != EquipmentStatusFilter.All || uiState.searchQuery.isNotBlank(),
-                    isActiveCheckoutsView = uiState.statusFilter == EquipmentStatusFilter.ActiveCheckouts
+                    isActiveCheckoutsView = uiState.statusFilter == EquipmentStatusFilter.ActiveCheckouts,
+                    onAddEquipment = if (uiState.statusFilter != EquipmentStatusFilter.ActiveCheckouts) {
+                        { prefillSerialNumber = uiState.searchQuery; showAddDialog = true }
+                    } else null
                 )
             } else {
                 LazyColumn(
@@ -200,10 +195,12 @@ fun EquipmentListScreen(
     // Add Equipment Dialog
     if (showAddDialog) {
         AddEquipmentDialog(
-            onDismiss = { showAddDialog = false },
+            initialSerialNumber = prefillSerialNumber,
+            onDismiss = { showAddDialog = false; prefillSerialNumber = "" },
             onAdd = { serialNumber, description, discipline ->
                 viewModel.createEquipment(serialNumber, description, discipline)
                 showAddDialog = false
+                prefillSerialNumber = ""
             }
         )
     }
@@ -383,7 +380,11 @@ private fun BatchReturnBar(
 }
 
 @Composable
-private fun EmptyEquipmentState(hasFilter: Boolean, isActiveCheckoutsView: Boolean = false) {
+private fun EmptyEquipmentState(
+    hasFilter: Boolean,
+    isActiveCheckoutsView: Boolean = false,
+    onAddEquipment: (() -> Unit)? = null
+) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -399,7 +400,7 @@ private fun EmptyEquipmentState(hasFilter: Boolean, isActiveCheckoutsView: Boole
             Text(
                 text = when {
                     isActiveCheckoutsView -> "Intet udstyr er udl\u00e5nt"
-                    hasFilter -> "Ingen udstyr matcher filteret"
+                    hasFilter -> "Udstyr ikke fundet"
                     else -> "Intet udstyr registreret"
                 },
                 style = MaterialTheme.typography.bodyLarge,
@@ -409,12 +410,24 @@ private fun EmptyEquipmentState(hasFilter: Boolean, isActiveCheckoutsView: Boole
             Text(
                 text = when {
                     isActiveCheckoutsView -> "Alt udstyr er returneret"
-                    hasFilter -> "Pr\u00f8v at \u00e6ndre filteret"
-                    else -> "Tryk + for at tilf\u00f8je udstyr"
+                    hasFilter -> "Tjek serienummeret, eller tilf\u00f8j udstyr"
+                    else -> "Tilf\u00f8j udstyr for at komme i gang"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (!isActiveCheckoutsView && onAddEquipment != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(onClick = onAddEquipment) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Tilf\u00f8j udstyr")
+                }
+            }
         }
     }
 }
@@ -670,10 +683,11 @@ private fun StatusBadge(status: EquipmentStatus) {
 
 @Composable
 private fun AddEquipmentDialog(
+    initialSerialNumber: String = "",
     onDismiss: () -> Unit,
     onAdd: (serialNumber: String, description: String?, discipline: PracticeType?) -> Unit
 ) {
-    var serialNumber by remember { mutableStateOf("") }
+    var serialNumber by remember { mutableStateOf(initialSerialNumber) }
     var description by remember { mutableStateOf("") }
     var selectedDiscipline by remember { mutableStateOf<PracticeType?>(null) }
     var showDisciplineDropdown by remember { mutableStateOf(false) }

@@ -164,14 +164,6 @@ fun TrainerDashboardScreen(
             // ═══════════════════════════════════════════════════════════
             // PRIMARY: Equipment Section (Large, prominent buttons)
             // ═══════════════════════════════════════════════════════════
-            Text(
-                text = "UDSTYR",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
