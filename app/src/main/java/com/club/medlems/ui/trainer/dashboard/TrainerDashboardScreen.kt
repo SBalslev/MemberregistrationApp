@@ -69,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.club.medlems.ui.common.displayName
 import kotlinx.datetime.TimeZone
@@ -81,7 +82,6 @@ import kotlinx.datetime.toLocalDateTime
  * Primary function: Equipment checkout/checkin
  * Secondary function: Monitor today's check-ins and practice sessions
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrainerDashboardScreen(
     onLogout: () -> Unit,
@@ -93,8 +93,40 @@ fun TrainerDashboardScreen(
     viewModel: TrainerDashboardViewModel = hiltViewModel()
 ) {
     val state by viewModel.combinedState.collectAsState()
+    TrainerDashboardContent(
+        state = state,
+        onLogout = { viewModel.logout(); onLogout() },
+        onNavigateToEquipment = onNavigateToEquipment,
+        onNavigateToCheckouts = onNavigateToCheckouts,
+        onNavigateToAdmin = onNavigateToAdmin,
+        onNavigateToMinIdraetSearch = onNavigateToMinIdraetSearch,
+        onNavigateToTrialMemberDetail = onNavigateToTrialMemberDetail,
+        onSearchQueryChanged = { viewModel.onSearchQueryChanged(it) },
+        onSelectMemberForSession = { viewModel.selectMemberForSession(it) },
+        onClearSessionSelection = { viewModel.clearSessionSelection() },
+        onSessionAdded = { viewModel.clearSessionSelection(); viewModel.refresh() },
+        onExtendSession = { viewModel.extendSession() },
+        onRefresh = { viewModel.refresh() },
+    )
+}
 
-    // Assisted check-in dialog state
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrainerDashboardContent(
+    state: TrainerDashboardState,
+    onLogout: () -> Unit,
+    onNavigateToEquipment: () -> Unit,
+    onNavigateToCheckouts: () -> Unit,
+    onNavigateToAdmin: () -> Unit,
+    onNavigateToMinIdraetSearch: () -> Unit,
+    onNavigateToTrialMemberDetail: (String) -> Unit,
+    onSearchQueryChanged: (String) -> Unit,
+    onSelectMemberForSession: (CheckInWithMember) -> Unit,
+    onClearSessionSelection: () -> Unit,
+    onSessionAdded: () -> Unit,
+    onExtendSession: () -> Unit,
+    onRefresh: () -> Unit,
+) {
     var showAssistedCheckInDialog by remember { mutableStateOf(false) }
 
     // Assisted check-in dialog
@@ -103,7 +135,7 @@ fun TrainerDashboardScreen(
             onDismiss = { showAssistedCheckInDialog = false },
             onCheckInComplete = {
                 showAssistedCheckInDialog = false
-                viewModel.refresh()
+                onRefresh()
             }
         )
     }
@@ -112,11 +144,8 @@ fun TrainerDashboardScreen(
     if (state.sessionExpiring) {
         SessionExpiryDialog(
             remainingSeconds = state.sessionRemainingSeconds,
-            onExtend = { viewModel.extendSession() },
-            onLogout = {
-                viewModel.logout()
-                onLogout()
-            }
+            onExtend = onExtendSession,
+            onLogout = onLogout
         )
     }
 
@@ -142,10 +171,7 @@ fun TrainerDashboardScreen(
                     }
 
                     // Logout button
-                    IconButton(onClick = {
-                        viewModel.logout()
-                        onLogout()
-                    }) {
+                    IconButton(onClick = onLogout) {
                         Icon(
                             Icons.AutoMirrored.Filled.ExitToApp,
                             contentDescription = "Log ud"
@@ -286,7 +312,7 @@ fun TrainerDashboardScreen(
             // Search bar
             OutlinedTextField(
                 value = state.searchQuery,
-                onValueChange = { viewModel.onSearchQueryChanged(it) },
+                onValueChange = onSearchQueryChanged,
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Søg medlem...") },
                 leadingIcon = {
@@ -328,7 +354,7 @@ fun TrainerDashboardScreen(
                 ) {
                     CheckInsColumn(
                         checkIns = state.filteredCheckIns,
-                        onAddSession = { viewModel.selectMemberForSession(it) },
+                        onAddSession = { onSelectMemberForSession(it) },
                         onMemberClick = { onNavigateToTrialMemberDetail(it.internalMemberId) },
                         modifier = Modifier.weight(1f)
                     )
@@ -348,13 +374,67 @@ fun TrainerDashboardScreen(
     if (state.selectedMemberForSession != null) {
         AddSessionDialog(
             memberItem = state.selectedMemberForSession!!,
-            onDismiss = { viewModel.clearSessionSelection() },
-            onSessionAdded = {
-                viewModel.clearSessionSelection()
-                viewModel.refresh()
-            }
+            onDismiss = onClearSessionSelection,
+            onSessionAdded = onSessionAdded
         )
     }
+}
+
+@Preview(showBackground = true, widthDp = 960, heightDp = 600, name = "Dashboard - tom")
+@Composable
+private fun TrainerDashboardPreviewEmpty() {
+    TrainerDashboardContent(
+        state = TrainerDashboardState(trainerName = "Marie", lastUpdated = "16:30"),
+        onLogout = {}, onNavigateToEquipment = {}, onNavigateToCheckouts = {},
+        onNavigateToAdmin = {}, onNavigateToMinIdraetSearch = {},
+        onNavigateToTrialMemberDetail = {}, onSearchQueryChanged = {},
+        onSelectMemberForSession = {}, onClearSessionSelection = {},
+        onSessionAdded = {}, onExtendSession = {}, onRefresh = {},
+    )
+}
+
+@Preview(showBackground = true, widthDp = 960, heightDp = 600, name = "Dashboard - med fremmødte")
+@Composable
+private fun TrainerDashboardPreviewWithData() {
+    val now = Clock.System.now()
+    val today = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
+    TrainerDashboardContent(
+        state = TrainerDashboardState(
+            trainerName = "Marie",
+            stats = DashboardStats(totalCheckIns = 5, totalSessions = 3),
+            lastUpdated = "16:30",
+            filteredCheckIns = listOf(
+                CheckInWithMember(
+                    checkIn = com.club.medlems.data.entity.CheckIn(
+                        id = "1", internalMemberId = "m1", createdAtUtc = now, localDate = today
+                    ),
+                    memberName = "Anna Hansen", memberId = "1234", internalMemberId = "m1"
+                ),
+                CheckInWithMember(
+                    checkIn = com.club.medlems.data.entity.CheckIn(
+                        id = "2", internalMemberId = "m2", createdAtUtc = now, localDate = today
+                    ),
+                    memberName = "Lars Nielsen", memberId = "5678", internalMemberId = "m2"
+                ),
+            ),
+            filteredSessions = listOf(
+                PracticeSessionWithMember(
+                    session = com.club.medlems.data.entity.PracticeSession(
+                        id = "s1", internalMemberId = "m1", createdAtUtc = now, localDate = today,
+                        practiceType = com.club.medlems.data.entity.PracticeType.Riffel,
+                        points = 180, krydser = null,
+                        source = com.club.medlems.data.entity.SessionSource.attendant
+                    ),
+                    memberName = "Anna Hansen", memberId = "1234"
+                )
+            )
+        ),
+        onLogout = {}, onNavigateToEquipment = {}, onNavigateToCheckouts = {},
+        onNavigateToAdmin = {}, onNavigateToMinIdraetSearch = {},
+        onNavigateToTrialMemberDetail = {}, onSearchQueryChanged = {},
+        onSelectMemberForSession = {}, onClearSessionSelection = {},
+        onSessionAdded = {}, onExtendSession = {}, onRefresh = {},
+    )
 }
 
 @Composable

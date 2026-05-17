@@ -62,7 +62,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.tooling.preview.Preview
 import com.club.medlems.data.entity.EquipmentStatus
+import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.PracticeType
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
@@ -82,7 +84,6 @@ import kotlinx.datetime.toLocalDateTime
  *
  * @see [design.md FR-8.1] - View Equipment Inventory
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EquipmentListScreen(
     viewModel: EquipmentManagementViewModel = hiltViewModel(),
@@ -93,6 +94,50 @@ fun EquipmentListScreen(
     val uiState by viewModel.uiState.collectAsState()
     val memberSearchResults by viewModel.memberSearchResults.collectAsState()
     val recentMembers by viewModel.recentMembers.collectAsState()
+    EquipmentListContent(
+        equipmentList = equipmentList,
+        uiState = uiState,
+        memberSearchResults = memberSearchResults,
+        recentMembers = recentMembers,
+        onNavigateBack = onNavigateBack,
+        onNavigateToDetail = onNavigateToDetail,
+        onSetSearchQuery = { viewModel.setSearchQuery(it) },
+        onSetStatusFilter = { viewModel.setStatusFilter(it) },
+        onQuickCheckin = { viewModel.quickCheckin(it) },
+        onStartQuickCheckout = { viewModel.startQuickCheckout(it) },
+        onCancelQuickCheckout = { viewModel.cancelQuickCheckout() },
+        onClearMemberSearch = { viewModel.clearMemberSearch() },
+        onSearchMembers = { viewModel.searchMembers(it) },
+        onCheckoutEquipment = { id, member -> viewModel.checkoutEquipment(id, member) },
+        onBatchCheckinAll = { viewModel.batchCheckinAll() },
+        onCreateEquipment = { sn, desc, disc -> viewModel.createEquipment(sn, desc, disc) },
+        onClearSuccessMessage = { viewModel.clearSuccessMessage() },
+        onClearError = { viewModel.clearError() },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EquipmentListContent(
+    equipmentList: List<EquipmentWithCheckout>,
+    uiState: EquipmentManagementState,
+    memberSearchResults: List<Member>,
+    recentMembers: List<Member>,
+    onNavigateBack: () -> Unit,
+    onNavigateToDetail: (String) -> Unit,
+    onSetSearchQuery: (String) -> Unit,
+    onSetStatusFilter: (EquipmentStatusFilter) -> Unit,
+    onQuickCheckin: (String) -> Unit,
+    onStartQuickCheckout: (String) -> Unit,
+    onCancelQuickCheckout: () -> Unit,
+    onClearMemberSearch: () -> Unit,
+    onSearchMembers: (String) -> Unit,
+    onCheckoutEquipment: (String, Member) -> Unit,
+    onBatchCheckinAll: () -> Unit,
+    onCreateEquipment: (String, String?, PracticeType?) -> Unit,
+    onClearSuccessMessage: () -> Unit,
+    onClearError: () -> Unit,
+) {
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showAddDialog by remember { mutableStateOf(false) }
@@ -103,11 +148,11 @@ fun EquipmentListScreen(
     LaunchedEffect(uiState.successMessage, uiState.error) {
         uiState.successMessage?.let {
             snackbarHostState.showSnackbar(it)
-            viewModel.clearSuccessMessage()
+            onClearSuccessMessage()
         }
         uiState.error?.let {
             snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
+            onClearError()
         }
     }
 
@@ -137,9 +182,9 @@ fun EquipmentListScreen(
             // Search and Filter bar
             SearchAndFilterBar(
                 searchQuery = uiState.searchQuery,
-                onSearchQueryChanged = { viewModel.setSearchQuery(it) },
+                onSearchQueryChanged = { onSetSearchQuery(it) },
                 statusFilter = uiState.statusFilter,
-                onFilterChanged = { viewModel.setStatusFilter(it) }
+                onFilterChanged = { onSetStatusFilter(it) }
             )
 
             // Batch return button when in active checkouts view
@@ -169,7 +214,7 @@ fun EquipmentListScreen(
                         if (uiState.statusFilter == EquipmentStatusFilter.ActiveCheckouts) {
                             ActiveCheckoutCard(
                                 item = item,
-                                onReturn = { viewModel.quickCheckin(item.equipment.id) },
+                                onReturn = { onQuickCheckin(item.equipment.id) },
                                 onClick = { onNavigateToDetail(item.equipment.id) },
                                 isLoading = uiState.isLoading
                             )
@@ -178,10 +223,10 @@ fun EquipmentListScreen(
                                 item = item,
                                 onClick = { onNavigateToDetail(item.equipment.id) },
                                 onQuickCheckout = if (item.equipment.status == EquipmentStatus.Available) {
-                                    { viewModel.startQuickCheckout(item.equipment.id) }
+                                    { onStartQuickCheckout(item.equipment.id) }
                                 } else null,
                                 onQuickReturn = if (item.equipment.status == EquipmentStatus.CheckedOut) {
-                                    { viewModel.quickCheckin(item.equipment.id) }
+                                    { onQuickCheckin(item.equipment.id) }
                                 } else null,
                                 isLoading = uiState.isLoading
                             )
@@ -198,7 +243,7 @@ fun EquipmentListScreen(
             initialSerialNumber = prefillSerialNumber,
             onDismiss = { showAddDialog = false; prefillSerialNumber = "" },
             onAdd = { serialNumber, description, discipline ->
-                viewModel.createEquipment(serialNumber, description, discipline)
+                onCreateEquipment(serialNumber, description, discipline)
                 showAddDialog = false
                 prefillSerialNumber = ""
             }
@@ -210,16 +255,16 @@ fun EquipmentListScreen(
         MemberSearchDialog(
             searchResults = memberSearchResults,
             recentMembers = recentMembers,
-            onSearch = { query -> viewModel.searchMembers(query) },
+            onSearch = { query -> onSearchMembers(query) },
             onDismiss = {
-                viewModel.cancelQuickCheckout()
-                viewModel.clearMemberSearch()
+                onCancelQuickCheckout()
+                onClearMemberSearch()
             },
             onMemberSelected = { member ->
                 val equipmentId = uiState.quickCheckoutEquipmentId!!
-                viewModel.cancelQuickCheckout()
-                viewModel.clearMemberSearch()
-                viewModel.checkoutEquipment(equipmentId, member)
+                onCancelQuickCheckout()
+                onClearMemberSearch()
+                onCheckoutEquipment(equipmentId, member)
             }
         )
     }
@@ -236,7 +281,7 @@ fun EquipmentListScreen(
                 Button(
                     onClick = {
                         showBatchConfirm = false
-                        viewModel.batchCheckinAll()
+                        onBatchCheckinAll()
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF4CAF50)
@@ -789,4 +834,62 @@ private fun getDisciplineDisplayName(discipline: PracticeType): String {
         PracticeType.LuftPistol -> "Luftpistol"
         PracticeType.Andet -> "Andet"
     }
+}
+
+@Preview(showBackground = true, widthDp = 800, heightDp = 600, name = "Udstyr - tom")
+@Composable
+private fun EquipmentListPreviewEmpty() {
+    EquipmentListContent(
+        equipmentList = emptyList(),
+        uiState = EquipmentManagementState(),
+        memberSearchResults = emptyList(),
+        recentMembers = emptyList(),
+        onNavigateBack = {}, onNavigateToDetail = {},
+        onSetSearchQuery = {}, onSetStatusFilter = {},
+        onQuickCheckin = {}, onStartQuickCheckout = {},
+        onCancelQuickCheckout = {}, onClearMemberSearch = {},
+        onSearchMembers = {}, onCheckoutEquipment = { _, _ -> },
+        onBatchCheckinAll = {}, onCreateEquipment = { _, _, _ -> },
+        onClearSuccessMessage = {}, onClearError = {},
+    )
+}
+
+@Preview(showBackground = true, widthDp = 800, heightDp = 600, name = "Udstyr - med liste")
+@Composable
+private fun EquipmentListPreviewWithItems() {
+    val now = kotlinx.datetime.Clock.System.now()
+    val stubMember = Member(
+        internalId = "m1", firstName = "Anna", lastName = "Hansen",
+        createdAtUtc = now, membershipId = "1234"
+    )
+    val items = listOf(
+        EquipmentWithCheckout(
+            equipment = com.club.medlems.data.entity.EquipmentItem(
+                id = "e1", serialNumber = "SN-001", description = "Riffel .22",
+                status = com.club.medlems.data.entity.EquipmentStatus.Available,
+                createdByDeviceId = "preview", createdAtUtc = now, modifiedAtUtc = now
+            )
+        ),
+        EquipmentWithCheckout(
+            equipment = com.club.medlems.data.entity.EquipmentItem(
+                id = "e2", serialNumber = "SN-002", description = "Pistol 9mm",
+                status = com.club.medlems.data.entity.EquipmentStatus.CheckedOut,
+                createdByDeviceId = "preview", createdAtUtc = now, modifiedAtUtc = now
+            ),
+            currentMember = stubMember
+        ),
+    )
+    EquipmentListContent(
+        equipmentList = items,
+        uiState = EquipmentManagementState(),
+        memberSearchResults = emptyList(),
+        recentMembers = emptyList(),
+        onNavigateBack = {}, onNavigateToDetail = {},
+        onSetSearchQuery = {}, onSetStatusFilter = {},
+        onQuickCheckin = {}, onStartQuickCheckout = {},
+        onCancelQuickCheckout = {}, onClearMemberSearch = {},
+        onSearchMembers = {}, onCheckoutEquipment = { _, _ -> },
+        onBatchCheckinAll = {}, onCreateEquipment = { _, _, _ -> },
+        onClearSuccessMessage = {}, onClearError = {},
+    )
 }

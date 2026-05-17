@@ -50,6 +50,33 @@ export function MembersPage() {
     return getMembersWithDuplicates();
   }, [viewMode, members.length]);
 
+  const currentFiscalYear = useMemo(() => new Date().getFullYear(), []);
+  const inactiveCutoffDate = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    return cutoff.toISOString().slice(0, 10);
+  }, []);
+
+  const feePaidByMemberId = useMemo(() => {
+    const status = getMemberFeeStatus(currentFiscalYear);
+    const map = new Map<string, boolean>();
+    status.forEach((row) => {
+      map.set(row.memberId, row.outstanding <= 0);
+    });
+    return map;
+  }, [currentFiscalYear, members.length]);
+
+  const lastCheckInByMemberId = useMemo(() => {
+    const rows = query<{ internalMemberId: string; lastCheckInDate: string | null }>(
+      'SELECT internalMemberId, MAX(localDate) as lastCheckInDate FROM CheckIn GROUP BY internalMemberId'
+    );
+    const map = new Map<string, string | null>();
+    rows.forEach((row) => {
+      map.set(row.internalMemberId, row.lastCheckInDate);
+    });
+    return map;
+  }, [members.length]);
+
   const filteredMembers = useMemo(() => {
     let result = members;
 
@@ -179,33 +206,6 @@ export function MembersPage() {
     });
     return counts;
   }, [members]);
-
-  const currentFiscalYear = useMemo(() => new Date().getFullYear(), []);
-  const inactiveCutoffDate = useMemo(() => {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    return cutoff.toISOString().slice(0, 10);
-  }, []);
-
-  const feePaidByMemberId = useMemo(() => {
-    const status = getMemberFeeStatus(currentFiscalYear);
-    const map = new Map<string, boolean>();
-    status.forEach((row) => {
-      map.set(row.memberId, row.outstanding <= 0);
-    });
-    return map;
-  }, [currentFiscalYear, members.length]);
-
-  const lastCheckInByMemberId = useMemo(() => {
-    const rows = query<{ internalMemberId: string; lastCheckInDate: string | null }>(
-      'SELECT internalMemberId, MAX(localDate) as lastCheckInDate FROM CheckIn GROUP BY internalMemberId'
-    );
-    const map = new Map<string, string | null>();
-    rows.forEach((row) => {
-      map.set(row.internalMemberId, row.lastCheckInDate);
-    });
-    return map;
-  }, [members.length]);
 
   const activityFilterCounts = useMemo(() => {
     let inactiveUnpaid = 0;
