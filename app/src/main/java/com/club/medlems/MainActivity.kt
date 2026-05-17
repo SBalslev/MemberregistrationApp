@@ -18,6 +18,7 @@ import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
 import com.club.medlems.ui.ready.ReadyScreen
 import com.club.medlems.ui.confirmation.ConfirmationScreen
+import com.club.medlems.ui.confirmation.AlreadyCheckedInScreen
 import com.club.medlems.ui.session.PracticeSessionScreen
 import com.club.medlems.ui.leaderboard.LeaderboardScreen
 import com.club.medlems.ui.importexport.ImportExportScreen
@@ -69,6 +70,9 @@ sealed class NavRoute(val route: String) {
     data object Ready: NavRoute("ready")
     data object Confirmation: NavRoute("confirmation/{membershipId}/{scanEventId}/{isTrial}") {
         fun build(membershipId: String, scanEventId: String, isTrial: Boolean = false) = "confirmation/$membershipId/$scanEventId/$isTrial"
+    }
+    data object AlreadyCheckedIn: NavRoute("alreadyCheckedIn/{membershipId}/{scanEventId}/{isTrial}") {
+        fun build(membershipId: String, scanEventId: String, isTrial: Boolean = false) = "alreadyCheckedIn/$membershipId/$scanEventId/$isTrial"
     }
     data object PracticeSession: NavRoute("session/{membershipId}/{scanEventId}") {
         fun build(membershipId: String, scanEventId: String) = "session/$membershipId/$scanEventId"
@@ -160,7 +164,7 @@ fun AppRoot(
             }
             composable(NavRoute.Ready.route) {
                 ReadyScreen(onFirstScan = { id, scanEventId, isTrial -> navController.navigate(NavRoute.Confirmation.build(id, scanEventId, isTrial)) },
-                    onRepeatScan = { id, scanEventId, isTrial -> navController.navigate(NavRoute.PracticeSession.build(id, scanEventId)) },
+                    onRepeatScan = { id, scanEventId, isTrial -> navController.navigate(NavRoute.AlreadyCheckedIn.build(id, scanEventId, isTrial)) },
                     openAttendant = {
                         if (attState.unlocked) navController.navigate(NavRoute.AttendantMenu.route)
                         else navController.navigate(NavRoute.AttendantMenu.route) // will show lock UI
@@ -174,6 +178,16 @@ fun AppRoot(
                 val isTrial = backStackEntry.arguments?.getString("isTrial")?.toBoolean() ?: false
                 ConfirmationScreen(memberId = memberId, isTrial = isTrial,
                     onAddSession = { navController.navigate(NavRoute.PracticeSession.build(memberId, scanEventId)) },
+                    onDone = { navController.popBackStack(NavRoute.Ready.route, inclusive = false) }
+                )
+            }
+            composable(NavRoute.AlreadyCheckedIn.route) { backStackEntry ->
+                val memberId = backStackEntry.arguments?.getString("membershipId") ?: "?"
+                val scanEventId = backStackEntry.arguments?.getString("scanEventId") ?: "?"
+                val isTrial = backStackEntry.arguments?.getString("isTrial")?.toBoolean() ?: false
+                AlreadyCheckedInScreen(memberId = memberId, isTrial = isTrial,
+                    onAddSession = { navController.navigate(NavRoute.PracticeSession.build(memberId, scanEventId)) },
+                    onViewResults = { navController.navigate(NavRoute.Leaderboard.route) },
                     onDone = { navController.popBackStack(NavRoute.Ready.route, inclusive = false) }
                 )
             }

@@ -51,57 +51,104 @@ function handleSyncPull(): void
         'server_time' => gmdate('Y-m-d\TH:i:s\Z'),
         'entities' => [],
         'deleted' => [],
+        'errors' => [],
     ];
 
     // Track the earliest cursor for pagination across all entity types
     $earliestCursor = null;
+    $hasMore = false;
+
+    // Helper to update cursor based on the last record timestamp
+    $updateCursor = function (array $records, string $field) use (&$earliestCursor): void {
+        if (empty($records)) {
+            return;
+        }
+        $lastRecord = end($records);
+        if (!isset($lastRecord[$field]) || !$lastRecord[$field]) {
+            return;
+        }
+        if ($earliestCursor === null || $lastRecord[$field] < $earliestCursor) {
+            $earliestCursor = $lastRecord[$field];
+        }
+    };
 
     foreach ($entities as $entity) {
-        switch ($entity) {
+        try {
+            switch ($entity) {
             case 'members':
                 $data = pullMembers($sinceDate, $limit, $excludeDevice);
                 $result['entities']['members'] = $data['records'];
                 $result['deleted']['members'] = $data['deleted'];
                 if (count($data['records']) >= $limit && !empty($data['records'])) {
-                    $lastRecord = end($data['records']);
-                    if ($earliestCursor === null || $lastRecord['modified_at_utc'] < $earliestCursor) {
-                        $earliestCursor = $lastRecord['modified_at_utc'];
-                    }
+                    $hasMore = true;
+                    $updateCursor($data['records'], 'modified_at_utc');
                 }
                 break;
 
             case 'check_ins':
                 $result['entities']['check_ins'] = pullCheckIns($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['check_ins']) >= $limit && !empty($result['entities']['check_ins'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['check_ins'], 'created_at_utc');
+                }
                 break;
 
             case 'practice_sessions':
                 $result['entities']['practice_sessions'] = pullPracticeSessions($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['practice_sessions']) >= $limit && !empty($result['entities']['practice_sessions'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['practice_sessions'], 'created_at_utc');
+                }
                 break;
 
             case 'equipment_items':
                 $data = pullEquipmentItems($sinceDate, $limit, $excludeDevice);
                 $result['entities']['equipment_items'] = $data['records'];
                 $result['deleted']['equipment_items'] = $data['deleted'];
+                if (count($data['records']) >= $limit && !empty($data['records'])) {
+                    $hasMore = true;
+                    $updateCursor($data['records'], 'modified_at_utc');
+                }
                 break;
 
             case 'equipment_checkouts':
                 $result['entities']['equipment_checkouts'] = pullEquipmentCheckouts($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['equipment_checkouts']) >= $limit && !empty($result['entities']['equipment_checkouts'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['equipment_checkouts'], 'checked_out_at_utc');
+                }
                 break;
 
             case 'trainer_infos':
                 $result['entities']['trainer_infos'] = pullTrainerInfos($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['trainer_infos']) >= $limit && !empty($result['entities']['trainer_infos'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['trainer_infos'], 'modified_at_utc');
+                }
                 break;
 
             case 'trainer_disciplines':
                 $result['entities']['trainer_disciplines'] = pullTrainerDisciplines($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['trainer_disciplines']) >= $limit && !empty($result['entities']['trainer_disciplines'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['trainer_disciplines'], 'created_at_utc');
+                }
                 break;
 
             case 'photos':
                 $result['entities']['photos'] = pullPhotoMetadata($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['photos']) >= $limit && !empty($result['entities']['photos'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['photos'], 'created_at_utc');
+                }
                 break;
 
             case 'fiscal_years':
                 $result['entities']['fiscal_years'] = pullFiscalYears($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['fiscal_years']) >= $limit && !empty($result['entities']['fiscal_years'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['fiscal_years'], 'modified_at_utc');
+                }
                 break;
 
             case 'fee_rates':
@@ -110,6 +157,18 @@ function handleSyncPull(): void
 
             case 'posting_categories':
                 $result['entities']['posting_categories'] = pullPostingCategories($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['posting_categories']) >= $limit && !empty($result['entities']['posting_categories'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['posting_categories'], 'modified_at_utc');
+                }
+                break;
+
+            case 'financial_transactions':
+                $result['entities']['financial_transactions'] = pullFinancialTransactions($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['financial_transactions']) >= $limit && !empty($result['entities']['financial_transactions'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['financial_transactions'], 'modified_at_utc');
+                }
                 break;
 
             case 'transaction_lines':
@@ -120,50 +179,65 @@ function handleSyncPull(): void
                 $pendingPayments = pullPendingFeePayments($sinceDate, $limit, $excludeDevice);
                 $result['entities']['pending_fee_payments'] = $pendingPayments;
                 if (count($pendingPayments) >= $limit && !empty($pendingPayments)) {
-                    $lastRecord = end($pendingPayments);
-                    if ($earliestCursor === null || $lastRecord['modified_at_utc'] < $earliestCursor) {
-                        $earliestCursor = $lastRecord['modified_at_utc'];
-                    }
+                    $hasMore = true;
+                    $updateCursor($pendingPayments, 'modified_at_utc');
                 }
                 break;
 
             case 'scan_events':
                 $result['entities']['scan_events'] = pullScanEvents($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['scan_events']) >= $limit && !empty($result['entities']['scan_events'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['scan_events'], 'created_at_utc');
+                }
                 break;
 
             case 'member_preferences':
                 $result['entities']['member_preferences'] = pullMemberPreferences($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['member_preferences']) >= $limit && !empty($result['entities']['member_preferences'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['member_preferences'], 'modified_at_utc');
+                }
                 break;
 
             case 'new_member_registrations':
                 $result['entities']['new_member_registrations'] = pullNewMemberRegistrations($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['new_member_registrations']) >= $limit && !empty($result['entities']['new_member_registrations'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['new_member_registrations'], 'modified_at_utc');
+                }
                 break;
 
             case 'skv_registrations':
                 $result['entities']['skv_registrations'] = pullSkvRegistrations($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['skv_registrations']) >= $limit && !empty($result['entities']['skv_registrations'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['skv_registrations'], 'updated_at_utc');
+                }
                 break;
 
             case 'skv_weapons':
                 $result['entities']['skv_weapons'] = pullSkvWeapons($sinceDate, $limit, $excludeDevice);
+                if (count($result['entities']['skv_weapons']) >= $limit && !empty($result['entities']['skv_weapons'])) {
+                    $hasMore = true;
+                    $updateCursor($result['entities']['skv_weapons'], 'updated_at_utc');
+                }
                 break;
+            }
+        } catch (Throwable $e) {
+            $result['errors'][] = [
+                'entity' => $entity,
+                'message' => $e->getMessage(),
+            ];
+            error_log(sprintf('[sync_pull] Entity %s failed: %s', $entity, $e->getMessage()));
         }
     }
 
-    // Check if any entity type reached the limit - if so, there might be more data
-    foreach ($result['entities'] as $entityType => $records) {
-        if (is_array($records) && count($records) >= $limit) {
-            $result['has_more'] = true;
-            break;
-        }
-    }
+    $result['has_more'] = $hasMore;
 
     // Use the earliest cursor if we have more data
     if ($result['has_more'] && $earliestCursor !== null) {
         $result['next_cursor'] = $earliestCursor;
-    } elseif ($result['has_more']) {
-        // Fallback: use the since date if no cursor was computed
-        // This ensures we re-pull with the same cursor to get remaining records
-        $result['next_cursor'] = $since;
     }
 
     jsonResponse($result);
@@ -559,20 +633,73 @@ function pullPostingCategories(string $since, int $limit, ?string $excludeDevice
 }
 
 /**
+ * Pull financial transactions
+ */
+function pullFinancialTransactions(string $since, int $limit, ?string $excludeDevice = null): array
+{
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
+    $records = dbQuery(
+        "SELECT id, fiscal_year, sequence_number, transaction_date, description, cash_in, cash_out, bank_in, bank_out, notes, is_deleted, device_id, sync_version, created_at_utc, modified_at_utc
+         FROM financial_transactions
+         WHERE modified_at_utc > ?{$deviceClause}
+         ORDER BY modified_at_utc ASC
+         LIMIT ?",
+        array_merge([$since], $deviceParams, [$limit])
+    );
+
+    return array_map(function ($row) {
+        return [
+            'id' => $row['id'],
+            'fiscal_year' => (int)$row['fiscal_year'],
+            'sequence_number' => (int)$row['sequence_number'],
+            'transaction_date' => $row['transaction_date'],
+            'description' => $row['description'],
+            'cash_in' => $row['cash_in'] !== null ? (float)$row['cash_in'] : null,
+            'cash_out' => $row['cash_out'] !== null ? (float)$row['cash_out'] : null,
+            'bank_in' => $row['bank_in'] !== null ? (float)$row['bank_in'] : null,
+            'bank_out' => $row['bank_out'] !== null ? (float)$row['bank_out'] : null,
+            'notes' => $row['notes'],
+            'is_deleted' => (bool)$row['is_deleted'],
+            'device_id' => $row['device_id'],
+            'sync_version' => (int)$row['sync_version'],
+            'created_at_utc' => formatDatetime($row['created_at_utc']),
+            'modified_at_utc' => formatDatetime($row['modified_at_utc']),
+        ];
+    }, $records);
+}
+
+/**
  * Pull transaction lines
  */
 function pullTransactionLines(string $since, int $limit, ?string $excludeDevice = null): array
 {
-    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
-    $records = dbQuery(
-        "SELECT tl.id, tl.transaction_id, tl.category_id, tl.amount, tl.is_income, tl.source, tl.member_id, tl.line_description
-         FROM transaction_lines tl
-         JOIN financial_transactions ft ON tl.transaction_id = ft.id
-         WHERE ft.modified_at_utc > ?{$deviceClause}
-         ORDER BY ft.sequence_number ASC
-         LIMIT ?",
-        array_merge([$since], $deviceParams, [$limit])
-    );
+    $deviceClause = '';
+    $deviceParams = [];
+    if ($excludeDevice !== null && $excludeDevice !== '') {
+        $deviceClause = ' AND ft.device_id != ?';
+        $deviceParams[] = $excludeDevice;
+    }
+    try {
+        $records = dbQuery(
+            "SELECT tl.id, tl.transaction_id, tl.category_id, tl.amount, tl.is_income, tl.source, tl.member_id, tl.line_description
+             FROM transaction_lines tl
+             JOIN financial_transactions ft ON tl.transaction_id = ft.id
+             WHERE ft.modified_at_utc > ?{$deviceClause}
+             ORDER BY ft.sequence_number ASC
+             LIMIT ?",
+            array_merge([$since], $deviceParams, [$limit])
+        );
+    } catch (PDOException $e) {
+        $records = dbQuery(
+            "SELECT tl.id, tl.transaction_id, tl.category_id, tl.amount, tl.is_income, tl.member_id, tl.line_description
+             FROM transaction_lines tl
+             JOIN financial_transactions ft ON tl.transaction_id = ft.id
+             WHERE ft.modified_at_utc > ?{$deviceClause}
+             ORDER BY ft.sequence_number ASC
+             LIMIT ?",
+            array_merge([$since], $deviceParams, [$limit])
+        );
+    }
 
     return array_map(function ($row) {
         return [

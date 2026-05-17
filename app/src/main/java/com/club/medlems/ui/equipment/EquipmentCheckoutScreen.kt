@@ -120,10 +120,10 @@ fun EquipmentCheckoutScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Checkout Equipment") },
+                title = { Text("Udlån udstyr") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Tilbage")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -143,7 +143,7 @@ fun EquipmentCheckoutScreen(
         ) {
             // Step 1: Select Equipment
             Text(
-                text = "1. Select Equipment",
+                text = "1. Vælg udstyr",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -172,7 +172,7 @@ fun EquipmentCheckoutScreen(
             
             // Step 2: Search Member
             Text(
-                text = "2. Select Member",
+                text = "2. Vælg et medlem",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -194,7 +194,7 @@ fun EquipmentCheckoutScreen(
                         memberSearchQuery = query
                         viewModel.searchMembers(query)
                     },
-                    label = { Text("Search by name or member ID") },
+                    label = { Text("Søg på navn eller medlemsnummer") },
                     leadingIcon = {
                         Icon(Icons.Default.Search, contentDescription = null)
                     },
@@ -231,7 +231,7 @@ fun EquipmentCheckoutScreen(
             
             // Step 3: Notes (optional)
             Text(
-                text = "3. Notes (optional)",
+                text = "3. Bemærkninger (valgfri)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -240,7 +240,7 @@ fun EquipmentCheckoutScreen(
             OutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it.take(500) },
-                label = { Text("Checkout notes") },
+                label = { Text("Bemærkninger") },
                 maxLines = 3,
                 modifier = Modifier.fillMaxWidth(),
                 supportingText = { Text("${notes.length}/500") }
@@ -270,7 +270,7 @@ fun EquipmentCheckoutScreen(
                 } else {
                     Icon(Icons.Default.Check, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Checkout Equipment")
+                    Text("Udlån udstyr")
                 }
             }
         }
@@ -309,7 +309,7 @@ private fun SelectedEquipmentCard(
                 }
             }
             IconButton(onClick = onClear) {
-                Icon(Icons.Default.Clear, contentDescription = "Clear selection")
+                Icon(Icons.Default.Clear, contentDescription = "Fjern valg")
             }
         }
     }
@@ -388,7 +388,7 @@ private fun SelectedMemberCard(
                 }
             }
             IconButton(onClick = onClear) {
-                Icon(Icons.Default.Clear, contentDescription = "Clear selection")
+                Icon(Icons.Default.Clear, contentDescription = "Fjern valg")
             }
         }
     }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.text.input.KeyboardType
@@ -78,7 +79,6 @@ fun AttendantMenuScreen(
     var showManual by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var manualId by remember { mutableStateOf("") }
     var showChangePin by remember { mutableStateOf(false) }
     val activeMembers by adminVm.activeMembers.collectAsState(initial = emptyList())
     val filtered by remember {
@@ -390,47 +390,52 @@ fun AttendantMenuScreen(
             // No separate back button in admin menu; use "Log ud" above
         }
         if (showManual) {
-            AlertDialog(
-                onDismissRequest = { showManual = false },
-                confirmButton = {
-                    TextButton(onClick = {
-                        scope.launch {
-                            attendant.registerInteraction()
-                            val res = adminVm.manualScan(manualId.ifBlank { query })
-                            showManual = false
-                            when (res) {
-                                is ScanOutcome.First, is ScanOutcome.Repeat -> {
-                                    val memberId = when (res) {
-                                        is ScanOutcome.First -> res.membershipId
-                                        is ScanOutcome.Repeat -> res.membershipId
-                                        else -> ""
-                                    }
-                                    val scanEventId = when (res) {
-                                        is ScanOutcome.First -> res.scanEventId
-                                        is ScanOutcome.Repeat -> res.scanEventId
-                                        else -> ""
-                                    }
-                                    val birthday = when (res) {
-                                        is ScanOutcome.First -> res.birthday
-                                        is ScanOutcome.Repeat -> res.birthday
-                                        else -> false
-                                    }
-                                    val msg = if (res is ScanOutcome.First) "Check-in oprettet for $memberId" else "Gentag-scanning for $memberId"
-                                    snack.showSnackbar(msg)
-                                    if (birthday) {
-                                        runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
-                                        snack.showSnackbar("Tillykke med fødselsdagen!")
-                                    }
-                                    // Directly open practice session screen (skip choice dialog)
-                                    openPracticeSession(memberId, scanEventId)
-                                }
-                                is ScanOutcome.Error -> snack.showSnackbar(res.message)
-                                is ScanOutcome.AttendantUnlocked -> snack.showSnackbar("Admin låst op")
+            val doScan: (String) -> Unit = { id ->
+                scope.launch {
+                    attendant.registerInteraction()
+                    val res = adminVm.manualScan(id)
+                    showManual = false
+                    query = ""
+                    when (res) {
+                        is ScanOutcome.First, is ScanOutcome.Repeat -> {
+                            val memberId = when (res) {
+                                is ScanOutcome.First -> res.membershipId
+                                is ScanOutcome.Repeat -> res.membershipId
+                                else -> ""
                             }
+                            val scanEventId = when (res) {
+                                is ScanOutcome.First -> res.scanEventId
+                                is ScanOutcome.Repeat -> res.scanEventId
+                                else -> ""
+                            }
+                            val birthday = when (res) {
+                                is ScanOutcome.First -> res.birthday
+                                is ScanOutcome.Repeat -> res.birthday
+                                else -> false
+                            }
+                            val msg = if (res is ScanOutcome.First) "Check-in oprettet for $memberId" else "Gentag-scanning for $memberId"
+                            snack.showSnackbar(msg)
+                            if (birthday) {
+                                runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
+                                snack.showSnackbar("Tillykke med fødselsdagen!")
+                            }
+                            // Directly open practice session screen (skip choice dialog)
+                            openPracticeSession(memberId, scanEventId)
                         }
-                    }) { Text("OK") }
+                        is ScanOutcome.Error -> snack.showSnackbar(res.message)
+                        is ScanOutcome.AttendantUnlocked -> snack.showSnackbar("Admin låst op")
+                    }
+                }
+            }
+            AlertDialog(
+                onDismissRequest = { showManual = false; query = "" },
+                confirmButton = {
+                    TextButton(
+                        onClick = { doScan(query) },
+                        enabled = query.isNotBlank()
+                    ) { Text("OK") }
                 },
-                dismissButton = { TextButton(onClick = { showManual = false }) { Text("Annuller") } },
+                dismissButton = { TextButton(onClick = { showManual = false; query = "" }) { Text("Annuller") } },
                 title = { Text("Manuel scanning") },
                 text = {
                     Column(
@@ -442,7 +447,7 @@ fun AttendantMenuScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        
+
                         OutlinedTextField(
                             value = query,
                             onValueChange = { query = it },
@@ -450,30 +455,20 @@ fun AttendantMenuScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        OutlinedTextField(
-                            value = manualId,
-                            onValueChange = { manualId = it },
-                            label = { Text("Medlems-ID (valgfri)") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        
+
                         val itemsList = filtered
                         if (itemsList.isNotEmpty()) {
                             Text(
-                                "Matchende medlemmer:",
+                                "Tryk på et medlem for at scanne:",
                                 style = MaterialTheme.typography.labelMedium,
                                 modifier = Modifier.padding(top = 8.dp)
                             )
                             LazyColumn(Modifier.heightIn(max = 240.dp)) {
                                 items(itemsList) { m ->
                                     ListItem(
+                                        modifier = Modifier.clickable { doScan(m.membershipId ?: m.internalId) },
                                         headlineContent = { Text("${m.firstName} ${m.lastName}") },
-                                        supportingContent = { Text(m.membershipId ?: m.internalId.take(8)) },
-                                        trailingContent = {
-                                            TextButton(onClick = { manualId = m.membershipId ?: m.internalId }) { Text("Vælg") }
-                                        }
+                                        supportingContent = { Text(m.membershipId ?: m.internalId.take(8)) }
                                     )
                                     HorizontalDivider()
                                 }
@@ -486,8 +481,8 @@ fun AttendantMenuScreen(
                                 modifier = Modifier.padding(vertical = 8.dp)
                             )
                         }
-                        
-                        if (query.isBlank() && manualId.isBlank()) {
+
+                        if (query.isBlank()) {
                             ElevatedCard(
                                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                                 colors = CardDefaults.elevatedCardColors(

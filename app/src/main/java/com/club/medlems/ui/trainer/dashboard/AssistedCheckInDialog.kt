@@ -58,8 +58,43 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 import java.io.File
+import java.text.Collator
+import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
+
+private val danishCollator: Collator = Collator.getInstance(Locale("da", "DK")).apply {
+    strength = Collator.PRIMARY
+}
+
+private fun List<Member>.sortedDanish(): List<Member> =
+    sortedWith(Comparator { a, b ->
+        val last = danishCollator.compare(a.lastName.orEmpty(), b.lastName.orEmpty())
+        if (last != 0) last else danishCollator.compare(a.firstName.orEmpty(), b.firstName.orEmpty())
+    })
+
+/** Sorts by prefix-first relevance, then Danish alphabetical within each tier. */
+private fun List<Member>.sortedByRelevance(query: String): List<Member> {
+    val q = query.trim().lowercase()
+    fun Member.rank(): Int {
+        val first = firstName.orEmpty().lowercase()
+        val last = lastName.orEmpty().lowercase()
+        val full = "$first $last"
+        val id = membershipId?.lowercase().orEmpty()
+        return when {
+            first.startsWith(q) || last.startsWith(q) || full.startsWith(q) || id.startsWith(q) -> 0
+            else -> 1
+        }
+    }
+    return sortedWith(Comparator { a, b ->
+        val rankCmp = a.rank().compareTo(b.rank())
+        if (rankCmp != 0) rankCmp
+        else {
+            val last = danishCollator.compare(a.lastName.orEmpty(), b.lastName.orEmpty())
+            if (last != 0) last else danishCollator.compare(a.firstName.orEmpty(), b.firstName.orEmpty())
+        }
+    })
+}
 
 /**
  * State for the assisted check-in dialog.
@@ -114,7 +149,7 @@ class AssistedCheckInViewModel @Inject constructor(
                 val today = Clock.System.now()
                     .toLocalDateTime(TimeZone.currentSystemDefault())
                     .date
-                val results = memberDao.searchByNameOrIdExcludingCheckedIn(query, today)
+                val results = memberDao.searchByNameOrIdExcludingCheckedIn(query, today).sortedByRelevance(query)
                 _state.value = _state.value.copy(
                     searchResults = results,
                     isSearching = false
@@ -128,6 +163,13 @@ class AssistedCheckInViewModel @Inject constructor(
     fun selectMember(member: Member) {
         _state.value = _state.value.copy(selectedMember = member)
         updatePolicyWarnings()
+    }
+
+    /** Selects a member and immediately starts check-in, skipping the confirmation step. */
+    fun selectAndCheckIn(member: Member) {
+        _state.value = _state.value.copy(selectedMember = member)
+        updatePolicyWarnings()
+        performCheckIn()
     }
 
     fun clearSelection() {
@@ -928,7 +970,8 @@ fun AssistedCheckInDialog(
                                             items(state.searchResults, key = { it.internalId }) { member ->
                                                 MemberSearchResultCard(
                                                     member = member,
-                                                    onClick = { viewModel.selectMember(member) }
+                                                    onClick = { viewModel.selectMember(member) },
+                                                    onCheckIn = { viewModel.selectAndCheckIn(member) }
                                                 )
                                             }
                                         }
@@ -946,7 +989,8 @@ fun AssistedCheckInDialog(
 @Composable
 private fun MemberSearchResultCard(
     member: Member,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onCheckIn: () -> Unit
 ) {
     val context = LocalContext.current
     val isActive = member.status == MemberStatus.ACTIVE
@@ -1029,11 +1073,13 @@ private fun MemberSearchResultCard(
             }
 
             if (isActive) {
-                Icon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                FilledTonalButton(
+                    onClick = onCheckIn,
+                    modifier = Modifier.height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp)
+                ) {
+                    Text("Check ind", style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
     }

@@ -79,10 +79,11 @@ interface MemberDao {
         WHERE status = 'ACTIVE'
         AND (firstName LIKE '%' || :query || '%'
              OR lastName LIKE '%' || :query || '%'
+             OR (firstName || ' ' || lastName) LIKE '%' || :query || '%'
              OR membershipId LIKE '%' || :query || '%'
              OR internalId LIKE '%' || :query || '%')
         ORDER BY lastName, firstName
-        LIMIT 20
+        LIMIT 30
     """)
     suspend fun searchByNameOrId(query: String): List<Member>
 
@@ -94,10 +95,11 @@ interface MemberDao {
         )
         AND (firstName LIKE '%' || :query || '%'
              OR lastName LIKE '%' || :query || '%'
+             OR (firstName || ' ' || lastName) LIKE '%' || :query || '%'
              OR membershipId LIKE '%' || :query || '%'
              OR internalId LIKE '%' || :query || '%')
         ORDER BY lastName, firstName
-        LIMIT 20
+        LIMIT 30
     """)
     suspend fun searchByNameOrIdExcludingCheckedIn(query: String, today: LocalDate): List<Member>
 }

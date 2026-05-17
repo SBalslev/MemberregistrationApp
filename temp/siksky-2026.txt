@@ -1,0 +1,1053 @@
+
+--- Page 1 ---
+April 2026 - version 4
+Sikkerheds-
+bestemmelser for 
+skydning
+Bestemmelserne gælder for DGI Skydning, 
+Dansk Skytte Union (Skydesport Danmark) 
+og Dansk Firmaidræt
+
+--- Page 2 ---
+Indhold
+Sikkerhedshjulet i skydning 3
+Væsentlige ændringer 4
+1. Almindelige  bestemmelser 6
+2. Sikkerhedsbestemmelser for den enkelte skytte 7
+3. Bestemmelser for skydeledelsen 14
+4. Bestemmelser for foreningens bestyrelse 18
+5. Bestemmelser for terrænskydning 24
+Definitioner og ordforklaringer 32
+Notater 39
+2
+--- Page 3 ---
+Sikkerhedshjulet i skydning 
+Det skal være nemt at være sikker 
+Sikkerhedshjulet er et værktøj til at hjælpe skytteforeninger og den enkelte skytte.
+Sikkerhedshjulet giver overblik over bestyrelsens og skyttens pligter og ansvar for 
+at fastholde en høj sikkerhed i skydesporten. 
+På mange af underemnerne finder du hjælpeskema/vejledning til at tage næste 
+skridt i din forening i forhold til sikkerhed. 
+Emnerne bliver løbende opdateret med nyeste viden og lovgivning.
+Besøg www.dgi.dk/sikkerhed  og find al information om sikkerhed samlet ét sted.
+3
+
+--- Page 4 ---
+Væsentlige ændringer
+Sikkerhedsbestemmelserne er moderniseret 
+Sikkerhedsbestemmelserne version 4 fra 1. april 2026 er moderniseret, 
+gennemskrevet og opdateret for at leve op til ny lovgivning og for at gøre dem 
+nemmere at forstå. Ændringerne er for omfattende til at liste enkeltvis, herunder er 
+de vigtigste nævnt. 
+Indholdsmæssige ændringer i sikkerhedsbestemmelserne
+De største ændringer er baseret på den nye Bekendtgørelse om våben og 
+ammunition mv. gældende fra 1. april 2026. 
+Prøveskydning med registreringspligtige våben: 
+Antallet af prøveskydninger er ændret fra 5 til 3 (max) på 12 måneder. 
+Krav om fremvisning af original billede-ID for alle prøveskytter uanset alder.
+Krav om digital logning af prøveskytter, som skal gemmes i minimum 5 år. 
+Alle 3 punkter er ikke gældende for prøveskydning med ikke-registreringspligtige 
+våben (luft 4,5 mm), men foreningen kan vælge at genbruge proceduren for 
+registreringspligtige våben på ikke-registreringspligtige våben, hvis det letter 
+foreningsadministrationen at have ens regler for alle prøveskydninger. 
+Andre indholdsmæssige ændringer er bl.a.
+Et nyt medlem skal være godkendt af Politiet til at få overladt våben. Tidligere var 
+det fejlagtigt anført, at det var tilstrækkeligt at have ansøgt om SKV6, men det er 
+et krav at have godkendt SKV6, og det er nu præciseret. Således skal alle 
+medlemmer over 15 år, som skyder med registreringspligtige våben have en 
+godkendt SKV (6 eller 2). 
+Våbenudlån til medlemmer: ID med CPR-nr. i pant er ikke længere mulig pga. 
+GDPR. 
+Udlån af privatejede våben mellem medlemmer med SKV skal ikke føres i logbog 
+eller udlånes via foreningen. Det lånte våben skal altid tilbageleveres efter endt 
+skydning. 
+4
+--- Page 5 ---
+Ændringer i form og struktur i sikkerhedsbestemmelserne
+Sikkerhedsbestemmelserne er gennemskrevet for at lette forståelsen. Det skal 
+være nemt at være sikker! 
+Alt om terrænskydning er samlet i ét kapitel i stedet for 2.
+Der er ikke længere et selvstændigt kapitel om bestemmelser vedrørende 
+skydebaneanlæg, i stedet står opmærksomhedspunkterne nu kun ét sted og 
+under den funktion, de hører til: skytten, bestyrelsen eller skydeleder.
+Sikkerhedsbestemmelserne er nu digitale. Hvis din forening printer denne fil, skal I 
+med jævne mellemrum sikre jer, at der ikke er kommet en nyere version online. 
+Det er jeres ansvar altid at kende og efterleve gældende regler. 
+5
+
+--- Page 6 ---
+1. Almindelige  
+bestemmelser
+101. I dette hæfte er samlet de sikkerhedsbestemmelser, der skal overholdes 
+ved alle skydninger i organisationerne DGI, Dansk Skytte Union (Skydesport 
+Danmark) og Dansk Firmaidræt. 
+Du finder definitioner på centrale sikkerhedsbegreber bagerst i hæftet. Før du læser 
+videre, bør du kende de tre vigtigste: skydebaner, skydeleder og skydebaneafsnit. 
+102. Formålet med disse bestemmelser er at sikre, at skydning foregår under 
+forsvarlige forhold, så der ikke opstår fare for skytten eller andre i nærheden. 
+Herudover skal håndtering af våben ske på betryggende vis i forbindelse med 
+aktiviteter på og omkring skydebaner, standpladser, opholdslokaler samt ved 
+opbevaring af våben.
+103. Sikkerhedsbestemmelserne indeholder retningslinjer, der enten er bestemt 
+ved lov, eller beslutninger, organisationerne har vedtaget med det formål at øge 
+sikkerheden. Overskrifterne til de enkelte kapitler og afsnit fortæller, hvem og hvad 
+reglerne gælder for. Hvert afsnit oplyser desuden, om bestemmelsen skal 
+overholdes, fordi det er et lovkrav (L), eller fordi det er en 
+skytteorganisationsbeslutning (S).
+104. Grundlaget for bestemmelserne er de sikkerhedsbestemmelser, som 
+Forsvaret har udgivet. De hedder “Sikkerhedsbestemmelser for skydning på land” og 
+de kaldes i daglig tale “SIKLAND” (tidligere SIKKAV). Desuden har Justitsministeriet 
+udgivet love, bekendtgørelser og cirkulærer vedrørende våben og vedrørende 
+godkendelse af skydebaner/-terræner, foruden vejledninger for indretning af civile 
+skydebaner (L).
+105. Kapitel 2 om “Sikkerhedsbestemmelser for den enkelte skytte” skal kendes 
+og efterleves af alle skytter. Øvrige kapitler skal kendes og efterleves af 
+foreningsledere, skydeledere, terrænskydeledere, banekommandører og lignende, i 
+de funktioner hvor sikkerhedsbestemmelserne er relevante.
+106. Sikkerhedsbestemmelserne er gældende fra den 1. april 2026, og afløser 
+tidligere udgave. Kravet om skydeleder skal have bestået organisationernes prøve 
+har været gældende siden 1. juli 2019.
+6
+--- Page 7 ---
+2. Sikkerhedsbestemmelser 
+for den enkelte skytte
+Dette kapitel skal kendes og efterleves af alle skytter.
+201. En høj grad af sikkerhed er et grundvilkår i skydesporten og en 
+forudsætning for idrættens beståen. Som skytte kan du bidrage til at opretholde en 
+god sikkerhed for dig selv og dine medskytter ved at kende og efterleve 
+sikkerhedsbestemmelserne. Vi har alle et individuelt og fælles ansvar.
+202. Skydning forudsætter (S)
+a) at skytten er sit ansvar bevidst i omgang med våben, ammunition og drivmidler og 
+følger sikkerhedsbestemmelserne og altid tilstræber en høj grad af sikkerhed til gavn 
+for alle i og omkring skydesporten.
+b) at skytten er ædru/upåvirket og er modtagelig for kommunikation og fornuft
+c) at skytten kun skyder på skydebaner, der er godkendt af myndighederne.
+203. Følgende bestemmelser skal altid overholdes (L)
+a) Før skydning skal du kontrollere
+våbnet er funktionsdygtigt
+løbet er rent og uden hindring for projektilet
+ammunitionen er af korrekt type, er ubeskadiget og ren samt overholder banens 
+instruks.
+b) Ny skytte med registreringspligtige våben
+Du skal som prøveskytte fremvise gyldigt billede-ID (pas eller kørekort) på de første 
+tre prøveskydninger, f.eks. ved træningsaftener eller åbent hus-arrangementer og 
+events. Du må skyde 3 gange inden for en periode på 12 måneder. Du kan i 
+prøveperioden skyde med registreringspligtige våben til og med 9 mm (kaliber 
+.38/.357). Det hele skal foregå under opsyn af en instruktør eller træner. 
+Myndighederne kræver, at foreningen skal registrere dit navn, original 
+billedlegitimationstype og legitimationsnummer, samt dato. Oplysningerne 
+opbevares digitalt i mindst 5 år fra den seneste prøveskydning.  
+7
+--- Page 8 ---
+Ved 4. skydning skal der fremvises godkendt vandelsgodkendelse til at få overladt 
+våben (SKV6), for alle over 15 år. 
+Bemærk, at krav om vandelsgodkendelse ikke gælder for flugtskytteforeninger, 
+historiske skydeselskaber, soldaterforeninger og andre lignende foreninger, hvis 
+aktiviteter ikke omfatter skydning med særligt farlige våben mv. 
+c) Ny skytte med ikke-registreringspligtige våben (luft 4,5 mm)
+Skydning med luftvåben kræver ikke fremvisning af ID og digital logning, der er 
+heller ikke fra myndighederne sat en begrænsning på antal prøveskydninger. 
+Men du skal være opmærksom på, at hvis du ønsker at overgå fra luftvåben til at 
+skyde med registreringspligtige våben, så skal du følge reglerne beskrevet i 203b.
+Reglerne for skydning med luftvåben er lempeligere, men en skytteforening kan 
+vælge at følge samme procedure for både registreringspligtige og ikke-
+registreringspligtige våben og dermed også sætte begrænsning på antal 
+prøveskydninger med luftriffel/-pistol og kræve vandelsgodkendelse (SKV6) for 
+medlemmer over 15 år, der alene skyder med luftvåben. 
+d) Overladelse af foreningsejede våben til medlemmer
+Der skal ikke føres logbog over udlån af våben til medlemmer. 
+For udlån af registreringspligtige våben gælder, at medlemmet skal være 
+vandelsgodkendt med enten SKV2 eller SKV6.
+Hvis våben hentes i foreningens våbenopbevaring (boks/skab mv.), skal personen 
+være SKV3-godkendt til adgangen.
+Straks efter endt udlån af våbenet, skal skytten på forsvarlig vis tilbagelevere 
+våbenet til foreningen. 
+8
+--- Page 9 ---
+e) Overladelse af privatejede våben
+Overlades der privatejede registreringspligtige våben, skal medlemmet der 
+overdrager sikre, at modtager er vandelsgodkendt, dvs. SKV2 eller SKV6, samt at 
+våben og ammunition overholder banens instruks. Overladelsen skal ikke logges 
+eller registreres, hvis den foretages direkte mellem medlemmerne. Overladelsen kan 
+også foretages via foreningen og medlemmet, men skal så håndteres via 
+foreningens regler for ind- og udlån. 
+Overlades privatejede registreringspligtige våben til ikke-medlem til prøveskydning, 
+skal dette ske gennem foreningen. Foreningen skal føre prøveskytten i den digitale 
+logbog og udlånet tæller som én af de 3 prøveskydninger. 
+Straks efter endt udlån af våbenet, skal skytten på forsvarlig vis tilbagelevere 
+våbenet til våbenejeren.
+f) Ind- og udlån af våben i foreningen
+Du skal følge de retningslinjer foreningen har for udlån og tilbagelevering af våben. 
+g) Transporttilladelser: Lån af våben til kurser, stævner og turneringer
+Du skal følge de retningslinjer foreningen og myndighederne har for udlån og 
+tilbagelevering af våben.
+Du skal godkendes med SKV3 eller have egen SKV2, før du kan få en 
+transporttilladelse fra foreningen for at transportere våben væk fra foreningen. 
+h) Transport af våben udenfor skydebanen
+Våben skal altid være i kuffert eller foderal, når det transporteres uden for 
+skydebanen og med isat sikkerhedspløk, for haglvåben skal sikkerhedspløk ikke 
+være isat. På luftvåben, er det tilladt at udtage sikkerhedspløk af tekniske årsager på 
+enkelte våben, ved transport i kuffert eller foderal. (L).
+9
+--- Page 10 ---
+På banen/standpladsen
+i) Følg skydelederens anvisninger
+Du skal altid følge den ansvarlige skydeleder og 
+banekommandørs/standpladshjælpers anvisninger og anbefalinger. 
+Er du alene på skydebanen, er du din egen skydeleder og selv ansvarlig for 
+skydningens korrekte gennemførelse efter sikkerhedsbestemmelserne og instruksen 
+for den pågældende skydebane. Læs mere om skydelederens opgaver i kapitlet 
+Bestemmelser for skydeledelsen. 
+j) Du har pligt til at gribe ind!
+Det er enhver skyttes pligt straks at gribe ind over for brud eller tilløb til brud på 
+sikkerhedsbestemmelserne.
+Enhver, der opdager personer i fareområdet foran skydelinjen/standpladsen, skal 
+straks standse skydningen ved at råbe:
+“Stop skydningen”
+Gør det trygt når der er personer i fareområdet: Våbnet skal være afladt og isat 
+synlig sikkerhedspløk. Du må ikke røre våbnet, før alle er væk fra fareområdet, og 
+banekommandøren giver tilladelse til at genoptage skydningen.
+k) Kontroller våben ikke er ladt
+Når du låner/modtager et våben, skal du kontrollere, at det ikke er ladt. Dette 
+gælder også, når du får et våben tilbage eller igen tager et våben, efter at du har 
+været væk fra det. Våben skal altid behandles som om de er ladt.
+l) Høreværn og sikkerhedsbriller
+Alle skytter og personer, der befinder sig på eller tæt ved skydestandpladserne, skal 
+altid bruge høreværn og følge instruktionerne fra skydelederen eller 
+banekommandøren samt eventuelle særlige lokale sikkerhedsanvisninger. 
+Flugtskytter skal have sikkerhedsbriller på under skydning med haglvåben. 
+Pistolskytter anbefales desuden at have sikkerhedsbriller på under pistolskydning 
+med registreringspligtige våben. 
+10
+--- Page 11 ---
+m) Sigt aldrig mod andre!
+Sigte- og aftræksøvelser må aldrig være til gene for omgivelserne. Dette gælder 
+også for luftvåben.
+Du må først lade og skyde, når du har fået tilladelse hertil.
+Når du lader, og når våbnet er ladt, skal mundingen pege mod skiverne.
+n) Våbnet skal være afladt 
+Når du lægger dit våben fra dig, ved f.eks. skiveskift eller anden aktivitet på 
+standpladsen, skal du forinden aflade våbnet, åbne bundstykket/ låsen og 
+anbringe det i bageste stilling, udtage magasin samt eventuelt aktivere sikringen. 
+Tromlen på revolvere skal være slået ud, hvis modellen tillader det.
+Når standpladsen forlades midlertidigt, og våbnet forbliver på standpladsen, skal 
+sikkerhedspløkken være synligt sat i våbnet. Våben må ikke efterlades uden 
+opsyn. 
+Når du selv skal forlade standpladsen for at gå ud og skifte skydeskiven, f.eks. på 
+25m pistolbaner, skal der udvises særlig opmærksomhed og ansvarlighed. Våben 
+skal forblive på standpladsen med isat sikkerhedspløk og under konstant opsyn.
+Gør det trygt når der er personer i fareområdet: Våbnet skal være afladt og isat 
+synlig sikkerhedspløk. Du må ikke røre våbnet, før alle er væk fra fareområdet, og 
+banekommandøren giver tilladelse til at genoptage skydningen. 
+o) Afslut skydningen forsvarligt
+Efter skydning, og inden du forlader standpladsen, skal du og banekommandøren 
+kontrollere, sikkerhedspløkken er synligt sat i og magasin samt tromle er tom og 
+magasinet er udtaget.
+p) Transport af våben på skydebanen
+På skydebanen bæres våbnet altid med mundingen opad, hvis det ikke er i kuffert 
+eller foderal. Man skal kunne se, at våbnet er tomt, og at sikkerhedspløkken er 
+synligt sat i, og magasinet er udtaget, og at tromlen på revolvere er slået ud. For 
+haglvåben gælder det, at våbnet skal være “knækket” eller sikkerhedspløkken 
+synligt sat i.
+q) Defekt ammunition 
+Får du en klikker, anden defekt ammunition eller en funktionsfejl, skal du enten 
+aflevere ammunitionen til skydelederen, banekommandøren eller stationschefen, 
+eller give tegn til banekommandør/stationschef med henblik på afhjælpning af 
+problemet. Du må ikke efterlade defekt ammunition på standpladsen eller smide det 
+bort.  
+11
+--- Page 12 ---
+204. Bortvisning/udelukkelse (S)
+a) I alvorlige tilfælde af overtrædelse af sikkerhedsbestemmelserne, kan 
+skydelederen, stævneledelsen (enten egenhændigt eller på indstilling fra 
+banekommandøren), og stationschefen bortvise skytten fra skyde- 
+banen/skydeterrænet.
+b) I særlige alvorlige tilfælde kan overtrædelsen også medføre skyttens udelukkelse 
+af foreningen.
+205. For terrænskydning gælder desuden (S)
+a) Våbnet kan bæres synligt og skal altid have isat sikkerhedspløk. Der må ikke 
+være isat magasin eller patroner. For geværer gælder, at det må have isat 
+magasinattrap i følgende afvigende farver: Orange, gul eller rød.
+b) Det skal tydeligt kunne ses, at våbnet er tomt, ved at der er isat sikkerhedspløk, og 
+magasinet er udtaget, og at tromlen på revolvere er slået ud. Det gælder både når 
+våbnet er henstillet eller bæres. Sikkerhedspløk må ikke udtages mellem de enkelte 
+stationer, eller ved ned/udpakning af udstyr.
+c) Særligt for pistol: Patroner, der evt. tabes under ladning og/eller afladning, må først 
+samles op, når stationschefen giver tilladelse.
+206. For biathlon gælder desuden (S)
+a) På skydebanen før, under eller efter indskydning og konkurrence bæres våbnet i 
+piben med mundingen opad. Man skal kunne se, at våbnet er tomt, ved at våbnet er 
+isat sikkerhedspløk.
+b) Der må først lades og skydes, når der tydeligt er givet tilladelse hertil af 
+banekommandøren.
+c) Hvis du lægger dit våben fra dig på standpladsen eller standpladsen forlades 
+midlertidigt, ved f.eks. markering eller anden aktivitet, skal du forinden aflade våbnet 
+og åbne bundstykket/låsen, udtage magasin og isætte sikkerhedspløk.
+d) Våbnet må først betjenes når biathleten er helt fremme på standpladsen. Så snart 
+våbnet ikke længere bæres i piben, sikkerhedspløk berøres eller magasiner berøres 
+anses våbnet som værende under betjening.
+12
+--- Page 13 ---
+“Nye skytter er 
+meget velkomne i 
+skydesporten. Men 
+vi skal huske 
+myndighedernes 
+krav om registrering
+DGI Skydning, Dansk Skytte Union 
+(Skydesport Danmark) og Dansk 
+Firmaidræt 
+Digital logbog over prøveskytter 
+Alle prøveskytter skal føres i digital logbog, hvis de skyder med 
+registreringspligtige våben.
+Husk billede-ID: Både børn og voksne skal vise gyldigt pas 
+eller kørekort.
+Foreningen skal registrere prøveskyttens navn, type af 
+billede-ID, ID-nummer samt dato, og oplysningerne skal 
+gemmes i 5 år. Politiet kan få logbogen udleveret. Foreningen 
+må ikke dele personoplysningerne med uvedkommende.
+Max 3 prøveskydninger på 12 måneder. Efter prøveperioden 
+kræves medlemskab og SKV6 (Godkendelse fra Politiet). 
+Reglerne gælder ikke for prøveskydning med ikke-
+registreringspligtige luftvåben.
+
+--- Page 14 ---
+3. Bestemmelser for 
+skydeledelsen
+301. Almindelige bestemmelser for skydeledelsen (skyderleder, 
+banekommandør(er) og eventuelle standpladshjælpere) (S)
+a) Alle, der er involveret i skydninger, skal altid prioritere sikkerheden for at undgå 
+ulykker – både til træning og konkurrence.
+b) Der skal altid ved en skydning være udpeget en skydeleder af foreningsledelsen.
+c) Er man udpeget til at indgå i skydeledelsen, skal man nøje kende 
+sikkerhedsbestemmelserne, og man skal straks gribe ind, hvis det opdages, at nogen 
+overtræder eller er tæt på at overtræde bestemmelserne.
+d) Som medlem af skydeledelsen skal man altid optræde roligt, ædru/upåvirket, 
+sikkert og myndigt.
+e) Sikkerheden har altid højest prioriteret, eventuelle konkurrencemæssige opgaver 
+skal have lavere prioritering. På trods af at en skydeleder/ 
+banekommandør/stationschef under en skydning kan have konkurrencemæssige 
+pligter (betjening af stopur og elektroniksystem m.v.), må dette ikke have fortrin for 
+det sikkerhedsmæssige ansvar under skydningen.
+302. Bestemmelser for skydeleder (S)
+a) Der må aldrig herske tvivl om, hvem der er skydeleder. Det anbefales at bære en 
+tydelig markering/skyderlederskilt. 
+b) Skydelederen har ansvaret for sikkerheden og er også ansvarlig for at træffe 
+nødvendige beslutninger.
+c) Skydelederen er ansvarlig for skydningens gennemførelse på alle anvendte 
+skydebaneafsnit. Fra skydningens begyndelse til dens afslutning skal skydelederen 
+opholde sig ved skydebanen. Skydelederen er ansvarlig for, at der er en 
+banekommandør til stede på de enkelte skydebaneafsnit, der bruges.
+d) Skydelederen skal være erfaren skytte og ved pistolskydning have en 
+minimumsalder på 20 år. Ved riffel reduceres alderskravet til 18 år.
+14
+--- Page 15 ---
+e) Skydelederen skal have bestået organisationernes prøve som skydeleder.
+f) Det er skydelederens ansvar, at skydebanen kun anvendes til skydning inden for 
+den instruks, skydebanen er godkendt til.
+g) En skydeleder ved baneskydning kan tillige være banekommandør. I så fald 
+overtages også banekommandørens pligter.
+h) I forbindelse med forberedelser forud for en skydning skal skydelederen:
+sikre “Instruks for banens brug” overholdes 
+udpege og instruere evt. banekommandører og standpladshjælpere
+oprette afspærring og sikkerhedsobservation, herunder etablere midlertidige 
+advarsler (advarselskugle, kæder, oplåselige bomme m.m.)
+inden skydning starter kontrollere at baner, skiveopstillinger, kuglefang, mv. er i 
+sikkerhedsmæssig forsvarlig stand
+på indendørsbaner kontrollere at huller i skivebagvæggen ikke er mere end 5 cm 
+i diameter
+inden skydningen starter kontrollere, at ingen personer befinder sig i fareområdet
+til enhver tid vide, hvordan lægehjælp og ambulance tilkaldes.
+303. Særlige forhold som skydeleder (S)
+a) Når en skytte skyder alene på en skydebane, er skytten selv skydeleder og 
+ansvarlig for skydningens korrekte gennemførelse jf. bestemmelserne i dette hæfte 
+samt instruks for banens brug. 
+Dispensation til skydelederens alder kan gives, når skytten selv er skydeleder og 
+atlet under Dansk Skytte Union (Skydesport Danmarks) godkendte Elite- og 
+Talentcentre, og hvis skytten kan opnå våbenpåtegning (SKV2). 
+b) Når 2 eller flere skytter skyder samtidig på samme afsnit, skal der udpeges en 
+skydeleder, som udfører skydelederens pligter.
+c) Hvis der på samme skydebaneafsnit er flere skydende foreninger til stede med 
+ansvar for egne skytter, skal banekommandører og skydeledere fra de involverede 
+foreninger tale sammen efter behov og have den nødvendige dialog for at 
+koordinere og opretholde sikkerheden.   
+d) Terrænskydning kræver særlige forhold for terrænskydelederen. Se mere i 
+kapitlet om bestemmelser for terrænskydning. 
+15
+--- Page 16 ---
+304. Bestemmelser for banekommandøren (S)
+a) Ved baneskydning skal skydelederen udpege én banekommandør til hvert 
+skydebaneafsnit.
+b) Banekommandøren er ansvarlig for skydningen på en enkelt skydebane/ 
+skydebaneafsnit.
+c) Banekommandøren skal være erfaren skytte og ved pistolskydning have en 
+minimumsalder på 20 år. Ved riffel reduceres alderskravet til 18 år.
+d) Banekommandøren skal fysisk opholde sig på skydebanen/ skydebaneafsnittet 
+under skydningen og herunder:
+instruere skytterne om eventuelle særlige sikkerhedsmæssige forhold på den 
+pågældende skydebane
+øjeblikkeligt standse skydningen, hvis der kommer personer ind i fareområdet. 
+Gør det trygt når der er personer i fareområdet: Våbnet skal være afladt og isat 
+synlig sikkerhedspløk. Du må ikke røre våbnet, før alle er væk fra fareområdet, og 
+banekommandøren giver tilladelse til at genoptage skydningen
+sikre, at ladning og afladning foregår på standpladsen
+ved kontrol sikre sig, at skytterne har afladt deres våben, at magasinet er taget 
+ud, og tromle ligeledes er uden patroner samt, at der er isat sikkerhedspløk inden 
+standpladsen forlades.
+sørge for ro og orden under skydningen. 
+e) Hvis alle skytter er erfarne skytter over 16 år, kan banekommandøren selv deltage 
+i skydningen.
+f) Kan banekommandøren ikke overvåge sikkerheden på alle benyttede 
+standpladser, udpeges én eller flere standpladshjælpere.
+g) I tilfælde, hvor banekommandøren selv deltager som skytte på skydebanen, skal 
+det være tydeligt markeret, hvem der har ansvaret som banekommandør. 
+Markeringen kan se ud som vist i kapitlet Definitioner og ordforklaringer og skal 
+bæres synligt eller være placeret ved personens standplads.
+h) Hvis der på samme skydebaneafsnit er flere skydende foreninger til stede med 
+ansvar for egne skytter, skal banekommandører og skydeledere fra de involverede 
+foreninger tale sammen efter behov og have den nødvendige dialog for at 
+koordinere og opretholde sikkerheden.  
+16
+--- Page 17 ---
+305. Bestemmelser for standpladshjælperen (S):
+a) Standpladshjælperen udpeges som hjælper for banekommandør/ stationschef.
+b) Standpladshjælperen skal:
+placere sig, så de tildelte standpladser kan overvåges
+overvåge, at skytterne følger de givne anvisninger fra 
+banekommandør/stationschef
+overvåge, at skytterne betjener deres våben sikkerhedsmæssigt korrekt 
+overvåge, at skytterne aflader deres våben straks efter endt skydning og på 
+banekommandørs/ stationschefens besked udføre kontrol af våben.
+c) En standpladshjælper skal være mindst 18 år og erfaren skytte.
+d) Standpladshjælperen må ikke samtidig selv deltage som skytte.
+17Tag skydelederprøven online på ie.dif.dk 
+Alle skydeledere skal have bestået onlineprøven, 
+der ligger på DIFs Idrættens E-læring: www.ie.dif.dk  
+--- Page 18 ---
+4. Bestemmelser for 
+foreningens bestyrelse
+401. Almindelige bestemmelser (L)
+I sikkerhedsmæssige spørgsmål har foreningens ledelse dvs. bestyrelsen det 
+juridiske ansvar. Bestyrelsen kan uddelegere ansvaret for skydningerne.
+402. Sikker forsvarlig gennemførsel af skydning
+Det er foreningsledelsens ansvar, at trænings- og konkurrenceskydninger på 
+foreningens skydeanlæg gennemføres på sikker forsvarlig måde. Det er 
+foreningsledelsens ansvar, at der til enhver tid er udpeget det nødvendige antal 
+personer, som har ansvaret for skydningens gennemførsel på foreningens 
+skydeanlæg.
+Bestyrelsen skal sikre, at der altid er 1 skydeleder og tilstrækkeligt antal 
+banekommandører/standpladshjælpere til stede ved en skydning. Der skal tages 
+hensyn til antallet af skytter over/under 16 år og deres erfaring og kendskab til brug 
+af våben.
+403. Uddannede skydeledere 
+Det er foreningsledelsens ansvar at sikre, at der uddannes skydeledere med 
+tilhørende bevis fra DGI Skydning, Dansk Skytte Union (Skydesport Danmark) og 
+Dansk Firmaidræt.
+404. Skytternes viden om sikkerhed
+Det er foreningsledelsens ansvar, at foreningens skytter er bekendt med 
+sikkerhedsbestemmelser for den enkelte skytte (kapitel 2).
+405. Våbenopbevaring, -anvendelse og -vedligehold 
+Det er foreningsledelsens ansvar, at foreningens våben er i sikkerhedsmæssig 
+forsvarlig stand, samt at de opbevares, vedligeholdes og benyttes i 
+overensstemmelse med sikkerhedsbestemmelserne. Det er også foreningsledelsens 
+ansvar, at de privatejede våben, som opbevares i foreningens faciliteter, til enhver tid 
+er opbevaret korrekt, når de er i foreningens varetægt.
+18
+--- Page 19 ---
+406. Ind- og udlån af våben i foreningen – overladelse af våben (S)
+a) Det er foreningens ansvar at fastlægge retningslinjer for udlån og tilbagelevering 
+af våben i foreningen, og at alle følger reglerne. 
+Eksempler på løsninger på ind- og udlån til medlemmer: 
+Brug et digitalt medlemssystem til logning af udlån og tilbagelevering
+Pantordning med medlemskort, som lægges i pant under udlånet. ID med CPR-nr. 
+må ikke lægges i pant pga. GDPR-regler.  
+Simpel listeføring over udlån til medlemmer. Listen skal ikke gemmes. 
+Essensen af ovenstående er vigtigheden af at få alle våben tilbage i 
+våbenopbevaringen efter endt skydning.
+b) Det er foreningsledelsens ansvar, at de registreringspligtige våben, der overlades i 
+foreningen, både foreningsregistrerede og privatregistrerede våben, kun overlades 
+til: 
+Både for medlemmer og ikke-medlemmer
+Personer som kender og følger sikkerhedsbestemmelserne for den enkelte skytte 
+(kapitel 2). Dette gælder også ved udlån af ikke-registreringspligtige våben.  
+og enten: 
+For medlemmer
+er medlem af foreningen. Alle medlemmer over 15 år skal have gyldig SKV (2 eller 
+6) for at skyde med registreringspligtige våben. Udlån af privatejede våben 
+mellem medlemmer med SKV skal ikke føres i logbog eller udlånes via 
+foreningen. Det lånte våben skal altid tilbageleveres efter endt skydning. 
+Eller 
+For ikke-medlemmer
+ikke er medlem af foreningen og dermed betragtes og håndteres som ny skytte. 
+Personer som ikke er medlem af den pågældende forening, men har øvrige SKV-
+godkendelser fra anden forening, betragtes også som ny skytte og skal fremvise 
+gyldig billede-ID og føres i logbog, hvis de overlades registreringspligtige våben. 
+c) Unge under 15 år, skal håndteres under instruks/træning af personer minimum på 
+hjælpetrænerniveau. 
+19
+--- Page 20 ---
+407. ID-krav og digital logbog
+a) Identifikation og registrering af prøveskytter med 
+registreringspligtige våben (L)
+Skytteforeningens ledelse skal kræve alle ikke-vandelsgodkendte skytter 
+(prøveskytter) fremviser original billede-ID (pas eller kørekort) forud for overladelse af 
+registreringspligtige våben i prøveperioden. ID-krav gælder alle uanset alder. Eneste 
+mulige gyldige billede-ID for børn under 15 år er pas.  
+Foreningsledelsen skal sikre, at prøveskyttens navn, original billedlegitimationstype 
+og legitimationsnummer bliver registeret, samt datoer for alle prøveskydninger med 
+registreringspligtige våben. 
+Alle ovenstående oplysninger skal opbevares digitalt i mindst 5 år fra personens 
+seneste prøveskydning i et digitalt format, der på forlangende kan udleveres til 
+politiet. 
+Prøveskydning med registreringspligtige våben til og med 9 mm (kaliber .38/.357) må 
+maksimalt finde sted 3 gange i en periode på 12 måneder. Prøveskydning skal altid 
+foregå under skærpet opsyn af en instruktør eller træner. 
+Ved 4. skydning skal der fremvises godkendt vandelsgodkendelse (SKV6 eller SKV2) 
+for alle over 15 år, og personen skal være meldt ind i foreningen.
+Bemærk, at krav om vandelsgodkendelse (SKV6) ikke gælder for 
+flugtskytteforeninger, historiske skydeselskaber, soldaterforeninger og andre 
+lignende foreninger, hvis aktiviteter ikke omfatter skydning med særligt farlige våben 
+mv., og skytter der udelukkende kun skyder med luftvåben.
+b) Intet krav om registrering af prøveskytter med ikke-
+registreringspligtige våben (S)
+Skydning med luftvåben kræver ikke fremvisning af ID og digital logning, der er 
+heller ikke fra myndighederne sat en begrænsning på antal prøveskydninger. 
+Foreningsledelsen kan selv fastsætte regler og vælge at følge samme procedure for 
+både registreringspligtige og ikke-registreringspligtige våben og dermed også sætte 
+begrænsning på antal prøveskydninger med luftriffel/-pistol og kræve 
+vandelsgodkendelse (SKV6) for medlemmer over 15 år, der alene skyder med 
+luftvåben. 
+20
+--- Page 21 ---
+Foreningen kan overveje fra start at kræve SKV6 for at skyde med ikke-
+registreringspligtige våben for at sikre, at medlemmet ikke pludselig begynder at 
+skyde med registreringspligtige våben uden at have SKV6.  
+c) Databehandling af digital logbog (L)
+De registrerede oplysninger om prøveskytterne i den digitale logbog er 
+personoplysninger og derfor omfattet af GDPR. 
+Det er foreningsledelsens ansvar at nævne i foreningens privatlivspolitik, at 
+foreningen af hensyn til lovgivningens logningskrav for prøveskytter registrerer disse 
+oplysninger, der slettes efter fem år. 
+Personoplysningerne er ikke følsomme i databeskyttelsesforordningens forstand, 
+men det er almindelige personoplysninger, der skal behandles fortroligt og af så få 
+som muligt. 
+I praksis bør den enhed som den digitale logning foretages fra – f.eks. foreningens 
+computer eller tablet – være beskyttet af password, eller hvis enheden også 
+benyttes af andre af foreningens betroede frivillige, bør 
+logningsfilen/medlemssystemet være særskilt beskyttet med password eller særlig 
+adgangsbegrænsning for at tilgå oplysningerne i den digitale logbog. 
+d) Ophør af foreningen: Logbog afleveres til politiet (L)
+Ved foreningens ophør er det foreningens pligt at indlevere logbog til politiet over 
+alle prøveskydninger med registreringspligtige våben de seneste 5 år. 
+408 Registrering af nye skytter i grupper 
+a) Ved alle typer af træningsaftener, åbent hus, skolearrangementer, polterabender 
+og andre events for ikke-medlemmer, skal der føres digital logbog over alle 
+deltagere, der ønsker at skyde med registreringspligtige våben, uanset om de 
+kommer enkeltvis eller i grupper. Alle skal fremvise gyldig billede-ID og føres i digital 
+logbog.  
+b) Overladelse af våben til grupper af nye kræver særlig opmærksomhed:
+Overladelse af våben kan kun ske på/ved standpladserne ved skydebanerne. 
+Våbnene skal forblive ved standpladsen og være under overvågning af 
+ovenstående nævnte personer hele tiden, også når standpladsen/skydebanen 
+forlades af prøveskytterne.  
+21
+--- Page 22 ---
+Våben skal i alle tilfælde, når de ikke anvendes ved standplads, bringes tilbage til 
+foreningens våbenopbevaring. 
+Prøveskydning kan foregå med rifler, haglvåben og pistoler/revolvere til og med 9 
+mm (kaliber .38/.357).
+409 Hvis våben forsvinder, skal politiet straks underrettes 
+Foreningsledelsen skal straks underrette politiet, hvis der konstateres manglende 
+våben i foreningens opbevaringssteder.
+Digital logbog over udlån af registreringspligtige våben til prøveskytter skal sikres og 
+på forlangende udleveres til politiet. 
+410 Transport af våben 
+Det er foreningsledelsens ansvar, at de personer, som udpeges til at transportere 
+våben, er udstyret med en gyldig transporttilladelse.
+411 Skydeanlægget skal være i forsvarlig stand
+Det er foreningsledelsens ansvar, at foreningens skydeanlæg er i sikkerhedsmæssig 
+forsvarlig stand, samt at der ved nedslidning foretages de reparationer, som jf. 
+vejledninger om anlæggenes brug er nødvendige, for at anlægget 
+sikkerhedsmæssigt kan godkendes af politiet.
+412 Kun skydning på godkendt bane i godkendt tidsrum
+Det er foreningsledelsens ansvar, at skydebanen kun bliver anvendt til lovlige 
+skydeaktiviteter, og at skydebanen har politiets skriftlige godkendelse. 
+Skydebanen må kun benyttes i det godkendte tidspunkt, der fremgår af 
+miljøgodkendelsen/landzonetilladelsen og kun benyttes ifølge reglerne på “Instruks 
+for banens brug”. 
+413 Instruks skal være ophængt
+Det er foreningsledelsens ansvar, at “Instruks for banens brug” er ophængt på et 
+synligt sted på skydebanen.
+414 Sikkerhed omkring banen
+Det er foreningsledelsens ansvar, at skydeanlæggets opstillede skilte, bomme, 
+kæder, hegn og andre faste advarsler og afspærringer til enhver tid er intakte og 
+virker efter hensigten, samt at teksten på advarselsskilte er læselig.
+22
+--- Page 23 ---
+415 Forsikring
+Det er foreningsledelsens ansvar at de krævede ansvarsforsikringer og 
+arbejdsskadeforsikringer er tegnet og i kraft. Gyldigt medlemskab af 
+skytteorganisationerne sikrer dette. Forsikringspapirerne kan med fordel være 
+ophængt ved siden af instruks for banens brug. 
+416 Bortskaffelse af defekt ammunition til lokalt politi
+Foreningen skal bortskaffe defekt ammunition på forsvarlig vis. Ammunition må ikke 
+smides ud som hverken almindeligt eller farligt affald eller afleveres på 
+genbrugspladsen. Lokalt politi kan kontaktes på 114 for nærmere aftale om 
+aflevering i din politikreds. 
+417 Vær kontaktbar for skytteorganisationerne (S)
+Det er foreningsledelsens pligt at sikre, at de(n) skytteorganisation(er), foreningen er 
+medlem af, altid har korrekte kontaktoplysninger på formand og kasserer og gerne 
+også øvrige bestyrelsesmedlemmer.  
+23
+
+--- Page 24 ---
+5. Bestemmelser for 
+terrænskydning
+501. Reglerne i kapitlet om skydeleder, banekommandør og standpladshjælper 
+gælder også for terrænskydning for henholdsvis terrænskydeleder, stationschef og 
+standpladshjælper dog med de afvigelser, som er beskrevet i dette kapitel.
+502. Almindelige bestemmelser for planlægning og gennemførsel 
+af terrænskydning (S)
+a) Enhver, der konstaterer, at der dukker personer op i fareområdet, eller ser, at et 
+markørflag bevæges foran skiverne eller over en markørdækning, skal straks 
+standse skydningen ved at råbe:
+“Stop skydningen”
+Gør det trygt når der er personer i fareområdet: Våbnet skal være afladt og isat 
+synlig sikkerhedspløk. Du må ikke røre våbnet, før alle er væk fra fareområdet, og 
+stationschefen giver tilladelse til at genoptage skydningen.
+b) Terrænskydning gennemføres normalt enten i civilt terræn eller i Forsvarets skyde- 
+og øvelsesterræner, men kan desuden i visse tilfælde gennemføres på en fast anlagt 
+skydebane eller i tilslutning hertil.
+c) Inden en terrænskydning iværksættes, skal politiet eller en af politiet godkendt 
+myndighedsperson besigtige og godkende skiveopstillinger, standpladser, 
+afspærringsforanstaltninger m.v. samt øvrige fastsatte vilkår for skydningen, dette 
+gøres via den skitse/kalke/kortkopi, som terrænskydelederen har udfærdiget. Den 
+godkendende myndighed udarbejder ”Instruks for terrænets brug”.
+503. Særlig opmærksomhed for terrænskytten 
+a) Som skytte ved terrænskydning skal man kende og efterleve 
+sikkerhedsbestemmelser for den enkelte skytte (kapitel 2).
+b) Skyttens våben og ammunition (L)
+Det er en forudsætning for sikkerhedsbestemmelserne, at der udelukkende 
+anvendes våben som er godkendt, registreret og omfattet af 
+skytteorganisationernes bestemmelser.  
+24
+--- Page 25 ---
+Det er ligeledes en forudsætning, at den anvendte ammunition er fremstillet jf. 
+ladetabellerne – og kan overholde sikkerhedsafstandene.  
+c) Skyttens håndtering af våben og ammunition (S)
+Våbnet kan bæres synligt og skal altid have isat sikkerhedspløk. Der må ikke 
+være isat magasin eller patroner. For geværer gælder, at det må have isat 
+magasinattrap i følgende afvigende farver: Orange, gul eller rød.
+Det skal tydeligt kunne ses, at våbnet er tomt, ved at der er isat sikkerhedspløk, 
+og magasinet er udtaget, og at tromlen på revolvere er slået ud. Det gælder både 
+når våbnet er henstillet eller bæres. Sikkerhedspløk må ikke udtages mellem de 
+enkelte stationer, eller ved ned/udpakning af udstyr.
+Særligt for pistol: Patroner, der evt. tabes under ladning og/eller afladning, må 
+først samles op, når stationschefen giver tilladelse.
+504 Terrænskydelederens opgaver
+Ved terrænskydning udpeges en “terrænskydeleder”, der er ansvarlig for 
+sikkerheden ved gennemførsel af terrænskydningen. Terrænskydelederen skal være 
+mindst 20 år, være erfaren terrænskytte og skal tillige:
+a) have gennemgået og bestået skytteorganisationernes »Terrænskydelederkursus« 
+samt fortsat have status som terrænskydeleder.
+b) have et indgående kendskab til sikkerhedsbestemmelserne og i særdeleshed 
+dette kapitel om terrænskydning samt til eventuelle lokale bestemmelser for 
+området/terrænbanen. 
+c) sørge for, at terrænbanen er besigtiget og godkendt af politiet, og at alle 
+nødvendige godkendelser er på plads.
+d) inden skydning påbegyndes sørge for, at godkendende myndighed har besigtiget 
+og godkendt gennemførelse af skydningen.
+e) udarbejde skitse, kalke eller kortkopi, der viser skiveopstillinger, målretninger, 
+standpladser, fareområde, posters og markørers placering, 
+afspærringsforanstaltninger og deltagernes rute/opholdssteder i terrænet.
+f) sikre sig, at skiveopstillinger, standpladser, ruteafmærkninger og 
+afspærringsforanstaltninger er korrekt placeret. Instruks for terrænets brug skal altid 
+følges.
+25
+--- Page 26 ---
+g) kontrollere at markørdækninger er i forskriftsmæssig stand. Skal markører 
+opholde sig i fareområdet uden for faste markørdækninger, skal hvert opholdssted 
+forevises og godkendes af den godkendende myndighed forud for skydningen.
+h) instruere markører grundigt om opgaver og særlige forhold ved ophold i det 
+pågældende område.
+i) fastsætte signal, på hvilket al skydning til enhver tid straks kan standses.
+j) Det er terrænskydelederens ansvar, at en ikke-erfaren terrænskytte ledsages af en 
+erfaren skytte.
+k) Ved terrænskydning udpeger terrænskydelederen én stationschef pr. station samt 
+en sikkerhedsobservatør og nødvendigt antal afspærringsposter.
+505 Stationschefens opgaver
+a) Stationschefen har det sikkerhedsmæssige ansvar for en station under 
+terrænskydning.
+b) Stationschefen har de samme sikkerhedsmæssige beføjelser som en 
+banekommandør har ved baneskydning, heraf følger det, at sikkerheden altid er 
+højest prioriteret, eventuelle konkurrencemæssige opgaver skal have lavere 
+prioritering. På trods af at en skydeleder/ banekommandør/stationschef under en 
+skydning kan have konkurrencemæssige pligter (betjening af stopur m.v.), må dette 
+ikke have fortrin for det sikkerhedsmæssige ansvar under skydningen.
+c) Stationschefen er under skydning ansvarlig for de hjælpere og markører, der er 
+ved stationen.
+d) Stationschefen må ikke samtidigt selv deltage som skytte.
+e) En stationschef skal være mindst 20 år og erfaren skytte.
+f) Stationschefen skal straks standse skydningen ved at råbe:
+“Stop skydningen”
+hvis der dukker personer op i fareområdet, eller et markørflag bevæges foran 
+skiverne eller over en markørdækning.
+26
+--- Page 27 ---
+Gør det trygt når der er personer i fareområdet: Stationschefen skal sikre, at 
+skytternes våben er afladt og isat synlig sikkerhedspløk. Skytten må ikke røre 
+våbnet, før alle er væk fra fareområdet. Stationschefen giver tilladelse til at 
+genoptage skydningen, når det er forsvarligt. 
+g) Stationschefen skal placere sig så alle standpladser kan overvåges.
+h) Stationschefens instruktion til skydeholdet skal være tydelig, informativ og 
+ensartet fra hold til hold. Instruktionen skal som minimum indeholde udpegning af 
+mål, anvisning af evt. skudgrænsemærker samt angivelse af rute til næste station.
+i) Stationschefen skal kontrollere at skytterne har afladt deres våben, at magasinet 
+er taget ud, og tromle ligeledes er uden patroner samt, at der er isat sikkerhedspløk 
+inden standpladsen forlades, eller når der er udækkede personer inden for 
+fareområdet.
+j) Er der ved geværterrænskydninger mere end 10 og ved pistolterrænskydning mere 
+end 6 skytter pr. hold skal der udover stationschefen være mindst en 
+standpladshjælper som hjælper pr. station.
+k) Stationschefen instruerer markørerne på egen station om opholdssted, rute som 
+skal benyttes fra opholdssted til skiveopstilling og retur, samt om eventuelle særlige 
+forhold vedrørende skydning på nabostationer.
+506 Bestemmelser for markører (S)
+a) Markørerne foretager markering af skuddene.
+b) Opholder markørerne sig under skydningen i markørdækning eller et andet 
+udpeget sted foran skydelinjen gælder følgende bestemmelser:
+anvendes der flere markører i samme dækning, udpeges en markørformand, der i 
+så fald har det sikkerhedsmæssige ansvar for de øvrige på holdet
+  en markørformand skal være mindst 15 år. Er markøren alene i dækningen, skal 
+han/hun være mindst 15 år
+der skal mellem stationschef og markører være en sikkert virkende 
+signalforbindelse
+på ordren: “Alt i dækning” fra stationschef, bekræftes ordren fra markørerne, når 
+alle personer er i dækning.
+27
+--- Page 28 ---
+markørdækningen eller det udpegede opholdssted må kun forlades på ordre fra 
+stationschef. Ordren gives over signalmidlet eller ved ordonnans. Ordren skal 
+gentages af markørerne, inden dækningen må forlades.
+Markører må aldrig lade sig kalde frem ved råb, fløjtesignal eller lignende.
+c) når markører er fremme, skal markørflaget medbringes og være anbragt synligt 
+foran skiveopstillingen
+d) ønsker markørerne af én eller anden grund at få skydningen standset, og der ikke 
+er forbindelse over signalmidlet, svinges markørflaget fra side til side over 
+dækningen, og - hvor det er muligt, trækkes skiverne på halv eller lægges ned. 
+Dækningen må først forlades, når der er opnået kontakt med stationschef.
+507 Bestemmelser for sikkerhedsobservatører og 
+afspærringsposter (S)
+a) Sikkerhedsobservatørens opgave er at overvåge fareområdet i luften for 
+lavtflyvende luftfartøjer. Sikkerhedsobservatøren kan evt. være stationschefen selv 
+eller en standpladshjælper.
+b) Afspærringsposternes opgave er at overvåge fareområdet på land eller over vand 
+samt foretage afspærring eller melding i henhold til de af 
+skydeleder/terrænskydeleder givne bestemmelser.
+508 Terrænskydning i Forsvarets skydeterræner (L)
+a) For alle Forsvarets skydeterræner er der udgivet et sæt “Blivende bestemmelser”, 
+som nøje fastsætter de bestemmelser, som er gældende for brugen af det 
+pågældende terræn. Bestemmelserne skal nøje overholdes af alle, der benytter 
+terrænet.
+b) Al planlægning af terrænskydning i Forsvarets skydeterræner sker efter aftale 
+med pågældende sikkerhedskontor eller lign. Kontakten kan eventuelt etableres via 
+organisationernes kontorer eller sekretariater.
+c) På grundlag af kort over skydeterrænet udarbejdes en kalke,
+som viser stationernes fareområde, samt den rute, der skal følges fra station til 
+station. Kalken afleveres til skydelejren/kommandantskabet i god tid forud for 
+skydningen. Tidsfrist fremgår af “Blivende bestemmelser” for skydeterrænet.
+28
+--- Page 29 ---
+509 Terrænskydning i civilt terræn (L)
+Terrænskydelederen skal sikre sig lodsejerens godkendelse til at benytte området til 
+terrænskydning, herunder eventuelt også nabolodsejeres tilladelse til at foretage 
+afspærring.
+510 Sikkerhedselementer og sikkerhedsafstande (L)
+a) Ved pistol- og geværterrænskydning anvendes en sikkerhedsvinkel i siden på 
+minimum 375 TS.
+b) Ved “sekundskydning” (gennemførelse på kortest mulig tid mod flere mål) på ikke 
+gennemskydeligt skive-/målmateriel anvendes dog min. 600 TS.
+c) Ved alle sekundskydninger med pistol, hvor der anvendes gennemskydeligt 
+skive/målmateriel skal sikkerhedsvinklen være min. 475 TS.
+d) Som sikkerhedsafstand i længden anvendes:
+e) Sikkerhedshøjden ved terrænskydning er 200 meter.
+511 Skiver og mål (L)
+a) Alle benyttede mål og skiver skal være af gennemskydeligt materiale. Brug af 
+hårde mål er kun tilladt efter særlig godkendelse. Sikkerhedsafstande
+Kaliber .22 LR 1000 meter
+Kaliber .32 og .38 ammunition ikke-kappeklædt   1000 meter 
+Kappeklædt og coated ammunition og øvrig pistol- og 
+revolverammunition, kaliber 40 S&W, 44 Special, 45 Colt, 45 ACP, 
+samt .357 Magnum  1550 meter
+Maximum og tilsvarende langtrækkende ammunitionstyper til 
+pistol/ revolvere 2100 meter 
+Geværammunition til langdistancevåben 3700 meter 
+Hagl til luftvåben 200 meter 
+29
+--- Page 30 ---
+b) Foran og bag en skive-/målopstilling, samt i området omkring denne, må der – ved 
+terrænskydning anlagt uden fuldt fareområde – inden for en vinkel af 100 TS til hver 
+side for målretningen (dog min. 3 m.) ikke forekomme sten, hårde genstande og 
+materialer, der kan afstedkomme opspringere eller afbøjninger af skudbanen. Ved 
+terrænskydninger, anlagt med fuldt fareområde, anvendes 30 TS (dog min. 3 m.).
+c) Ved terrænskydning anlagt uden fuldt fareområde skal skiver/mål opstilles:
+så skivens/målets underkant er hævet min. 40 cm over terræn og 
+terrængenstande,
+således, at der i enhver anvendt skydestilling ikke skydes i en linje, der er over 
+vandret, - tættest muligt – og max. 1,5 m. fra – kuglefangets fod.
+d) På stationer med flere skive-/målopstillinger må vinklen mellem de yderste 
+opstillinger være max. 800 TS målt fra midterste standplads til midterste skive/mål.
+512 Standpladsen (L)
+a) Skydestandpladserne skal tilstræbes anlagt vinkelret på skudretningen.
+b) Standpladsflag angiver, at der foregår skydning fra standpladsen. Flaget opstilles 
+ca. 5 m bag skydelinjen ved skydningens begyndelse og forbliver oprejst, indtil 
+sidste skydehold har forladt standpladsen. Standpladsflagets placering angiver 
+desuden “klarlinjen”, samt hvor tilskuere med flere kan placere sig.
+c) Den enkelte standplads skal som minimum have en bredde på 1 m. Af hensyn til 
+links-skytter (gevær) og kraftig hylsterudkast/blysprøjt (pistol/ revolver) bør bredden, 
+hvor det er muligt, være større end 1 m. På stationer med 2 eller flere mål, hvor 
+vinklen mellem de yderste mål er 200 TS eller mere, skal standpladsbredden være 
+mindst 1,5 meter.
+513 Afspærring og advarsler (L)
+a) Al færdsel i og adgang til et terrænskydningsområde skal hindres for 
+uvedkommende gennem observation, afspærring og afvisning.
+b) Terrænskydelederen udpeger sikkerhedsobservatør til at overvåge fareområdet i 
+luften.
+c) Adgangsveje og ledelinjer ind til området skal afspærres med poster, bomme, 
+kæder eller advarselsskilte. Hvis der anvendes skilte, skal disse have en udformning 
+(tekst og farve) som vist i kapitlet Definitioner og ordforklaringer.
+30
+--- Page 31 ---
+d) Hvis der anvendes fareområde over vand, skal der udstilles poster til farvands-
+overvågning. Posterne udrustes med kommunikationsmateriel, så der kan gives en 
+sikkes advarsel, hvis trafik på vandet bevæger sig ind (eller på vej ind) i fareområdet. 
+514 Koordination af sikkerhed (L)
+a) Hvis 2 eller flere stationers skydning og markering skal koordineres (f.eks. hvis den 
+ene stations skiveopstilling er placeret inden for en nabostations fareområde), skal 
+den ene af stationscheferne på pågældende stationer udpeges til koordinerende 
+stationschef og som sådan forestå koordineringen af skydning og markering.
+b) Ved skydning i skydeterræn skal der i de tilfælde, hvor flere enheder/ våbenarter 
+skyder samtidigt, udpeges en koordinerende skydeleder, som samtidig kan være 
+sikkerhedskoordinator (SIKKO), og som bemander sikkerhedskontoret.
+515 Kommunikation (L)
+a) Der skal altid være sikre kommunikationsforbindelser mellem:
+iterrænskydeleder og stationschefer
+stationschefer og de på stationen værende markører
+terrænskydeleder og afspærringsposter
+terrænskydeleder og poster til farvandsovervågning
+andre led i de sikkerhedsmæssige foranstaltninger
+b) Hvis en eller flere kommunikationsforbindelser svigter, skal skydningen straks 
+bringes til ophør.
+516 Anvendt skydetid (L)
+a) Ved pistolterrænskydninger må der ikke anvendes skydetider, der er kortere end 8 
+sekunder på en station.
+b) På stationer med 2 eller flere mål, hvor vinklen mellem de yderste mål er 200 TS 
+eller mere, skal skydetiden dog være mindst 10 sekunder.
+517 Skudgrænsemærker (S)
+Hvis der fra en standplads kan ses skiveopstillinger tilhørende andre stationer, og 
+der herved kan opstå tvivl om, hvilke skiver, der skal beskydes, skal der anvendes 
+skudgrænsemærker. (Se kapitlet Definitioner og ordforklaringer).
+518 Dispensation (L)
+De ovennævnte bestemmelser om terrænskydning markeret med (L) følger 
+lovgivningen, og dispensation kan kun gives efter tilladelse fra den lokale 
+skydebanesagkyndige hos Politiet.  
+31
+--- Page 32 ---
+Definitioner og 
+ordforklaringer
+Banekommandør
+Den person, der er udpeget af skydelederen til at forestå skydningen på en 
+skydebane/et skydebaneafsnit. Skal være mindst 20 år og erfaren skytte. Ved riffel 
+reduceres alderskravet til 18 år.
+Coated ammunition
+Ammunition til anvendelse i pistol/ revolver med projektiltyper, der er belagt med 
+max. 0,1 mm tyk kobberforhudning, kan godkendes til anvendelse på skydebaner, 
+der er indrettet til skydning med ikke kappeklædt ammunition kaliber .32 og større 
+kaliber.
+Hvis tykkelsen på kobberforhudningen er over 0,1 mm, betragtes det som 
+kappeklædt ammunition. 
+Digital logbog
+Alle prøveskydninger med registreringspligtige våben skal føres i en digital logbog, 
+som foreningen skal opbevare i minimum 5 år og på forlangende udlevere til politiet. 
+Den digitale logbog skal indeholde prøveskyttens navn, original billed-
+legitimationstype (pas eller kørekort) og legitimationsnummer samt dato for hver 
+prøveskydning (max 3 gange). 
+Hvis foreningen ophører, skal logbogen afleveres til politiet. 
+Farekalke
+Kalke (dvs. gennemsigtigt papir eller transparent), som anvendes ved indtegning 
+eller konstruktion af fareområdet på et kort. Skabelon til hjælp ved udarbejdelse af 
+farekalke kan rekvireres hos DGI Skydning.
+Fareområde
+Det område, hvor ophold og passage ikke må finde sted eller kun må finde sted 
+under iagttagelse af særlige sikkerhedsbestemmelser, f.eks. markører i dækning. 
+Grundelementerne i fareområdets opbygning er normalt en målretning, en 
+sikkerhedsvinkel (V) og en sikkerhedsafstand (S).
+32
+--- Page 33 ---
+Flag (standplads- og markørflag) 
+Standpladsflaget er det flag, som angiver, at der foregår skydning fra en standplads, 
+og markørflaget medbringes af markørerne til skiverne, når der markeres. Flaget 
+består af et stykke stof, hvor øverste halvdel er rød og nederste er hvid. Flaget 
+fastgøres til en stang af passende længde.
+Instruks for banens/terrænets brug 
+Den skriftlige tilladelse, som det stedlige politi udsteder som godkendelse af, at 
+banen/terrænet må benyttes. Instruksen skal ophænges på et synligt sted på 
+skydebanen. I terræn skal instruksen medbringes af terrænskydelederen.
+Kortdistanceskydebane
+En skydebane indrettet til skydning på afstande til og med 50 m.
+Koordinerende skydeleder
+Den skydeleder, der er udpeget til at koordinere flere skydende enheder i et militært 
+skydeterræn.
+Koordinerende stationschef
+Den stationschef, der er udpeget til at koordinere skydning og markering, når 2 eller 
+flere stationer har andre stationers skiver inden for eget fareområde.
+Kortkopi
+Fotokopi af 4 cm kort til indtegning eller konstruktion af et fareområde.
+Langdistanceskydebane
+En skydebane indrettet til skydning på afstande over 50 m.
+Markør
+En person, der udfører markering og/ eller betjener et skive- eller målarrangement 
+på en skydebane eller i et skydeterræn.
+Markørdækning
+En gravet dækning, som er godkendt som opholdssted for markørerne.
+Politiets skydebanesagkyndige 
+Den politiassistent ved det stedlige politi, som besigtiger og godkender skydebaner.
+33
+--- Page 34 ---
+Ruteafmærkning i terrænskydning
+En med skilte, pile, markeringsstrimmel eller lignende afmærket rute, som skytter og 
+markører ved en terrænskydning skal følge. Orange farve må ikke anvendes.
+Sikkerhedspløk
+En sikkerhedspløk er en genstand, der signalerer til omgivelserne, at våbnet har 
+været kontrolleret, og derfor ikke er ladt. Sikkerhedspløkken skal være lavet i en 
+sådan udformning, at låsen/bundstykket ikke kan lukkes, og at der ikke kan være 
+patroner i kammeret. På bestemte luft- og airsoftvåben kan pløk være isat munding 
+grundet den tekniske udformning.
+Til revolvere skal sikkerhedspløkken fremstilles således, at der ikke kan være 
+patroner i tromlen. Hvis revolveren er af sådan en konstruktion, at der ikke er plads 
+til en sikkerhedspløk mellem tromlen og slagstiften, så skal våbnet bæres med 
+tromlen slået ud, og sikkerhedspløkken skal forhindre, at tromlen kan lukkes.
+Sikkerhedspløkken skal tydeligt kunne ses i våbnet og være fremstillet i stærkt 
+afvigende farver: Rød, gul, blå eller orange (se billede af anbefalede 
+sikkerhedspløkke her i kapitlet).
+SIKLAND
+En forkortelse for Forsvarets sikkerhedsbestemmelser “Sikkerhedsbestemmelser for 
+skydning på land”.
+Sikkerhedskoordinator
+Den, der ved Forsvarets skydeterræner koordinerer sikkerheden, når flere skydende 
+enheder anvender terrænet. Benævnes SIKKO.
+Sikkerhedsobservatør
+Den, der under skydning holder et fareområde eller et afspærringsområde på land, 
+sø eller i luften under observation.
+Skivebagplade
+Let udskiftelig plade, der opsættes på 15 m banens skivevæg. Den opsættes 
+således, at den er ud for en skives centrum.
+Skivevæg
+Den væg, der opsættes på en 15 m bane foran kuglefanget for at opfange evt. 
+tilbagekast af projektildele fra kuglefanget. Skivevæggen virker tillige som skivestop.  
+34
+--- Page 35 ---
+Skudgrænsemærker
+Skilte, der angiver skudgrænser inden for hvilket område, der må skydes. (se billede 
+på næste side)
+SKV
+SKV1
+Godkendelse af foreningsbestyrelsen. Ved enhver ændring af sammensætning af 
+bestyrelsen, skal ansøges om ny SKV1.
+Godkendelse af foreningens våbenopbevaring. Skal godkendes af Politiets 
+Administrative Center (PAC) mindst hvert 5. år. 
+SKV2
+Våbenpåtegning for privatejede våben
+SKV3
+Adgang til din forenings våbenopbevaring
+Transporttilladelse til våben. 
+SKV4
+Anskaffelse af foreningsvåben.
+SKV5
+Foreningen har forpligtelse til at tilbagekalde våbenpåtegning for medlemmer der:
+er stoppet i foreningen.
+ikke er aktivt skydende (pistol).
+af andre grunde ikke kan have påtegning.
+SKV6
+Godkendt til at få overladt våben i foreningen.
+Skydebane
+Et skydebaneanlæg med en eller flere skiveopstillinger, et antal skydestandpladser 
+og markørdækninger. I forbindelse med anlægget kan naturligt tilhørende bygninger 
+og arealer være tilknyttet, men ikke de omkringliggende arealer, som er offentligt 
+tilgængelige.
+Skydebaneafsnit
+Et afsnit af skydebanen med et antal standpladser, som kan overvåges samtidigt af 
+en skydeleder/banekommandør. 
+35
+--- Page 36 ---
+Skydeleder
+Den person, som har det sikkerhedsmæssige ansvar for gennemførelse af en 
+skydning på en skydebane. Skydelederen skal være erfaren skytte og ved 
+pistolskydning have en minimumsalder på 20 år. Ved riffel reduceres alderskravet til 
+18 år. Personen skal have bestået skytteorganisationernes prøve som skydeleder.
+Skydelederen må gerne selv skyde, dog har det sikkerhedsmæssige ansvar altid 
+førsteprioritet. 
+Skydeledelsen
+Ledes af skydelederen og består desuden af alle udpegede banekommandører og 
+standspladshjælpere. 
+Skydeleder og banekommandør kan bruge navneskiltene fra skytteorganisationerne 
+(se billede)
+Skydelinje
+Forkanten af skydestandpladsen. 
+Skydestandplads (standplads)
+Det sted, hvorfra skytten afgiver sine skud.   
+36
+
+--- Page 37 ---
+Skydeterræn
+Ved “skydeterræn” forstås det område, som er godkendt anvendt til pågældende 
+terrænskydning samt sammenhængende områder til ophold og parkering.
+Standpladshjælper
+En hjælper for banekommandør/stationschef. Skal være mindst 18 år og erfaren 
+skytte.
+Stationschef
+Den person, der af terrænskydelederen er udpeget til at forestå skydningen på en 
+terrænskydningsbane. Skal være mindst 20 år og erfaren skytte.
+Status som terrænskydeledere
+Efter afsluttet og bestået kursus udleveres kursusbevis udstedt af Hærens Kamp- og 
+Ildstøttecenter. Der udstedes licens gældende for 5 år af skytteorganisationerne. 
+Inden fornyelse af licensen, skal man have gennemgået og bestået en 
+efteruddannelse.
+Terrænskydeleder
+Den person, der har det sikkerhedsmæssige ansvar for gennemførelsen af en 
+terrænskydning. Skal være fyldt 20 år, samt have gennemgået og bestået 
+skytteorganisationernes “Terrænskydelederkursus” og fortsat have status som 
+sådan.
+Terrænskydning
+Skydning i terræn, der er ukendt for skytten, mod mål, opstillet på afstande, der er 
+ukendte for skytten.
+Terrænskydningsbane
+Område til gennemførelse af skydning i militært eller civilt terræn.
+Transporttilladelse
+Tilladelse, som skal bæres, når der transporteres våben, som ikke er bærerens egne.
+37
+--- Page 38 ---
+Prøveskytte/prøveskydning
+Person, som ikke er medlem af skytteforeningen og ikke er SKV-godkendt til 
+foreningen og som ønsker at prøve at skyde i foreningen. Prøveskydning kan 
+maksimalt finde sted 3 gange i en periode på 12 måneder med registreringspligtige 
+våben og kræver fremvisning af gyldig billede-ID. Prøveskydningen skal føres i 
+digital logbog. 
+Prøveskydning med ikke-registreringspligtige våben er ikke begrænset til 3 gange, 
+og foreningen behøver ikke kræve fremvisning af gyldigt billede-ID og behøver ikke 
+føre digital logbog. 
+38
+
+--- Page 39 ---
+Notater
+Brug siden til egne noter om sikkerhed i din forening.
+39
+--- Page 40 ---
+Sikkerhedshjulet i 
+skydning 
+Sikkerhedshjulet giver overblik over 
+bestyrelsens og skyttens pligter og ansvar 
+for at fastholde en høj sikkerhed i 
+skydesporten.  
+www.dgi.dk/sikkerhed 
+DGI Media Skydning Sikkerhedsbestemmelser 2026

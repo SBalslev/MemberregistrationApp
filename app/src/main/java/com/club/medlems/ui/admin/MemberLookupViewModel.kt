@@ -20,8 +20,43 @@ import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.minus
+import java.text.Collator
+import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
+
+private val danishCollator: Collator = Collator.getInstance(Locale("da", "DK")).apply {
+    strength = Collator.PRIMARY
+}
+
+private fun List<Member>.sortedDanish(): List<Member> =
+    sortedWith(Comparator { a, b ->
+        val last = danishCollator.compare(a.lastName.orEmpty(), b.lastName.orEmpty())
+        if (last != 0) last else danishCollator.compare(a.firstName.orEmpty(), b.firstName.orEmpty())
+    })
+
+/** Sorts by prefix-first relevance, then Danish alphabetical within each tier. */
+private fun List<Member>.sortedByRelevance(query: String): List<Member> {
+    val q = query.trim().lowercase()
+    fun Member.rank(): Int {
+        val first = firstName.orEmpty().lowercase()
+        val last = lastName.orEmpty().lowercase()
+        val full = "$first $last"
+        val id = membershipId?.lowercase().orEmpty()
+        return when {
+            first.startsWith(q) || last.startsWith(q) || full.startsWith(q) || id.startsWith(q) -> 0
+            else -> 1
+        }
+    }
+    return sortedWith(Comparator { a, b ->
+        val rankCmp = a.rank().compareTo(b.rank())
+        if (rankCmp != 0) rankCmp
+        else {
+            val last = danishCollator.compare(a.lastName.orEmpty(), b.lastName.orEmpty())
+            if (last != 0) last else danishCollator.compare(a.firstName.orEmpty(), b.firstName.orEmpty())
+        }
+    })
+}
 
 /**
  * Result of an assisted check-in operation.
@@ -103,7 +138,7 @@ class MemberLookupViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = _state.value.copy(isSearching = true)
             try {
-                val results = memberDao.searchByNameOrId(query)
+                val results = memberDao.searchByNameOrId(query).sortedByRelevance(query)
                 _state.value = _state.value.copy(
                     searchResults = results,
                     isSearching = false
@@ -117,6 +152,23 @@ class MemberLookupViewModel @Inject constructor(
         }
     }
     
+    /**
+     * Selects a member and immediately performs check-in without requiring the detail panel.
+     */
+    fun directCheckIn(member: Member) {
+        _state.value = _state.value.copy(
+            selectedMember = member,
+            recentSessions = emptyList(),
+            todayCheckedIn = false,
+            lastCheckInDate = null,
+            checkInResult = null
+        )
+        viewModelScope.launch {
+            loadMemberDetails(member.membershipId ?: member.internalId)
+        }
+        performAssistedCheckIn()
+    }
+
     /**
      * Selects a member to view details.
      */

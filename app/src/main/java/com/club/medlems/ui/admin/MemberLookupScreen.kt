@@ -159,7 +159,8 @@ fun MemberLookupScreen(
                             MemberSearchResultCard(
                                 member = member,
                                 isSelected = state.selectedMember?.membershipId == member.membershipId,
-                                onClick = { viewModel.selectMember(member) }
+                                onClick = { viewModel.selectMember(member) },
+                                onCheckIn = { viewModel.directCheckIn(member) }
                             )
                         }
                     }
@@ -227,7 +228,8 @@ fun MemberLookupScreen(
 private fun MemberSearchResultCard(
     member: Member,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onCheckIn: (() -> Unit)? = null
 ) {
     val containerColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer
@@ -283,6 +285,14 @@ private fun MemberSearchResultCard(
                         containerColor = MaterialTheme.colorScheme.errorContainer
                     )
                 )
+            } else if (onCheckIn != null) {
+                FilledTonalButton(
+                    onClick = onCheckIn,
+                    modifier = Modifier.height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp)
+                ) {
+                    Text("Check ind", style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
     }

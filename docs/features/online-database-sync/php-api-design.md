@@ -1,7 +1,7 @@
 # PHP API Layer - Technical Design
 
 **Created:** 2026-01-27
-**Last Updated:** 2026-01-27
+**Last Updated:** 2026-05-17 by sbalslev
 **Status:** Draft
 **Security Review:** v0.2 - Enhanced security measures added
 
@@ -243,6 +243,8 @@ Response (409 - Conflict):
 #### GET /api/v1/sync/pull
 
 Retrieves changes from database since last sync.
+
+Pagination uses `next_cursor` derived from the last timestamped record in any requested entity that hits the limit. The API only returns `has_more` when a valid `next_cursor` is computed to avoid repeated pulls with a non-advancing cursor.
 
 Request:
 ```

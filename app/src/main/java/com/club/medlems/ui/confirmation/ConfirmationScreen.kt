@@ -74,6 +74,61 @@ fun ConfirmationScreen(
     }
 }
 
+@Composable
+fun AlreadyCheckedInScreen(
+    memberId: String,
+    isTrial: Boolean = false,
+    onAddSession: () -> Unit,
+    onViewResults: () -> Unit,
+    onDone: () -> Unit,
+    vm: ConfirmationViewModel = hiltViewModel()
+) {
+    var seconds by remember { mutableStateOf(8) }
+    val name by vm.memberName.collectAsState()
+    LaunchedEffect(memberId) { vm.load(memberId) }
+    IdleCountdown(
+        totalSeconds = 8,
+        restartKey = Unit,
+        active = true,
+        onTick = { seconds = it },
+        onTimeout = { onDone() }
+    )
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        val label = name?.takeIf { it.isNotBlank() }?.let { "$memberId – $it" } ?: memberId
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("$label er allerede tjekket ind i dag")
+            if (isTrial) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        "Prøvemedlem",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Går automatisk tilbage om $seconds s")
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = { onAddSession() }) { Text("Tilføj skydning") }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { onViewResults() }) { Text("Se resultater") }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { onDone() }) { Text("Færdig") }
+    }
+}
+
 @HiltViewModel
 class ConfirmationViewModel @Inject constructor(private val memberDao: MemberDao): ViewModel() {
     private val _memberName = MutableStateFlow<String?>(null)

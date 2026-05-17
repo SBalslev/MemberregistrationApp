@@ -4,8 +4,43 @@ import com.club.medlems.data.dao.MemberDao
 import com.club.medlems.data.entity.Member
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.text.Collator
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private val danishCollator: Collator = Collator.getInstance(Locale("da", "DK")).apply {
+    strength = Collator.PRIMARY
+}
+
+private fun List<Member>.sortedDanish(): List<Member> =
+    sortedWith(Comparator { a, b ->
+        val last = danishCollator.compare(a.lastName.orEmpty(), b.lastName.orEmpty())
+        if (last != 0) last else danishCollator.compare(a.firstName.orEmpty(), b.firstName.orEmpty())
+    })
+
+/** Sorts by prefix-first relevance, then Danish alphabetical within each tier. */
+private fun List<Member>.sortedByRelevance(query: String): List<Member> {
+    val q = query.trim().lowercase()
+    fun Member.rank(): Int {
+        val first = firstName.orEmpty().lowercase()
+        val last = lastName.orEmpty().lowercase()
+        val full = "$first $last"
+        val id = membershipId?.lowercase().orEmpty()
+        return when {
+            first.startsWith(q) || last.startsWith(q) || full.startsWith(q) || id.startsWith(q) -> 0
+            else -> 1
+        }
+    }
+    return sortedWith(Comparator { a, b ->
+        val rankCmp = a.rank().compareTo(b.rank())
+        if (rankCmp != 0) rankCmp
+        else {
+            val last = danishCollator.compare(a.lastName.orEmpty(), b.lastName.orEmpty())
+            if (last != 0) last else danishCollator.compare(a.firstName.orEmpty(), b.firstName.orEmpty())
+        }
+    })
+}
 
 /**
  * Repository for member operations.
@@ -39,7 +74,7 @@ class MemberRepository @Inject constructor(
             if (query.isBlank()) {
                 emptyList()
             } else {
-                memberDao.searchByNameOrId(query.trim())
+                memberDao.searchByNameOrId(query.trim()).sortedByRelevance(query.trim())
             }
         }
     
