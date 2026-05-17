@@ -120,27 +120,30 @@ class PracticeSessionViewModel @javax.inject.Inject constructor(
         type: PracticeType,
         classification: String
     ): List<PracticeSession> {
+        val member = memberDao.get(memberId) ?: return emptyList()
         val end = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         val start = kotlinx.datetime.LocalDate(end.year - 1, end.month, end.dayOfMonth)
-        return practiceSessionDao.historyForMember(memberId, start, end, type, classification)
+        return practiceSessionDao.historyForMember(member.internalId, start, end, type, classification)
     }
 
     suspend fun loadHistoryAllClasses(
         memberId: String,
         type: PracticeType
     ): List<PracticeSession> {
+        val member = memberDao.get(memberId) ?: return emptyList()
         val end = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         val start = kotlinx.datetime.LocalDate(end.year - 1, end.month, end.dayOfMonth)
-        return practiceSessionDao.historyForMemberAllClassifications(memberId, start, end, type)
+        return practiceSessionDao.historyForMemberAllClassifications(member.internalId, start, end, type)
     }
 
     suspend fun hasAnyHistoryAllClasses(
         memberId: String,
         type: PracticeType
     ): Boolean {
+        val member = memberDao.get(memberId) ?: return false
         val end = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         val start = kotlinx.datetime.LocalDate(end.year - 1, end.month, end.dayOfMonth)
-        return practiceSessionDao.historyCountForMemberAllClassifications(memberId, start, end, type) > 0
+        return practiceSessionDao.historyCountForMemberAllClassifications(member.internalId, start, end, type) > 0
     }
 }
 

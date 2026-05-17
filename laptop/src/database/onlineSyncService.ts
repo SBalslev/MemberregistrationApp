@@ -1417,7 +1417,7 @@ class OnlineSyncService {
       execute(`UPDATE Member SET syncedAtUtc = ? WHERE updatedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
       execute(`UPDATE CheckIn SET syncedAtUtc = ? WHERE (createdAtUtc > ? OR syncedAtUtc IS NULL) AND internalMemberId IS NOT NULL`, [syncedNow, pushSince]);
       execute(`UPDATE PracticeSession SET syncedAtUtc = ? WHERE (createdAtUtc > ? OR syncedAtUtc IS NULL) AND internalMemberId IS NOT NULL`, [syncedNow, pushSince]);
-      execute(`UPDATE ScanEvent SET syncedAtUtc = ? WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
+      execute(`UPDATE ScanEvent SET syncedAtUtc = ? WHERE createdAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
       execute(`UPDATE EquipmentItem SET syncedAtUtc = ? WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
       execute(`UPDATE EquipmentCheckout SET syncedAtUtc = ? WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);
       execute(`UPDATE TrainerInfo SET syncedAtUtc = ? WHERE modifiedAtUtc > ? OR syncedAtUtc IS NULL`, [syncedNow, pushSince]);

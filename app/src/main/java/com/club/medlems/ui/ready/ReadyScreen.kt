@@ -529,19 +529,24 @@ private fun CompactLeaderboardGrid(groupedRecent: Map<PracticeType, Map<String, 
                 val byCls = groupedRecent[type].orEmpty().filterValues { it.isNotEmpty() }
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
-                    Text(type.displayName, style = MaterialTheme.typography.titleSmall)
+                    Text(type.displayName, style = MaterialTheme.typography.titleLarge)
                     if (byCls.isEmpty()) {
-                        Text("—", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("—", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         byCls.toSortedMap().forEach { (cls, list) ->
                                 val label = if (cls.isBlank()) "Uklassificeret" else cls
-                                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                                Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                             list.take(3).forEach { entry ->
                                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                     val name = entry.memberName
-                                    val left = if (name.isNullOrBlank()) entry.displayMemberId else "${entry.displayMemberId} - ${name}"
-                                    Text(left, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("${entry.points}${entry.krydser?.let { "/$it" } ?: ""}", style = MaterialTheme.typography.bodySmall)
+                                    val isTrial = entry.displayMemberId.length > 20
+                                    val left = when {
+                                        isTrial && !name.isNullOrBlank() -> name
+                                        name.isNullOrBlank() -> entry.displayMemberId
+                                        else -> "${entry.displayMemberId} - ${name}"
+                                    }
+                                    Text(left, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${entry.points}${entry.krydser?.let { "/$it" } ?: ""}", style = MaterialTheme.typography.bodyLarge)
                                 }
                             }
                         }

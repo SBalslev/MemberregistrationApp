@@ -93,7 +93,12 @@ fun LeaderboardScreen(onBack: () -> Unit, vm: LeaderboardViewModel = hiltViewMod
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         val name = entry.memberName
-                                        val left = if (name.isNullOrBlank()) entry.displayMemberId else "${entry.displayMemberId} - ${name}"
+                                        val isTrial = entry.displayMemberId.length > 20
+                                        val left = when {
+                                            isTrial && !name.isNullOrBlank() -> name
+                                            name.isNullOrBlank() -> entry.displayMemberId
+                                            else -> "${entry.displayMemberId} - ${name}"
+                                        }
                                         Text(left, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                                         Text("${entry.points}${entry.krydser?.let { "/$it" } ?: ""}", style = MaterialTheme.typography.titleMedium)
                                     }

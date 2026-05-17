@@ -337,6 +337,7 @@ fun TrainerDashboardScreen(
                     CheckInsColumn(
                         checkIns = state.filteredCheckIns,
                         onAddSession = { viewModel.selectMemberForSession(it) },
+                        onMemberClick = { onNavigateToTrialMemberDetail(it.internalMemberId) },
                         modifier = Modifier.weight(1f)
                     )
 
@@ -441,8 +442,9 @@ private fun SmallStatCard(
 private fun CheckInsColumn(
     checkIns: List<CheckInWithMember>,
     onAddSession: (CheckInWithMember) -> Unit,
+    onMemberClick: (CheckInWithMember) -> Unit,
     modifier: Modifier = Modifier
-) {
+){
     Column(modifier = modifier) {
         Text(
             text = "Fremmødte i dag",
@@ -470,7 +472,11 @@ private fun CheckInsColumn(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(checkIns, key = { it.checkIn.id }) { item ->
-                    CheckInListItem(item, onAddSession = { onAddSession(item) })
+                    CheckInListItem(
+                        item,
+                        onAddSession = { onAddSession(item) },
+                        onClick = { onMemberClick(item) }
+                    )
                 }
             }
         }
@@ -480,13 +486,15 @@ private fun CheckInsColumn(
 @Composable
 private fun CheckInListItem(
     item: CheckInWithMember,
-    onAddSession: () -> Unit
+    onAddSession: () -> Unit,
+    onClick: () -> Unit
 ) {
     val time = item.checkIn.createdAtUtc
         .toLocalDateTime(TimeZone.currentSystemDefault())
     val timeStr = String.format("%02d:%02d", time.hour, time.minute)
 
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
