@@ -33,6 +33,8 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
 import java.util.UUID
 import com.club.medlems.ui.util.IdleCountdown
 import com.club.medlems.domain.prefs.LastClassificationStore
@@ -42,9 +44,34 @@ import com.club.medlems.network.TrustManager
 import javax.inject.Inject
 import com.club.medlems.domain.ClassificationOptions
 import com.club.medlems.ui.common.Formatters
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Celebration
+import androidx.compose.ui.graphics.vector.ImageVector
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlin.math.abs
+
+enum class AchievementType { PERSONAL_BEST, IMPROVEMENT, MILESTONE, SCORE_RANK }
+
+data class SessionAchievement(
+    val type: AchievementType,
+    val title: String,
+    val body: String
+)
 
 @dagger.hilt.android.lifecycle.HiltViewModel
-class PracticeSessionViewModel @javax.inject.Inject constructor(
+class PracticeSessionViewModel@javax.inject.Inject constructor(
     private val practiceSessionDao: PracticeSessionDao,
     private val scanEventDao: ScanEventDao,
     private val lastStore: LastClassificationStore,
@@ -58,8 +85,12 @@ class PracticeSessionViewModel @javax.inject.Inject constructor(
         private set
     var error by mutableStateOf<String?>(null)
         private set
+    var savedSuccessfully by mutableStateOf(false)
+        private set
+    private val _achievements = MutableStateFlow<List<SessionAchievement>>(emptyList())
+    val achievements: StateFlow<List<SessionAchievement>> = _achievements
 
-    fun save(memberId: String, scanEventId: String, type: PracticeType, classification: String?, points: String, krydser: String?, onDone: () -> Unit) {
+    fun save(memberId: String, scanEventId: String, type: PracticeType, classification: String?, points: String, krydser: String?) {
         val pointsVal = points.toIntOrNull()
         if (pointsVal == null || pointsVal < 0) { error = "Points ugyldige"; return }
         val krydserVal = krydser?.takeIf { it.isNotBlank() }?.toIntOrNull()?.takeIf { it >= 0 }
@@ -95,10 +126,75 @@ class PracticeSessionViewModel @javax.inject.Inject constructor(
             syncManager.triggerImmediateTabletSync()
             scanEventDao.linkSession(scanEventId, session.id)
             lastStore.set(memberId, type, classification)
+            _achievements.value = computeAchievements(session)
+            savedSuccessfully = true
             saving = false
-            onDone()
         }
     }
+
+    private suspend fun computeAchievements(session: com.club.medlems.data.entity.PracticeSession): List<SessionAchievement> {
+        val result = mutableListOf<SessionAchievement>()
+        val seed = session.id.hashCode()
+        val allTimeStart = LocalDate(2000, 1, 1)
+        val today = session.localDate
+        val yesterday = today.minus(1, DateTimeUnit.DAY)
+
+        val prevHistory = if (yesterday >= allTimeStart) {
+            practiceSessionDao.historyForMemberAllClassifications(
+                session.internalMemberId, allTimeStart, yesterday, session.practiceType
+            ).filter { it.points > 0 }
+        } else emptyList()
+
+        val prevBest = prevHistory.maxOfOrNull { it.points } ?: 0
+        val sessionCount = prevHistory.size + 1
+
+        // Milestone sessions (1st, 5th, 10th, 25th, 50th, 100th, 200th)
+        val milestones = setOf(1, 5, 10, 25, 50, 100, 200)
+        if (sessionCount in milestones) {
+            val (title, body) = when (sessionCount) {
+                1 -> pick(listOf("Første træning i ${session.practiceType.displayName}!", "Velkommen til ${session.practiceType.displayName}!"), seed) to "Godt gået - det første skridt er taget!"
+                5 -> "5 træninger i ${session.practiceType.displayName}!" to pick(listOf("Du er godt i gang!", "Flot indsats!"), seed)
+                10 -> "10 træninger! 🔥" to "Du begynder at finde rytmen i ${session.practiceType.displayName}"
+                25 -> "25 træninger! Dedikeret!" to "Imponerende engagement i ${session.practiceType.displayName}"
+                50 -> "50 træninger! Halvt hundrede!" to "Du er en trofast skytte!"
+                100 -> "100 træninger! Du er en legende!" to "${session.practiceType.displayName} kender dig godt nu"
+                else -> "${sessionCount} træninger i ${session.practiceType.displayName}!" to "Utrolig dedikation!"
+            }
+            result += SessionAchievement(AchievementType.MILESTONE, title, body)
+        }
+
+        // Personal best (only if there was prior history)
+        if (prevHistory.isNotEmpty() && session.points > prevBest) {
+            val title = pick(listOf("Ny personlig rekord!", "Dit bedste nogensinde!", "Rekord slået!"), seed + 2)
+            result += SessionAchievement(AchievementType.PERSONAL_BEST, title, "${session.points} point i ${session.practiceType.displayName}")
+        }
+
+        // Score rank (2nd/3rd best ever, shown if not already a personal best)
+        if (session.points <= prevBest && prevHistory.size >= 4) {
+            val sorted = prevHistory.map { it.points }.sortedDescending()
+            val rank = sorted.indexOfFirst { session.points > it }.let { if (it < 0) sorted.size + 1 else it + 1 }
+            if (rank == 2) {
+                val title = pick(listOf("Dit næstbedste resultat!", "Kun slået af din rekord!"), seed + 3)
+                result += SessionAchievement(AchievementType.SCORE_RANK, title, "${session.points} point i ${session.practiceType.displayName}")
+            } else if (rank == 3) {
+                result += SessionAchievement(AchievementType.SCORE_RANK, "Dit 3.-bedste resultat nogensinde!", "${session.points} point i ${session.practiceType.displayName}")
+            }
+        }
+
+        // Improvement over most recent previous session
+        val lastSession = prevHistory.maxByOrNull { it.createdAtUtc }
+        if (lastSession != null && session.points > lastSession.points) {
+            val delta = session.points - lastSession.points
+            if (delta >= 2) {
+                val title = pick(listOf("+$delta point siden sidst!", "Fremgang på $delta point!", "$delta point bedre end sidst!"), seed + 4)
+                result += SessionAchievement(AchievementType.IMPROVEMENT, title, "Fra ${lastSession.points} til ${session.points} point")
+            }
+        }
+
+        return result.take(3)
+    }
+
+    private fun pick(options: List<String>, seed: Int): String = options[abs(seed) % options.size]
 
     fun cancel(scanEventId: String, after: () -> Unit) {
         viewModelScope.launch {
@@ -163,6 +259,10 @@ fun PracticeSessionScreen(
     var showHistory by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf<List<PracticeSession>>(emptyList()) }
     var memberName by remember { mutableStateOf<String?>(null) }
+    val achievements by vm.achievements.collectAsState()
+    LaunchedEffect(vm.savedSuccessfully, achievements) {
+        if (vm.savedSuccessfully && achievements.isEmpty()) onSaved()
+    }
 
     // Classification options provided centrally
     fun optionsFor(t: PracticeType): List<String> = ClassificationOptions.optionsFor(t)
@@ -335,7 +435,7 @@ fun PracticeSessionScreen(
                         if (pt == null || cls == null || !ClassificationOptions.isValid(pt, cls)) {
                             return@Button
                         }
-                        vm.save(memberId, scanEventId, pt, cls, points, krydser, onSaved)
+                        vm.save(memberId, scanEventId, pt, cls, points, krydser)
                     },
                     enabled = !vm.saving,
                     modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -428,6 +528,100 @@ fun PracticeSessionScreen(
                     TextButton(onClick = { showHistory = false }) { Text("Luk") }
                 }
             }
+        }
+    }
+
+    if (vm.savedSuccessfully && achievements.isNotEmpty()) {
+        CelebrationOverlay(achievements = achievements, onDone = onSaved)
+    }
+}
+
+@Composable
+private fun CelebrationOverlay(achievements: List<SessionAchievement>, onDone: () -> Unit) {
+    var current by remember { mutableStateOf(0) }
+    val total = achievements.size
+
+    LaunchedEffect(Unit) {
+        repeat(total) { i ->
+            current = i
+            delay(if (i < total - 1) 3200L else 3800L)
+        }
+        onDone()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .clickable { onDone() },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth().padding(32.dp)
+        ) {
+            AnimatedContent(
+                targetState = current,
+                transitionSpec = { fadeIn(tween(500)) togetherWith fadeOut(tween(500)) },
+                label = "celebrationFact"
+            ) { idx ->
+                val ach = achievements.getOrNull(idx) ?: return@AnimatedContent
+                val icon: ImageVector = when (ach.type) {
+                    AchievementType.PERSONAL_BEST -> Icons.Default.EmojiEvents
+                    AchievementType.IMPROVEMENT -> Icons.Default.TrendingUp
+                    AchievementType.MILESTONE -> Icons.Default.Celebration
+                    AchievementType.SCORE_RANK -> Icons.Default.Star
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(72.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        ach.title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Text(
+                        ach.body,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+
+            if (total > 1) {
+                Spacer(Modifier.height(32.dp))
+                Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    repeat(total) { i ->
+                        Box(
+                            Modifier
+                                .padding(horizontal = 4.dp)
+                                .size(if (i == current) 10.dp else 7.dp)
+                                .background(
+                                    color = if (i == current)
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.35f),
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "Tryk for at fortsætte",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+            )
         }
     }
 }

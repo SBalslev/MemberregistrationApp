@@ -17,7 +17,13 @@ import com.journeyapps.barcodescanner.BarcodeResult
 import com.journeyapps.barcodescanner.DecoratedBarcodeView
 import com.journeyapps.barcodescanner.DefaultDecoderFactory
 import com.google.zxing.ResultPoint
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -41,15 +47,21 @@ import com.club.medlems.domain.LeaderboardEntry
 import com.club.medlems.ui.leaderboard.LeaderboardRange
 import com.club.medlems.ui.leaderboard.LeaderboardViewModel
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Cake
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.BarcodeFormat
 import java.nio.ByteBuffer
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import java.util.concurrent.Executors
 import android.widget.FrameLayout
@@ -71,6 +83,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontWeight
 import com.club.medlems.ui.sync.SyncStatusIndicator
 import com.club.medlems.ui.sync.SyncStatusDetailSheet
+import com.club.medlems.R
 
 private const val TAG = "ReadyScreen"
 private val cameraExecutor by lazy { Executors.newSingleThreadExecutor() }
@@ -124,6 +137,9 @@ fun ReadyScreen(
     val lbVm: LeaderboardViewModel = hiltViewModel()
     val lbState by lbVm.state.collectAsState()
     LaunchedEffect(Unit) { lbVm.setRange(LeaderboardRange.TODAY) }
+    val celebrationVm: CelebrationViewModel = hiltViewModel()
+    val celebrationSlides by celebrationVm.slides.collectAsState()
+    LaunchedEffect(Unit) { celebrationVm.refresh() }
     
     // Diagnostics state - minimized updates to reduce recompositions
     var diagnostics by remember { 
@@ -149,10 +165,6 @@ fun ReadyScreen(
                     onFirstScan(outcome.membershipId, outcome.scanEventId, outcome.isTrial)
                 }
                 is ScanOutcome.Repeat -> {
-                    if (outcome.birthday) {
-                        runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200) }
-            scope.launch { snackHost.showSnackbar("Tillykke med fødselsdagen!") }
-                    }
                     onRepeatScan(outcome.membershipId, outcome.scanEventId, outcome.isTrial)
                 }
                 is ScanOutcome.Error -> snackHost.showSnackbar(outcome.message)
@@ -348,29 +360,13 @@ fun ReadyScreen(
                         onClick = { showSyncDetailSheet = true }
                     )
                 }
-                // Instruction banner between camera and leaderboard
-                ElevatedCard(
+                // Celebration carousel: monthly high scores, birthdays, improvers, personal bests, most dedicated
+                CelebrationCarousel(
+                    slides = celebrationSlides,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "Hold dit medlemskort foran kameraet for at scanne",
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
 
                 HorizontalDivider()
                 // Compact leaderboard (bottom half)
@@ -552,6 +548,194 @@ private fun CompactLeaderboardGrid(groupedRecent: Map<PracticeType, Map<String, 
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CelebrationCarousel(
+    slides: List<CelebrationSlide>,
+    modifier: Modifier = Modifier
+) {
+    if (slides.isEmpty()) {
+        ElevatedCard(
+            modifier = modifier,
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Hold dit medlemskort foran kameraet for at scanne",
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+        }
+        return
+    }
+
+    var currentSlide by remember { mutableStateOf(0) }
+    LaunchedEffect(slides.size) {
+        if (currentSlide >= slides.size) currentSlide = 0
+        while (true) {
+            delay(4000L)
+            currentSlide = (currentSlide + 1) % slides.size
+        }
+    }
+
+    ElevatedCard(
+        modifier = modifier,
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            AnimatedContent(
+                targetState = currentSlide,
+                transitionSpec = { fadeIn(tween(600)) togetherWith fadeOut(tween(600)) },
+                label = "celebrationSlide"
+            ) { idx ->
+                val slide = slides.getOrNull(idx.coerceAtMost(slides.lastIndex))
+                    ?: return@AnimatedContent
+                CelebrationSlideContent(slide)
+            }
+            if (slides.size > 1) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    slides.indices.forEach { i ->
+                        Box(
+                            Modifier
+                                .padding(horizontal = 3.dp)
+                                .size(if (i == currentSlide) 8.dp else 6.dp)
+                                .background(
+                                    color = if (i == currentSlide)
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.35f),
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CelebrationSlideContent(slide: CelebrationSlide) {
+    val onColor = MaterialTheme.colorScheme.onPrimaryContainer
+    when (slide) {
+        is CelebrationSlide.HighScore -> {
+            val entry = slide.entry
+            val name = entry.memberName
+            val label = if (name.isNullOrBlank()) entry.displayMemberId else "${entry.displayMemberId} - $name"
+            val score = "${entry.points}${entry.krydser?.let { "/$it" } ?: ""}"
+            CarouselRow(
+                icon = Icons.Default.EmojiEvents,
+                header = "M\u00e5nedens bedste \u2022 ${slide.type.displayName}",
+                leftText = label,
+                rightText = score,
+                onColor = onColor
+            )
+        }
+        is CelebrationSlide.Birthdays -> {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Default.Cake,
+                    contentDescription = null,
+                    tint = onColor,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "F\u00f8dselsdag" + if (slide.names.size > 1) "er denne uge" else " i dag!",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = onColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        slide.names.joinToString(" \u2022 "),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = onColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+        }
+        is CelebrationSlide.BiggestImprover -> {
+            val name = slide.memberName
+            val label = if (name.isNullOrBlank()) slide.displayMemberId else "${slide.displayMemberId} - $name"
+            CarouselRow(
+                icon = androidx.compose.material.icons.Icons.Default.TrendingUp,
+                header = "St\u00f8rst fremgang \u2022 ${slide.type.displayName}",
+                leftText = label,
+                rightText = "+${slide.improvement} (${slide.thisMonthScore})",
+                onColor = onColor
+            )
+        }
+        is CelebrationSlide.PersonalBest -> {
+            val name = slide.memberName
+            val label = if (name.isNullOrBlank()) slide.displayMemberId else "${slide.displayMemberId} - $name"
+            CarouselRow(
+                icon = androidx.compose.material.icons.Icons.Default.Star,
+                header = "Personlig rekord \u2022 ${slide.type.displayName}",
+                leftText = label,
+                rightText = "${slide.score}",
+                onColor = onColor
+            )
+        }
+        is CelebrationSlide.MostDedicated -> {
+            val name = slide.memberName
+            val label = if (name.isNullOrBlank()) slide.displayMemberId else "${slide.displayMemberId} - $name"
+            CarouselRow(
+                icon = androidx.compose.material.icons.Icons.Default.LocalFireDepartment,
+                header = "Mest dedikerede denne m\u00e5ned",
+                leftText = label,
+                rightText = "${slide.trainingDays} tr\u00e6ningsdage",
+                onColor = onColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun CarouselRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    header: String,
+    leftText: String,
+    rightText: String,
+    onColor: androidx.compose.ui.graphics.Color
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, tint = onColor, modifier = Modifier.size(40.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(header, style = MaterialTheme.typography.titleMedium, color = onColor, fontWeight = FontWeight.Bold)
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    leftText,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = onColor,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(rightText, style = MaterialTheme.typography.headlineSmall, color = onColor, fontWeight = FontWeight.Bold)
             }
         }
     }

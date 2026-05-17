@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Danish overrides for ZXing strings -->
+    <string name="zxing_msg_default_status"></string>
+    <string name="zxing_app_name">Stregkodescanner</string>
+    <string name="zxing_msg_camera_framework_bug">Beklager, kameraet stødte på et problem. Prøv at genstarte enheden.</string>
+</resources>
