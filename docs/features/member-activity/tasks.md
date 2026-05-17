@@ -139,13 +139,13 @@ Implement a read-only member activity timeline and a cross-member overview page 
 
 ## Acceptance criteria
 
-- [ ] Member timeline replaces the placeholder and is read-only
-- [ ] Overview page defaults to current year and respects filters
-- [ ] Trial filter supports all members, without trial, and only trial
-- [ ] Daily distinct check-ins show a full list without drill-down
-- [ ] Multi-day views show distinct member counts per day
-- [ ] Practice sessions group by discipline and classification
-- [ ] Drill-down works for aggregates only
-- [ ] Attendance and drill-down lists paginate at 50 rows per page
-- [ ] No export functionality is added
-- [ ] Multi-day attendance shows a bar chart
+- [x] Member timeline replaces the placeholder and is read-only
+- [x] Overview page defaults to current year and respects filters
+- [x] Trial filter supports all members, without trial, and only trial
+- [x] Daily distinct check-ins show a full list without drill-down
+- [x] Multi-day views show distinct member counts per day
+- [x] Practice sessions group by discipline and classification
+- [x] Drill-down works for aggregates only
+- [x] Attendance and drill-down lists paginate at 50 rows per page
+- [x] No export functionality is added
+- [x] Multi-day attendance shows a bar chart

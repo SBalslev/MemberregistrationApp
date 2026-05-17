@@ -25,11 +25,64 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
   - Laptop: Merge modal with member selection (keep vs merge)
   - Laptop: Preview of records to be transferred (check-ins, practice sessions, equipment, scans)
   - Laptop: Atomic merge with FK updates and `mergedIntoId` tracking on merged member
+- **Enhanced Trial Registration**: Age validation, ID photo capture for adults, photo management, and automatic ID photo deletion
+  - Android: Birth date picker with year selector; validation (not future, reasonable range)
+  - Android: Adult detection (>= 18) with automatic child registration toggle
+  - Android: ID photo capture step for adults (driver's licence or ID card), with preview/retake
+  - Android: Front camera preview unmirrored; name fields use word capitalization
+  - Trainer App: Trial members list (last 7 days) on dashboard with photo status indicators
+  - Trainer App: Trial member detail view with full-size profile and ID photos
+  - Trainer App: Retake profile or ID photo for trial members
+  - Trainer App: Assisted check-in and practice session registration for members
+  - Laptop: ID photo display in member detail, filter by ID photo status, click-to-enlarge
+  - Laptop: `IdPhotoLifecycleService` - auto-deletes ID photo when membershipId assigned AND fee paid
+  - Laptop: Startup batch job processes any eligible pending ID photo deletions
+  - Laptop: Audit log entries for all ID photo deletions
+  - Sync: `idPhotoBase64` included in member sync payload (schema v1.5.0); API updated
+  - Database: Android DB v16, laptop SQLite schema v14, MySQL migration V1_5_0
+  - Blocking save overlay on registration to prevent double-tap
+- **Member Activity Overview**: Read-only activity timeline and cross-member statistics (laptop)
+  - Overview page with attendance tab and practice tab, accessible from sidebar
+  - Date range filter defaulting to current year (12-month max)
+  - Trial filter: all members / without trial / only trial
+  - Daily distinct check-in list view
+  - Multi-day aggregated attendance with bar chart (Recharts)
+  - Practice sessions grouped by discipline and classification
+  - Drill-down from aggregates (50 rows/page pagination)
+  - Member activity timeline in individual member detail view
+  - GMT+1 day boundaries and season year logic
+- **Sync Reliability Hardening**: Production-grade sync infrastructure improvements
+  - Persistent outbox queue (`SyncOutbox`, `SyncOutboxDelivery` entities) for at-least-once delivery
+  - Per-device delivery tracking with exponential backoff (up to 10 retries)
+  - Idempotency via `messageId` deduplication in `ProcessedMessage` table
+  - Reactive sync triggers with 2-second debounce replacing 5-minute polling
+  - Device discovery and app start trigger immediate sync
+  - Outbox cleanup job (24h retention for completed entries)
+- **Member Deletion**: Permanent deletion of inactive members (see [1.3.2] entries for earlier items)
+  - Cascade delete with transaction protection (cannot delete members with current year transactions)
+  - Cloud sync with outbox-based retry mechanism
+- **UI/UX Improvements (February 2026)**:
+  - Dashboard: Member demographics section (adult/child counts, gender breakdown, two age modes)
+  - Statistics page: Detailed age/gender breakdowns with print support
+  - Members page: Active-first default sort, flexible 50/50 split layout
+  - Edit Member modal: Wider (max-w-3xl), two-column layout
+  - Finance page: Transactions sorted newest first
+  - Browser `alert()`/`confirm()` replaced with `ConfirmDialog` component and toast notifications
+  - ARIA accessibility attributes added to Sidebar, MembersPage, StatisticsPage
+  - Color contrast improved (text-gray-500 -> text-gray-600 for important labels)
+  - Dashboard equipment and conflict counts now load live data
 
 ### Changed
 - Member entity now uses `internalId` (UUID) as primary key instead of `membershipId`
 - All foreign key references updated from `membershipId` to `internalMemberId`
 - Sync protocol includes `memberType` field for trial/full distinction
+- Sync protocol v1.5.0 includes `idPhotoBase64`, `idPhotoPath`, `idPhotoThumbnail` fields
+- Android DB version 16 (via sequential migrations from v5)
+- PIN fields masked with `PasswordVisualTransformation` (security fix)
+- Leaderboard text sizing increased 50-70% for 10.1" tablet readability
+- Admin menu reorganized into 4 logical sections (Daglig brug, Udstyr, Administration, System)
+- Practice session form uses progressive step-by-step reveal with numbered step badges
+- Idle timeout on practice session form increased from 60s to 90s
 
 ### Deprecated
 - **Approval Workflow (FR-7)**: Registration approval workflow removed
@@ -37,6 +90,43 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
   - Laptop: `pendingRegistrationCount` and `selectedRegistration` store fields deprecated
   - Sync: NewMemberRegistration no longer sent in outbound sync payloads
   - Sync: Incoming NewMemberRegistration auto-converted to trial members for backward compat
+- **NewMemberRegistration entity**: Superseded by `Member(memberType=TRIAL)` architecture
+
+### Added (continued - May 2026)
+- **Celebration Carousel & Achievements** (member tablet): Dynamic post-session recognition
+  - Ready screen: rotating carousel with monthly high scores, birthdays this week, biggest improvers, personal bests, most dedicated members; auto-advances 4s; falls back to scan-card slide when empty
+  - Post-session overlay: milestone badges (1st/5th/10th... session), personal best, top-3 score, improvement percentage; auto-advances 3.2s, tappable to skip
+  - Larger text and icons for tablet readability
+  - ZXing English "Place a barcode..." text hidden via `strings.xml` override
+- **Policy Violation Logging**: Trainer practice session policy warnings with audit trail
+  - Policy warnings shown in trainer practice session flows
+  - Policy violation list on trainer dashboard
+  - CSV export from admin laptop
+  - Sync via outbox pipeline to laptop
+- **Membership Card Tracking**: Full-stack `cardStatus` field on Member entity
+  - Tracked in Android DB, laptop SQLite, and online MySQL
+  - Bidirectional sync
+  - Advanced filter by card status in MembersPage
+- **External Payment Marking**: Mark member fees as paid externally
+  - External payment option in MemberFeeStatusTable
+  - Policy violation logging on external payment
+- **Online Sync Reliability Fixes** (ODBS-1 through ODBS-4):
+  - Pagination cursor fix: `has_more` only when valid `next_cursor` exists
+  - Finance pull stability: `financial_transactions` support and `source` column fallback
+  - Device filter fix: qualified `device_id` to avoid ambiguous column in joins
+  - Per-entity error capture: `errors` array in pull response instead of hard 500
+- **Sync Improvements** (local network):
+  - Subnet scanner prefers real network adapters over virtual interfaces
+  - Tablet IP captured from push; full pull auto-triggered
+  - Token recovery endpoint and auto-renewal for expired connections
+  - Device exclusion filter added to all 18 pull functions
+  - ScanEvent sync condition fixed to use `createdAtUtc` for accurate syncing
+  - Sync feedback loop fix preventing phantom row creation
+
+### Changed (May 2026)
+- Activity lists sorted by date descending
+- Inter-batch delay increased in online sync to prevent 429 rate limits
+- `sql-wasm` WASM binaries added to laptop public assets for SQLite browser support
 
 ## [1.3.2] - 2026-01-05
 ### Added

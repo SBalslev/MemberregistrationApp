@@ -1,5 +1,14 @@
 # Verification Checklist for Member Registration Feature
 
+> **HISTORICAL DOCUMENT - Architecture Superseded**
+>
+> This checklist was written for the v1.3.0 `NewMemberRegistration` entity approach.
+> The current architecture uses `Member(memberType=TRIAL)` with `internalId` (UUID) as primary key.
+> The `NewMemberRegistration` entity and `RegistrationsPage` approval workflow have been deprecated.
+> See [Enhanced Trial Registration design](docs/features/enhanced-trial-registration/design.md) for current architecture.
+
+---
+
 ## Files to Verify Exist
 
 - [x] app/src/main/java/com/club/medlems/data/entity/Entities.kt (modified)

@@ -211,7 +211,13 @@ Mine resultater (bottom sheet):
 - linkedSessionId (UUID?)
 - canceledFlag (Boolean, default false)
 
-### 4.5 NewMemberRegistration (v1.3.0+)
+### 4.5 NewMemberRegistration (v1.3.0 - Deprecated)
+
+> **Deprecated in v1.4+ (Unreleased).** The `NewMemberRegistration` entity and the associated approval workflow
+> (RegistrationsPage on laptop) have been superseded by the Trial Member architecture.
+> New registrations now create a `Member(memberType=TRIAL)` with an `internalId` (UUID) primary key.
+> The description below documents the original v1.3.x design for historical reference only.
+
 - id (UUID, PK)
 - temporaryId (String) – Format: `NYT-{timestamp}` for tracking before assignment
 - createdAtUtc (Instant)
@@ -225,7 +231,16 @@ Mine resultater (bottom sheet):
 - guardianPhone (String?) – Optional
 - guardianEmail (String?) – Optional
 
-Purpose: Tracks new member registrations awaiting processing. Photos and info files automatically synced to SD card. Local photo copies deleted after 30 days post-sync.
+**Current architecture (v1.4+ Unreleased):** Trial members use `Member(memberType=TRIAL)` with:
+
+- `internalId` (UUID, PK) - permanent identifier
+- `membershipId` (String?) - null until assigned by admin
+- `memberType` (MemberType enum: TRIAL|FULL)
+- `idPhotoPath` (String?) - for adult ID photo
+- Guardian fields stored in `Member` entity directly
+- QR check-in format: `MC:{internalId}`
+
+See `docs/features/enhanced-trial-registration/design.md` for full current specification.
 
 ### 4.6 Potential Future Fields (Phase 2)
 - deletedAtUtc, deletedBy
