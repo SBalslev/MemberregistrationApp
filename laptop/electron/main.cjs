@@ -8,6 +8,11 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+// Disable Chromium disk caches to prevent corruption on unclean shutdown.
+// This app loads a local file so HTTP caching provides no benefit.
+app.commandLine.appendSwitch('disable-http-cache');
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 const express = require('express');
 const cors = require('cors');
 const { Bonjour } = require('bonjour-service');
