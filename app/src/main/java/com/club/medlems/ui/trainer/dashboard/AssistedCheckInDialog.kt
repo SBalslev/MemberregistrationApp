@@ -112,6 +112,7 @@ data class AssistedCheckInState(
     val selectedPracticeType: PracticeType = PracticeType.Riffel,
     val selectedClassification: String? = null,
     val practicePoints: String = "",
+    val practiceKrydser: String = "",
     val isSavingSession: Boolean = false,
     val sessionSaved: Boolean = false,
     val policyWarnings: List<String> = emptyList()
@@ -256,7 +257,7 @@ class AssistedCheckInViewModel @Inject constructor(
     }
 
     fun hidePracticeForm() {
-        _state.value = _state.value.copy(showPracticeForm = false, practicePoints = "")
+        _state.value = _state.value.copy(showPracticeForm = false, practicePoints = "", practiceKrydser = "")
     }
 
     fun selectPracticeType(type: PracticeType) {
@@ -278,6 +279,13 @@ class AssistedCheckInViewModel @Inject constructor(
         }
     }
 
+    fun onKrydserChanged(krydser: String) {
+        // Only allow digits
+        if (krydser.isEmpty() || krydser.all { it.isDigit() }) {
+            _state.value = _state.value.copy(practiceKrydser = krydser)
+        }
+    }
+
     fun savePracticeSession() {
         val member = _state.value.selectedMember ?: return
 
@@ -289,6 +297,7 @@ class AssistedCheckInViewModel @Inject constructor(
                     .toLocalDateTime(TimeZone.currentSystemDefault())
                     .date
                 val points = _state.value.practicePoints.toIntOrNull() ?: 0
+                val krydserVal = _state.value.practiceKrydser.takeIf { it.isNotBlank() }?.toIntOrNull()?.takeIf { it >= 0 }
 
                 // Save last selection for this member
                 lastClassificationStore.set(
@@ -305,7 +314,7 @@ class AssistedCheckInViewModel @Inject constructor(
                     localDate = today,
                     practiceType = _state.value.selectedPracticeType,
                     points = points,
-                    krydser = null,
+                    krydser = krydserVal,
                     classification = _state.value.selectedClassification,
                     source = SessionSource.attendant,
                     deviceId = trustManager.getThisDeviceId(),
@@ -648,15 +657,28 @@ fun AssistedCheckInDialog(
 
                                         Spacer(modifier = Modifier.height(16.dp))
 
-                                        // Points input
-                                        OutlinedTextField(
-                                            value = state.practicePoints,
-                                            onValueChange = { viewModel.onPointsChanged(it) },
-                                            label = { Text("Point (valgfrit)") },
+                                        // Points and Krydser input
+                                        Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            singleLine = true,
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                                        )
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            OutlinedTextField(
+                                                value = state.practicePoints,
+                                                onValueChange = { viewModel.onPointsChanged(it) },
+                                                label = { Text("Point (valgfrit)") },
+                                                modifier = Modifier.weight(1f),
+                                                singleLine = true,
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                            )
+                                            OutlinedTextField(
+                                                value = state.practiceKrydser,
+                                                onValueChange = { viewModel.onKrydserChanged(it) },
+                                                label = { Text("Krydser (valgfrit)") },
+                                                modifier = Modifier.weight(1f),
+                                                singleLine = true,
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                            )
+                                        }
 
                                         Spacer(modifier = Modifier.height(16.dp))
 
