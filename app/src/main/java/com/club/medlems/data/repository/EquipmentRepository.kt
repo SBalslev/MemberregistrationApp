@@ -43,7 +43,7 @@ class EquipmentRepository @Inject constructor(
     companion object {
         private const val TAG = "EquipmentRepository"
     }
-    
+
     // ===== Equipment Item Operations =====
     
     /**
@@ -67,7 +67,7 @@ class EquipmentRepository @Inject constructor(
                     IllegalArgumentException("Equipment with serial number '$serialNumber' already exists")
                 )
             }
-            
+
             val deviceId = trustManager.getThisDeviceId()
             val now = Clock.System.now()
             
@@ -91,7 +91,7 @@ class EquipmentRepository @Inject constructor(
             Result.failure(e)
         }
     }
-    
+
     /**
      * Updates an equipment item.
      */
@@ -106,7 +106,7 @@ class EquipmentRepository @Inject constructor(
             Result.failure(e)
         }
     }
-    
+
     /**
      * Gets all equipment items.
      */
@@ -138,6 +138,40 @@ class EquipmentRepository @Inject constructor(
     suspend fun getEquipmentById(id: String): EquipmentItem? = withContext(Dispatchers.IO) {
         equipmentItemDao.get(id)
     }
+    
+    /**
+     * Gets the active (not yet returned) checkout for an equipment item, if any.
+     * Used by the QR check-in scan flow to resolve the checkout record to close.
+     */
+    suspend fun getActiveCheckoutForEquipment(equipmentId: String): EquipmentCheckout? =
+        withContext(Dispatchers.IO) {
+            equipmentCheckoutDao.getActiveCheckoutForEquipment(equipmentId)
+        }
+    
+    /**
+     * Marks an equipment item's QR/label card as requested (e.g. after a lost
+     * card manual override), mirroring the Member card request flow.
+     */
+    suspend fun requestEquipmentCard(equipmentId: String, deviceId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val item = equipmentItemDao.get(equipmentId)
+                    ?: return@withContext Result.failure(IllegalArgumentException("Equipment not found"))
+                val now = Clock.System.now()
+                equipmentItemDao.update(
+                    item.copy(
+                        cardStatus = "requested",
+                        cardRequestedAtUtc = now.toString(),
+                        cardRequestedByDeviceId = deviceId,
+                        modifiedAtUtc = now
+                    )
+                )
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to request equipment card", e)
+                Result.failure(e)
+            }
+        }
     
     /**
      * Sets equipment to maintenance status.

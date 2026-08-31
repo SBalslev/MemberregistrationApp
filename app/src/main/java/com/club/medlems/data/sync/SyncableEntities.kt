@@ -293,7 +293,14 @@ data class SyncableEquipmentItem(
     val type: EquipmentType,
     val description: String? = null, // max 200 chars
     val status: EquipmentStatus,
-    
+
+    // === QR Code Card Tracking ===
+    val cardStatus: String? = null,
+    val cardFileReference: String? = null,
+    val cardPrintedAtUtc: String? = null,
+    val cardRequestedAtUtc: String? = null,
+    val cardRequestedByDeviceId: String? = null,
+
     // Sync metadata
     override val deviceId: String,
     override val syncVersion: Long,

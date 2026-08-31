@@ -51,6 +51,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.club.medlems.data.entity.EquipmentItem
 import com.club.medlems.data.entity.EquipmentStatus
 import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.MemberType
+import com.club.medlems.ui.common.IdPhotoCaptureOverlay
 
 /**
  * Screen for checking out equipment to a member.
@@ -75,6 +77,7 @@ fun EquipmentCheckoutScreen(
     val availableEquipment by viewModel.availableEquipment.collectAsState()
     val memberSearchResults by viewModel.memberSearchResults.collectAsState()
     val preselectedMember by viewModel.preselectedMember.collectAsState()
+    val trialIdCaptureContext by viewModel.trialIdCaptureContext.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     
@@ -115,6 +118,17 @@ fun EquipmentCheckoutScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.clearError()
         }
+    }
+
+    trialIdCaptureContext?.let { context ->
+        IdPhotoCaptureOverlay(
+            memberName = "${context.member.firstName} ${context.member.lastName}".trim(),
+            onPhotoTaken = { photoPath ->
+                viewModel.completeTrialIdCapture(photoPath)
+            },
+            onCancel = { viewModel.cancelTrialIdCapture() }
+        )
+        return
     }
     
     Scaffold(
@@ -245,15 +259,24 @@ fun EquipmentCheckoutScreen(
                 modifier = Modifier.fillMaxWidth(),
                 supportingText = { Text("${notes.length}/500") }
             )
+
+            if (selectedMember?.memberType == MemberType.TRIAL && selectedMember?.idPhotoPath.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Prøvemedlem uden ID-billede: Kamera åbnes ved udlån",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
             
             Spacer(modifier = Modifier.weight(1f))
             
             // Checkout Button
             Button(
                 onClick = {
-                    viewModel.checkoutEquipment(
+                    viewModel.checkoutEquipmentForMember(
                         equipmentId = selectedEquipment!!.id,
-                        membershipId = selectedMember!!.membershipId ?: selectedMember!!.internalId,
+                        member = selectedMember!!,
                         notes = notes.ifEmpty { null }
                     )
                 },
@@ -278,7 +301,7 @@ fun EquipmentCheckoutScreen(
 }
 
 @Composable
-private fun SelectedEquipmentCard(
+internal fun SelectedEquipmentCard(
     equipment: EquipmentItem,
     onClear: () -> Unit
 ) {
@@ -351,7 +374,7 @@ private fun EquipmentSelectionCard(
 }
 
 @Composable
-private fun SelectedMemberCard(
+internal fun SelectedMemberCard(
     member: Member,
     onClear: () -> Unit
 ) {
@@ -395,7 +418,7 @@ private fun SelectedMemberCard(
 }
 
 @Composable
-private fun MemberSelectionCard(
+internal fun MemberSelectionCard(
     member: Member,
     onSelect: () -> Unit
 ) {

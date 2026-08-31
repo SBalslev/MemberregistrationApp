@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -72,7 +73,8 @@ import com.club.medlems.data.entity.EquipmentStatus
 fun EquipmentListScreen(
     viewModel: EquipmentViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit,
-    onNavigateToCheckout: (String) -> Unit
+    onNavigateToCheckout: (String) -> Unit,
+    onNavigateToScanCheckout: () -> Unit = {}
 ) {
     val equipment by viewModel.allEquipment.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
@@ -99,6 +101,11 @@ fun EquipmentListScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onNavigateToScanCheckout) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan udlån")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

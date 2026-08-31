@@ -3,6 +3,7 @@ package com.club.medlems.domain
 object QrParser {
     private val idRegex = Regex("id=([0-9]+)")
     private val trialMemberPrefix = "MC:"
+    private val equipmentPrefix = "EQ:"
     
     /**
      * Extracts member ID from QR code content.
@@ -25,4 +26,19 @@ object QrParser {
     /** @deprecated Use extractMemberId instead */
     @Deprecated("Use extractMemberId", ReplaceWith("extractMemberId(raw)"))
     fun extractMembershipId(raw: String): String? = extractMemberId(raw)
+
+    /**
+     * Extracts an equipment item ID from QR code content.
+     * Expected format: "EQ:uuid-here" → "uuid-here" (EquipmentItem.id)
+     *
+     * Returns null if the scanned code isn't an equipment QR code (e.g. it's a
+     * member card), allowing callers to fall back accordingly.
+     */
+    fun extractEquipmentId(raw: String): String? {
+        if (!raw.startsWith(equipmentPrefix)) return null
+        return raw.removePrefix(equipmentPrefix).trim().takeIf { it.isNotEmpty() }
+    }
+
+    /** Builds the QR string content to encode for a given equipment item ID. */
+    fun buildEquipmentQrContent(equipmentId: String): String = "$equipmentPrefix$equipmentId"
 }
