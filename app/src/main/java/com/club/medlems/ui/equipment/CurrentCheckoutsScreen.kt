@@ -102,10 +102,10 @@ fun CurrentCheckoutsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Current Checkouts") },
+                title = { Text("Aktive udl\u00e5n") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Tilbage")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -127,7 +127,7 @@ fun CurrentCheckoutsScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Active (${checkoutDetails.size})") }
+                    text = { Text("Aktive (${checkoutDetails.size})") }
                 )
                 Tab(
                     selected = selectedTab == 1,
@@ -139,10 +139,10 @@ fun CurrentCheckoutsScreen(
                                     Badge { Text("${pendingConflicts.size}") }
                                 }
                             ) {
-                                Text("Conflicts")
+                                Text("Konflikter")
                             }
                         } else {
-                            Text("Conflicts")
+                            Text("Konflikter")
                         }
                     }
                 )
@@ -209,7 +209,7 @@ private fun ActiveCheckoutsList(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "No active checkouts",
+                    "Ingen aktive udl\u00e5n",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -291,7 +291,7 @@ private fun CheckoutCard(
             
             // Checkout Time
             Text(
-                text = "Checked out: $checkedOutTime",
+                text = "Udl\u00e5nt: $checkedOutTime",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -299,7 +299,7 @@ private fun CheckoutCard(
             if (checkout.checkout.checkoutNotes != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Notes: ${checkout.checkout.checkoutNotes}",
+                    text = "Noter: ${checkout.checkout.checkoutNotes}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -314,7 +314,7 @@ private fun CheckoutCard(
             ) {
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Return Equipment")
+                Text("Returner udstyr")
             }
         }
     }
@@ -339,7 +339,7 @@ private fun ConflictsList(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "No pending conflicts",
+                    "Ingen afventende konflikter",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -384,7 +384,7 @@ private fun ConflictCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Checkout Conflict",
+                    text = "Konflikt ved udl\u00e5n",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer
@@ -394,19 +394,19 @@ private fun ConflictCard(
             Spacer(modifier = Modifier.height(12.dp))
             
             Text(
-                text = "Equipment: ${conflict.equipmentId}",
+                text = "Udstyr: ${conflict.equipmentId}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             Text(
-                text = "Member: ${conflict.membershipId}",
+                text = "Medlem: ${conflict.membershipId}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             
             if (conflict.conflictResolutionNotes != null) {
                 Text(
-                    text = "Notes: ${conflict.conflictResolutionNotes}",
+                    text = "Noter: ${conflict.conflictResolutionNotes}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
                 )
@@ -418,7 +418,7 @@ private fun ConflictCard(
                 onClick = onResolve,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Resolve Conflict")
+                Text("L\u00f8s konflikt")
             }
         }
     }
@@ -434,19 +434,19 @@ private fun CheckinDialog(
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Return Equipment") },
+        title = { Text("Returner udstyr") },
         text = {
             Column {
-                Text("Returning: ${checkout.equipment.serialNumber}")
+                Text("Returnerer: ${checkout.equipment.serialNumber}")
                 Text(
-                    "From: ${checkout.member.firstName} ${checkout.member.lastName}",
+                    "Fra: ${checkout.member.firstName} ${checkout.member.lastName}",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it.take(500) },
-                    label = { Text("Return notes (optional)") },
+                    label = { Text("Returnoter (valgfri)") },
                     maxLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -454,12 +454,12 @@ private fun CheckinDialog(
         },
         confirmButton = {
             Button(onClick = { onConfirm(notes.ifEmpty { null }) }) {
-                Text("Confirm Return")
+                Text("Bekr\u00e6ft returnering")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Annuller")
             }
         }
     )
@@ -476,27 +476,27 @@ private fun ConflictResolutionDialog(
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Resolve Conflict") },
+        title = { Text("L\u00f8s konflikt") },
         text = {
             Column {
                 Text(
-                    "This checkout conflicts with another checkout made on a different device while offline.",
+                    "Dette udl\u00e5n er i konflikt med et andet udl\u00e5n foretaget p\u00e5 en anden enhed, mens den var offline.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Equipment: ${checkout.equipmentId}",
+                    "Udstyr: ${checkout.equipmentId}",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
-                    "Member: ${checkout.membershipId}",
+                    "Medlem: ${checkout.membershipId}",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it.take(500) },
-                    label = { Text("Resolution notes (optional)") },
+                    label = { Text("Note om l\u00f8sning (valgfri)") },
                     maxLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -504,12 +504,12 @@ private fun ConflictResolutionDialog(
         },
         confirmButton = {
             Button(onClick = { onKeep(notes.ifEmpty { null }) }) {
-                Text("Keep This Checkout")
+                Text("Behold dette udl\u00e5n")
             }
         },
         dismissButton = {
             TextButton(onClick = { onCancel(notes.ifEmpty { null }) }) {
-                Text("Cancel This Checkout")
+                Text("Annuller dette udl\u00e5n")
             }
         }
     )

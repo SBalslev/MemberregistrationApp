@@ -1,6 +1,6 @@
 # Distributed Membership Management System - Design Document
 
-**Last Updated:** 2026-02-23
+**Last Updated:** 2026-09-01
 **Updated By:** sbalslev
 
 ## Introduction/Overview
@@ -138,6 +138,8 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 **FR-5.4** A member SHALL be limited to checking out one equipment item at a time.
 
+**FR-5.13** Trainer Tablet SHALL allow editing an existing equipment item's serial number, category, and description.
+
 **FR-5.5** Trainer Tablet SHALL display all currently checked-out equipment with member names.
 
 **FR-5.6** Trainer Tablet SHALL allow checking in (returning) equipment from members.
@@ -192,7 +194,9 @@ As a club member or admin, I want to see practice sessions recorded across all d
 
 - `id: UUID` - Auto-generated unique identifier
 - `serialNumber: String` - Human-readable identifier, manually entered, required
-- `type: EquipmentType` - Enum (TrainingMaterial, initially; extensible for future types)
+- `type: EquipmentType` - Required category selected during registration:
+  Pistol, LuftPistol, LuftRiffel, Riffel, Langdistance, or Andet.
+  TrainingMaterial remains supported for existing records.
 - `description: String` - Max 200 characters, optional
 - `status: EquipmentStatus` - Enum (Available, CheckedOut, Maintenance, Retired)
 - `deviceId: String` - Device that created this equipment item
@@ -681,8 +685,13 @@ data class EquipmentItem(
 )
 
 enum class EquipmentType {
-    TRAINING_MATERIAL
-    // Future: PROTECTIVE_GEAR, RANGE_EQUIPMENT, etc.
+    TRAINING_MATERIAL,
+    PISTOL,
+    AIR_PISTOL,
+    AIR_RIFLE,
+    RIFLE,
+    LONG_DISTANCE,
+    OTHER
 }
 
 enum class EquipmentStatus {

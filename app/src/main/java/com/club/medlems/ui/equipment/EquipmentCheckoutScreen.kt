@@ -204,7 +204,7 @@ fun EquipmentCheckoutScreen(
                                 memberSearchQuery = ""
                                 viewModel.clearMemberSearch()
                             }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                Icon(Icons.Default.Clear, contentDescription = "Ryd")
                             }
                         }
                     },

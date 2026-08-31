@@ -18,6 +18,17 @@ interface EquipmentWithCheckout extends EquipmentItem {
   };
 }
 
+const equipmentTypeLabels: Record<string, string> = {
+  TrainingMaterial: 'Tr\u00e6ningsmateriale',
+  TRAINING_MATERIAL: 'Tr\u00e6ningsmateriale',
+  PISTOL: 'Pistol',
+  AIR_PISTOL: 'Luftpistol',
+  AIR_RIFLE: 'Luftriffel',
+  RIFLE: 'Riffel',
+  LONG_DISTANCE: 'Langdistance',
+  OTHER: 'Andet'
+};
+
 export function EquipmentPage() {
   const [equipment, setEquipment] = useState<EquipmentWithCheckout[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -190,6 +201,9 @@ export function EquipmentPage() {
                       </div>
                       <div>
                         <div className="font-medium text-gray-900">{item.name}</div>
+                        <div className="text-sm text-gray-500">
+                          {equipmentTypeLabels[item.equipmentType ?? item.type] ?? item.equipmentType ?? item.type}
+                        </div>
                         {item.serialNumber && (
                           <div className="text-sm text-gray-500">SN: {item.serialNumber}</div>
                         )}
@@ -242,7 +256,9 @@ export function EquipmentPage() {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{selectedItem.name}</h2>
-                <p className="text-gray-500">{selectedItem.equipmentType}</p>
+                <p className="text-gray-500">
+                  {equipmentTypeLabels[selectedItem.equipmentType ?? selectedItem.type] ?? selectedItem.equipmentType ?? selectedItem.type}
+                </p>
               </div>
             </div>
 

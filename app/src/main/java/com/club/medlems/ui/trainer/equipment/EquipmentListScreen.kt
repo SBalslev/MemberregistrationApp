@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.tooling.preview.Preview
 import com.club.medlems.data.entity.EquipmentStatus
+import com.club.medlems.data.entity.EquipmentType
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.PracticeType
 import kotlinx.datetime.Instant
@@ -110,7 +111,7 @@ fun EquipmentListScreen(
         onSearchMembers = { viewModel.searchMembers(it) },
         onCheckoutEquipment = { id, member -> viewModel.checkoutEquipment(id, member) },
         onBatchCheckinAll = { viewModel.batchCheckinAll() },
-        onCreateEquipment = { sn, desc, disc -> viewModel.createEquipment(sn, desc, disc) },
+        onCreateEquipment = { sn, type, desc, disc -> viewModel.createEquipment(sn, desc, disc, type) },
         onClearSuccessMessage = { viewModel.clearSuccessMessage() },
         onClearError = { viewModel.clearError() },
     )
@@ -134,7 +135,7 @@ private fun EquipmentListContent(
     onSearchMembers: (String) -> Unit,
     onCheckoutEquipment: (String, Member) -> Unit,
     onBatchCheckinAll: () -> Unit,
-    onCreateEquipment: (String, String?, PracticeType?) -> Unit,
+    onCreateEquipment: (String, EquipmentType, String?, PracticeType?) -> Unit,
     onClearSuccessMessage: () -> Unit,
     onClearError: () -> Unit,
 ) {
@@ -242,8 +243,8 @@ private fun EquipmentListContent(
         AddEquipmentDialog(
             initialSerialNumber = prefillSerialNumber,
             onDismiss = { showAddDialog = false; prefillSerialNumber = "" },
-            onAdd = { serialNumber, description, discipline ->
-                onCreateEquipment(serialNumber, description, discipline)
+            onAdd = { serialNumber, type, description, discipline ->
+                onCreateEquipment(serialNumber, type, description, discipline)
                 showAddDialog = false
                 prefillSerialNumber = ""
             }
@@ -597,6 +598,11 @@ private fun EquipmentItemCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+                Text(
+                    text = getEquipmentTypeDisplayName(item.equipment.type),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
                 if (item.equipment.description != null) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -730,10 +736,12 @@ private fun StatusBadge(status: EquipmentStatus) {
 private fun AddEquipmentDialog(
     initialSerialNumber: String = "",
     onDismiss: () -> Unit,
-    onAdd: (serialNumber: String, description: String?, discipline: PracticeType?) -> Unit
+    onAdd: (serialNumber: String, type: EquipmentType, description: String?, discipline: PracticeType?) -> Unit
 ) {
     var serialNumber by remember { mutableStateOf(initialSerialNumber) }
+    var selectedType by remember { mutableStateOf<EquipmentType?>(null) }
     var description by remember { mutableStateOf("") }
+    var showTypeDropdown by remember { mutableStateOf(false) }
     var selectedDiscipline by remember { mutableStateOf<PracticeType?>(null) }
     var showDisciplineDropdown by remember { mutableStateOf(false) }
 
@@ -749,6 +757,39 @@ private fun AddEquipmentDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                Box {
+                    OutlinedTextField(
+                        value = selectedType?.let { getEquipmentTypeDisplayName(it) } ?: "",
+                        onValueChange = { },
+                        label = { Text("Kategori *") },
+                        readOnly = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showTypeDropdown = true }
+                    )
+                    DropdownMenu(
+                        expanded = showTypeDropdown,
+                        onDismissRequest = { showTypeDropdown = false }
+                    ) {
+                        listOf(
+                            EquipmentType.Pistol,
+                            EquipmentType.LuftPistol,
+                            EquipmentType.LuftRiffel,
+                            EquipmentType.Riffel,
+                            EquipmentType.Langdistance,
+                            EquipmentType.Andet
+                        ).forEach { type ->
+                            DropdownMenuItem(
+                                text = { Text(getEquipmentTypeDisplayName(type)) },
+                                onClick = {
+                                    selectedType = type
+                                    showTypeDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = description,
@@ -798,13 +839,15 @@ private fun AddEquipmentDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    val type = requireNotNull(selectedType)
                     onAdd(
                         serialNumber.trim(),
+                        type,
                         description.trim().ifEmpty { null },
                         selectedDiscipline
                     )
                 },
-                enabled = serialNumber.isNotBlank()
+                enabled = serialNumber.isNotBlank() && selectedType != null
             ) {
                 Text("Tilf\u00f8j")
             }
@@ -815,6 +858,18 @@ private fun AddEquipmentDialog(
             }
         }
     )
+}
+
+private fun getEquipmentTypeDisplayName(type: EquipmentType): String {
+    return when (type) {
+        EquipmentType.TrainingMaterial -> "Tr\u00e6ningsmateriale"
+        EquipmentType.Pistol -> "Pistol"
+        EquipmentType.LuftPistol -> "Luftpistol"
+        EquipmentType.LuftRiffel -> "Luftriffel"
+        EquipmentType.Riffel -> "Riffel"
+        EquipmentType.Langdistance -> "Langdistance"
+        EquipmentType.Andet -> "Andet"
+    }
 }
 
 private fun formatInstant(instant: Instant): String {
@@ -849,7 +904,7 @@ private fun EquipmentListPreviewEmpty() {
         onQuickCheckin = {}, onStartQuickCheckout = {},
         onCancelQuickCheckout = {}, onClearMemberSearch = {},
         onSearchMembers = {}, onCheckoutEquipment = { _, _ -> },
-        onBatchCheckinAll = {}, onCreateEquipment = { _, _, _ -> },
+        onBatchCheckinAll = {}, onCreateEquipment = { _, _, _, _ -> },
         onClearSuccessMessage = {}, onClearError = {},
     )
 }
@@ -889,7 +944,7 @@ private fun EquipmentListPreviewWithItems() {
         onQuickCheckin = {}, onStartQuickCheckout = {},
         onCancelQuickCheckout = {}, onClearMemberSearch = {},
         onSearchMembers = {}, onCheckoutEquipment = { _, _ -> },
-        onBatchCheckinAll = {}, onCreateEquipment = { _, _, _ -> },
+        onBatchCheckinAll = {}, onCreateEquipment = { _, _, _, _ -> },
         onClearSuccessMessage = {}, onClearError = {},
     )
 }

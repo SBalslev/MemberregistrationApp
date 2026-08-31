@@ -237,7 +237,8 @@ class EquipmentManagementViewModel @Inject constructor(
     fun createEquipment(
         serialNumber: String,
         description: String? = null,
-        discipline: PracticeType? = null
+        discipline: PracticeType? = null,
+        type: EquipmentType = EquipmentType.TrainingMaterial
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
@@ -258,7 +259,7 @@ class EquipmentManagementViewModel @Inject constructor(
                 val item = EquipmentItem(
                     id = UUID.randomUUID().toString(),
                     serialNumber = serialNumber.trim(),
-                    type = EquipmentType.TrainingMaterial,
+                    type = type,
                     description = description?.trim()?.take(200)?.ifEmpty { null },
                     status = EquipmentStatus.Available,
                     discipline = discipline,

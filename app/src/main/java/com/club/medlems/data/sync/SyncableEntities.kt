@@ -234,14 +234,19 @@ data class SyncableNewMemberRegistration(
 
 /**
  * Equipment type categorization.
- * Initially only TRAINING_MATERIAL, extensible for future types.
+ * Includes the legacy training material value and selectable firearm categories.
  *
  * @see [design.md FR-8.2] - EquipmentItem schema
  */
 @Serializable
 enum class EquipmentType {
-    TRAINING_MATERIAL
-    // Future: PROTECTIVE_GEAR, RANGE_EQUIPMENT, etc.
+    TRAINING_MATERIAL,
+    PISTOL,
+    AIR_PISTOL,
+    AIR_RIFLE,
+    RIFLE,
+    LONG_DISTANCE,
+    OTHER
 }
 
 /**

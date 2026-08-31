@@ -233,7 +233,13 @@ enum class EquipmentStatus {
 /** Equipment type category */
 enum class EquipmentType { 
     /** Training materials (targets, stands, etc.) */
-    TrainingMaterial 
+    TrainingMaterial,
+    Pistol,
+    LuftPistol,
+    LuftRiffel,
+    Riffel,
+    Langdistance,
+    Andet
 }
 
 /** Conflict resolution status for equipment checkouts */

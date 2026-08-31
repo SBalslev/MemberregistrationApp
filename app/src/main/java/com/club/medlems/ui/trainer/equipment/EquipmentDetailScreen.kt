@@ -677,6 +677,12 @@ private fun getDisciplineDisplayName(discipline: PracticeType): String {
 private fun getEquipmentTypeDisplayName(type: String): String {
     return when (type) {
         "TrainingMaterial" -> "Tr\u00e6ningsmateriale"
+        "Pistol" -> "Pistol"
+        "LuftPistol" -> "Luftpistol"
+        "LuftRiffel" -> "Luftriffel"
+        "Riffel" -> "Riffel"
+        "Langdistance" -> "Langdistance"
+        "Andet" -> "Andet"
         else -> type
     }
 }

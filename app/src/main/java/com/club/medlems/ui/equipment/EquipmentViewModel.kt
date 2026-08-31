@@ -99,13 +99,49 @@ class EquipmentViewModel @Inject constructor(
                 onSuccess = {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        successMessage = "Equipment '$serialNumber' added"
+                        successMessage = "Udstyr '$serialNumber' tilf\u00f8jet"
                     )
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = error.message ?: "Failed to create equipment"
+                        error = error.message ?: "Kunne ikke oprette udstyr"
+                    )
+                }
+            )
+        }
+    }
+    
+    /**
+     * Updates an existing equipment item's details.
+     */
+    fun updateEquipment(
+        item: EquipmentItem,
+        serialNumber: String,
+        type: EquipmentType,
+        description: String?
+    ) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            
+            val updatedItem = item.copy(
+                serialNumber = serialNumber.trim(),
+                type = type,
+                description = description?.take(200)
+            )
+            val result = equipmentRepository.updateEquipmentItem(updatedItem)
+            
+            result.fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        successMessage = "Udstyr '$serialNumber' opdateret"
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = error.message ?: "Kunne ikke opdatere udstyr"
                     )
                 }
             )
@@ -149,13 +185,13 @@ class EquipmentViewModel @Inject constructor(
                 onSuccess = {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        successMessage = "Equipment checked out successfully"
+                        successMessage = "Udstyr udl\u00e5nt"
                     )
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = error.message ?: "Failed to checkout equipment"
+                        error = error.message ?: "Kunne ikke udl\u00e5ne udstyr"
                     )
                 }
             )
@@ -175,13 +211,13 @@ class EquipmentViewModel @Inject constructor(
                 onSuccess = {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        successMessage = "Equipment returned successfully"
+                        successMessage = "Udstyr returneret"
                     )
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = error.message ?: "Failed to return equipment"
+                        error = error.message ?: "Kunne ikke returnere udstyr"
                     )
                 }
             )

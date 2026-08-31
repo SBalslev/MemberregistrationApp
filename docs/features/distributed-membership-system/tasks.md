@@ -2,11 +2,18 @@
 
 > **Design Document**: [design.md](design.md)
 > **Created**: January 14, 2026
-> **Last Updated**: February 2, 2026 by sbalslev
+> **Last Updated**: August 31, 2026 by sbalslev
 > **Overall Progress**: ~100% complete (34/34 parent tasks, 196/196 sub-tasks)
 
 ## Maintenance updates
 
+- [x] M-2026-08-31 Add equipment categories
+  - **Started**: 2026-08-31 20:42:09 UTC+2
+  - **Completed**: 2026-08-31 21:01:26 UTC+2
+  - **Duration**: 19m
+  - **Notes**: Added required category selection for Pistol, Luftpistol,
+    Luftriffel, Riffel, Langdistance, and Andet. Categories persist locally
+    and sync through laptop and online storage.
 - [x] M-2026-02-23 Add email export for member list
   - **Started**: 2026-02-23 10:00:00 UTC+1
   - **Completed**: 2026-02-23 10:25:00 UTC+1
@@ -431,7 +438,7 @@ New module for equipment checkout/check-in functionality.
     - `EquipmentRepository.kt` - Business logic layer
   - **Relevant Documentation:**
     - `/docs/features/distributed-membership-system/design.md` - FR-8.2, FR-8.3 (EquipmentItem, EquipmentCheckout schemas)
-  - [x] 9.1 Create EquipmentType enum (TRAINING_MATERIAL with room for future expansion)
+  - [x] 9.1 Create EquipmentType enum (legacy TRAINING_MATERIAL plus selectable firearm categories)
     - **Completed**: 2026-01-14 17:35:00 UTC+1
     - Defined in Entities.kt
   - [x] 9.2 Create EquipmentStatus enum (AVAILABLE, CHECKED_OUT, MAINTENANCE, RETIRED)
