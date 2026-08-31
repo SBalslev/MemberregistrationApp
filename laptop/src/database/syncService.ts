@@ -1318,8 +1318,8 @@ export function ensurePracticeSessionDeletionTable(): void {
  */
 async function processEquipmentItem(item: SyncableEquipmentItem): Promise<boolean> {
   // Check if already exists
-  const existing = query<{ id: string; syncVersion: number }>(
-    'SELECT id, syncVersion FROM EquipmentItem WHERE id = ?',
+  const existing = query<{ id: string; syncVersion: number; modifiedAtUtc: string }>(
+    'SELECT id, syncVersion, modifiedAtUtc FROM EquipmentItem WHERE id = ?',
     [item.id]
   );
   
@@ -1327,7 +1327,12 @@ async function processEquipmentItem(item: SyncableEquipmentItem): Promise<boolea
   
   if (existing.length > 0) {
     // Check if we should update (newer sync version)
-    if (existing[0].syncVersion >= item.syncVersion) {
+    const isNewerVersion = item.syncVersion > existing[0].syncVersion;
+    const isLegacyUnsyncedUpdate = item.syncVersion === 0 &&
+      item.syncedAtUtc == null &&
+      Date.parse(item.modifiedAtUtc) > Date.parse(existing[0].modifiedAtUtc);
+
+    if (!isNewerVersion && !isLegacyUnsyncedUpdate) {
       return false; // Our version is same or newer
     }
     

@@ -314,7 +314,7 @@ private fun CheckoutCard(
             ) {
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Returner udstyr")
+                Text("Returnér udstyr")
             }
         }
     }
@@ -434,7 +434,7 @@ private fun CheckinDialog(
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Returner udstyr") },
+        title = { Text("Returnér udstyr") },
         text = {
             Column {
                 Text("Returnerer: ${checkout.equipment.serialNumber}")
@@ -446,7 +446,7 @@ private fun CheckinDialog(
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it.take(500) },
-                    label = { Text("Returnoter (valgfri)") },
+                    label = { Text("Bemærkning ved returnering (valgfri)") },
                     maxLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )

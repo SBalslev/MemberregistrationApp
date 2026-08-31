@@ -158,6 +158,14 @@ export function queueEquipmentCheckout(checkout: object, operation: 'INSERT' | '
 }
 
 /**
+ * Queues an EquipmentItem entity for sync.
+ */
+export function queueEquipmentItem(item: object, operation: 'INSERT' | 'UPDATE' = 'INSERT'): string {
+  const id = (item as { id?: string }).id || '';
+  return queueForSync('EquipmentItem', id, operation, item);
+}
+
+/**
  * Payload for member deletion sync.
  */
 export interface MemberDeletionPayload {
@@ -547,6 +555,7 @@ export function collectEntitiesForDevice(deviceId: string): {
   checkIns: object[];
   practiceSessions: object[];
   practiceSessionDeletions: PracticeSessionDeletionPayload[];
+  equipmentItems: object[];
   equipmentCheckouts: object[];
 } {
   const entries = getPendingForDevice(deviceId);
@@ -558,6 +567,7 @@ export function collectEntitiesForDevice(deviceId: string): {
     checkIns: [] as object[],
     practiceSessions: [] as object[],
     practiceSessionDeletions: [] as PracticeSessionDeletionPayload[],
+    equipmentItems: [] as object[],
     equipmentCheckouts: [] as object[],
   };
 
@@ -586,6 +596,9 @@ export function collectEntitiesForDevice(deviceId: string): {
           } else {
             result.practiceSessions.push(entity);
           }
+          break;
+        case 'EquipmentItem':
+          result.equipmentItems.push(entity);
           break;
         case 'EquipmentCheckout':
           result.equipmentCheckouts.push(entity);

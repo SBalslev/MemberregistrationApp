@@ -399,7 +399,7 @@ interface EquipmentItemDao {
     @Query("SELECT * FROM EquipmentItem WHERE status = :status ORDER BY serialNumber ASC")
     fun itemsByStatusFlow(status: EquipmentStatus): Flow<List<EquipmentItem>>
     
-    @Query("UPDATE EquipmentItem SET status = :status, modifiedAtUtc = :modifiedAt WHERE id = :id")
+    @Query("UPDATE EquipmentItem SET status = :status, modifiedAtUtc = :modifiedAt, syncVersion = syncVersion + 1, syncedAtUtc = NULL WHERE id = :id")
     suspend fun updateStatus(id: String, status: EquipmentStatus, modifiedAt: Instant)
     
     @Delete
@@ -409,7 +409,7 @@ interface EquipmentItemDao {
     suspend fun deleteAll()
     
     // Sync-related queries
-    @Query("UPDATE EquipmentItem SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
+    @Query("UPDATE EquipmentItem SET syncedAtUtc = :syncedAt WHERE id = :id")
     suspend fun markSynced(id: String, syncedAt: Instant)
     
     @Query("SELECT * FROM EquipmentItem WHERE syncedAtUtc IS NULL")
@@ -460,7 +460,7 @@ interface EquipmentCheckoutDao {
     suspend fun checkoutHistoryForMember(internalMemberId: String): List<EquipmentCheckout>
     
     /** Check in equipment (record return) */
-    @Query("UPDATE EquipmentCheckout SET checkedInAtUtc = :checkedInAt, checkedInByDeviceId = :deviceId, checkinNotes = :notes, modifiedAtUtc = :modifiedAt WHERE id = :id")
+    @Query("UPDATE EquipmentCheckout SET checkedInAtUtc = :checkedInAt, checkedInByDeviceId = :deviceId, checkinNotes = :notes, modifiedAtUtc = :modifiedAt, syncVersion = syncVersion + 1, syncedAtUtc = NULL WHERE id = :id")
     suspend fun checkIn(id: String, checkedInAt: Instant, deviceId: String, notes: String?, modifiedAt: Instant)
     
     /** Get checkouts with conflicts */
@@ -476,7 +476,7 @@ interface EquipmentCheckoutDao {
     fun getPendingConflictsFlow(): Flow<List<EquipmentCheckout>>
     
     /** Resolve a conflict */
-    @Query("UPDATE EquipmentCheckout SET conflictStatus = :status, conflictResolutionNotes = :notes, modifiedAtUtc = :modifiedAt WHERE id = :id")
+    @Query("UPDATE EquipmentCheckout SET conflictStatus = :status, conflictResolutionNotes = :notes, modifiedAtUtc = :modifiedAt, syncVersion = syncVersion + 1, syncedAtUtc = NULL WHERE id = :id")
     suspend fun resolveConflict(id: String, status: ConflictStatus, notes: String?, modifiedAt: Instant)
     
     @Delete
@@ -493,7 +493,7 @@ interface EquipmentCheckoutDao {
     suspend fun recentCheckouts(limit: Int): List<EquipmentCheckout>
 
     // Sync-related queries
-    @Query("UPDATE EquipmentCheckout SET syncedAtUtc = :syncedAt, syncVersion = syncVersion + 1 WHERE id = :id")
+    @Query("UPDATE EquipmentCheckout SET syncedAtUtc = :syncedAt WHERE id = :id")
     suspend fun markSynced(id: String, syncedAt: Instant)
 
     @Query("SELECT * FROM EquipmentCheckout WHERE syncedAtUtc IS NULL")

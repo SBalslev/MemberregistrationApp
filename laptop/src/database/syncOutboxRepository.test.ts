@@ -83,7 +83,7 @@ vi.mock('./db', () => {
       // Track INSERT operations
       if (sql.includes('INSERT INTO SyncOutbox') && !sql.includes('Delivery') && !sql.includes('ProcessedSyncMessage')) {
         const [id, entityType, entityId, operation, payload, createdAtUtc] = (params ?? []) as Array<string | undefined>;
-        if (!id || !entityType || !entityId || !operation || !payload) {
+        if (!id || !entityType || entityId === undefined || !operation || !payload) {
           return { changes: 1 };
         }
         mockOutboxEntries.set(id as string, {
@@ -267,6 +267,7 @@ import {
   queueMember,
   queueCheckIn,
   queuePracticeSession,
+  queueEquipmentItem,
   queueEquipmentCheckout,
   getPendingForDevice,
   getPendingCount,
@@ -385,6 +386,17 @@ describe('Sync Outbox Repository', () => {
       const entry = getOutboxEntry('mock-uuid-12345');
       expect(entry.entityType).toBe('EquipmentCheckout');
       expect(entry.entityId).toBe('checkout-1');
+    });
+
+    it('should queue an EquipmentItem update for sync', () => {
+      const item = { id: 'eq-1', serialNumber: 'SN-1', status: 'MAINTENANCE' };
+      queueEquipmentItem(item, 'UPDATE');
+
+      const entry = getOutboxEntry('mock-uuid-12345');
+      expect(entry.entityType).toBe('EquipmentItem');
+      expect(entry.entityId).toBe('eq-1');
+      expect(entry.operation).toBe('UPDATE');
+      expect(JSON.parse(entry.payload)).toEqual(item);
     });
   });
 
@@ -719,15 +731,25 @@ describe('Sync Outbox Repository', () => {
         status: 'pending',
         attempts: 0,
       });
+      mockOutboxEntries.set('equipment-entry', {
+        id: 'equipment-entry',
+        entityType: 'EquipmentItem',
+        entityId: 'eq-1',
+        operation: 'UPDATE',
+        payload: JSON.stringify({ id: 'eq-1', status: 'MAINTENANCE' }),
+        status: 'pending',
+        attempts: 0,
+      });
     });
 
     it('should collect and group entities by type', () => {
       const result = collectEntitiesForDevice('tablet-1');
 
-      expect(result.outboxIds).toHaveLength(4);
+      expect(result.outboxIds).toHaveLength(5);
       expect(result.members).toHaveLength(1);
       expect(result.checkIns).toHaveLength(1);
       expect(result.practiceSessions).toHaveLength(1);
+      expect(result.equipmentItems).toEqual([{ id: 'eq-1', status: 'MAINTENANCE' }]);
       expect(result.equipmentCheckouts).toHaveLength(1);
     });
 
@@ -749,7 +771,7 @@ describe('Sync Outbox Repository', () => {
 
       const result = collectEntitiesForDevice('tablet-1');
 
-      expect(result.outboxIds).toHaveLength(3); // Excludes member entry
+      expect(result.outboxIds).toHaveLength(4); // Excludes member entry
       expect(result.members).toHaveLength(0);
       expect(result.checkIns).toHaveLength(1);
     });
@@ -816,9 +838,9 @@ describe('Sync Outbox Edge Cases', () => {
 
   it('should handle missing internalId in member', () => {
     const member = { firstName: 'No', lastName: 'Id' } as unknown as Member; // No internalId
-    queueMember(member);
+    const outboxId = queueMember(member);
 
-    const entry = getOutboxEntry('mock-uuid-12345');
+    const entry = getOutboxEntry(outboxId);
     expect(entry.entityId).toBe(''); // Empty string for missing ID
   });
 

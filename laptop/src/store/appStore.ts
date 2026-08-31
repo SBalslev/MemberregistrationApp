@@ -253,6 +253,7 @@ export const useAppStore = create<AppState>((set) => ({
               memberDeletions,
               checkIns: outboxData.checkIns || [],
               practiceSessions: outboxData.practiceSessions || [],
+              equipmentItems: outboxData.equipmentItems || [],
               equipmentCheckouts: outboxData.equipmentCheckouts || [],
               trainerInfos,
               trainerDisciplines,

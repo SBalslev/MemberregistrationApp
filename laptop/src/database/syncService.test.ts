@@ -628,6 +628,41 @@ describe('Equipment Sync Operations', () => {
       expect(incomingItem.syncVersion > existing[0].syncVersion).toBe(false);
       // In real code, this would be SKIPPED
     });
+
+    it('should recover a newer unsynced legacy maintenance update', async () => {
+      vi.mocked(query).mockReturnValueOnce([{
+        id: 'eq-legacy',
+        syncVersion: 0,
+        modifiedAtUtc: '2026-08-31T18:38:06.212Z',
+      }]);
+
+      await processSyncPayload({
+        schemaVersion: '1.8.0',
+        deviceId: 'trainer-1',
+        deviceType: 'TRAINER_TABLET',
+        timestamp: '2026-08-31T18:38:30.000Z',
+        entities: {
+          equipmentItems: [{
+            id: 'eq-legacy',
+            serialNumber: '1394545',
+            type: 'TRAINING_MATERIAL',
+            status: 'MAINTENANCE',
+            deviceId: 'trainer-1',
+            syncVersion: 0,
+            createdAtUtc: '2026-08-31T18:38:06.212Z',
+            modifiedAtUtc: '2026-08-31T18:38:22.155Z',
+            syncedAtUtc: null,
+          }],
+        },
+      });
+
+      const updateCall = vi.mocked(execute).mock.calls.find(([sql]) =>
+        typeof sql === 'string' && sql.includes('UPDATE EquipmentItem SET')
+      );
+
+      expect(updateCall).toBeTruthy();
+      expect(updateCall?.[1]).toContain('MAINTENANCE');
+    });
   });
 
   describe('Equipment Checkout Sync', () => {

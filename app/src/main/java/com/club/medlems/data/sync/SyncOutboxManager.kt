@@ -3,6 +3,7 @@ package com.club.medlems.data.sync
 import android.util.Log
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.EquipmentCheckout
+import com.club.medlems.data.entity.EquipmentItem
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberType
 import com.club.medlems.data.entity.NewMemberRegistration
@@ -142,6 +143,7 @@ class SyncOutboxManager @Inject constructor(
         val policyViolations = mutableListOf<SyncablePolicyViolation>()
         val scanEvents = mutableListOf<SyncableScanEvent>()
         val members = mutableListOf<SyncableMember>()
+        val equipmentItems = mutableListOf<SyncableEquipmentItem>()
         val equipmentCheckouts = mutableListOf<SyncableEquipmentCheckout>()
         val newMemberRegistrations = mutableListOf<SyncableNewMemberRegistration>()
 
@@ -180,6 +182,10 @@ class SyncOutboxManager @Inject constructor(
                             outboxIds.add(entry.id)
                         }
                     }
+                    "EquipmentItem" -> {
+                        equipmentItems.add(json.decodeFromString<SyncableEquipmentItem>(entry.payload))
+                        outboxIds.add(entry.id)
+                    }
                     "EquipmentCheckout" -> {
                         equipmentCheckouts.add(json.decodeFromString<SyncableEquipmentCheckout>(entry.payload))
                         outboxIds.add(entry.id)
@@ -204,6 +210,7 @@ class SyncOutboxManager @Inject constructor(
             policyViolations = policyViolations,
             scanEvents = scanEvents,
             members = members,
+            equipmentItems = equipmentItems,
             equipmentCheckouts = equipmentCheckouts,
             newMemberRegistrations = newMemberRegistrations
         )
@@ -211,7 +218,8 @@ class SyncOutboxManager @Inject constructor(
         Log.d(TAG, "Collected ${outboxIds.size} outbox entries for $deviceId: " +
             "${checkIns.size} check-ins, ${practiceSessions.size} sessions, " +
             "${practiceSessionDeletions.size} session deletions, ${policyViolations.size} policy violations, " +
-            "${members.size} members, ${equipmentCheckouts.size} checkouts")
+            "${members.size} members, ${equipmentItems.size} equipment items, " +
+            "${equipmentCheckouts.size} checkouts")
 
         return Pair(entities, outboxIds)
     }
@@ -574,6 +582,47 @@ class SyncOutboxManager @Inject constructor(
     }
 
     /**
+     * Queues an EquipmentItem for sync after a local insert/update.
+     */
+    suspend fun queueEquipmentItem(
+        item: EquipmentItem,
+        deviceId: String,
+        operation: OutboxOperation = OutboxOperation.INSERT
+    ) {
+        val syncable = SyncableEquipmentItem(
+            id = item.id,
+            serialNumber = item.serialNumber,
+            type = when (item.type) {
+                com.club.medlems.data.entity.EquipmentType.TrainingMaterial -> EquipmentType.TRAINING_MATERIAL
+                com.club.medlems.data.entity.EquipmentType.Pistol -> EquipmentType.PISTOL
+                com.club.medlems.data.entity.EquipmentType.LuftPistol -> EquipmentType.AIR_PISTOL
+                com.club.medlems.data.entity.EquipmentType.LuftRiffel -> EquipmentType.AIR_RIFLE
+                com.club.medlems.data.entity.EquipmentType.Riffel -> EquipmentType.RIFLE
+                com.club.medlems.data.entity.EquipmentType.Langdistance -> EquipmentType.LONG_DISTANCE
+                com.club.medlems.data.entity.EquipmentType.Andet -> EquipmentType.OTHER
+            },
+            description = item.description,
+            status = when (item.status) {
+                com.club.medlems.data.entity.EquipmentStatus.Available -> EquipmentStatus.AVAILABLE
+                com.club.medlems.data.entity.EquipmentStatus.CheckedOut -> EquipmentStatus.CHECKED_OUT
+                com.club.medlems.data.entity.EquipmentStatus.Maintenance -> EquipmentStatus.MAINTENANCE
+                com.club.medlems.data.entity.EquipmentStatus.Retired -> EquipmentStatus.RETIRED
+            },
+            deviceId = deviceId,
+            syncVersion = item.syncVersion,
+            createdAtUtc = item.createdAtUtc,
+            modifiedAtUtc = item.modifiedAtUtc,
+            syncedAtUtc = null
+        )
+        queueForSync(
+            entityType = "EquipmentItem",
+            entityId = item.id,
+            operation = operation,
+            entity = syncable
+        )
+    }
+
+    /**
      * Queues an EquipmentCheckout for sync after local insert/update.
      *
      * @param checkout The EquipmentCheckout entity
@@ -604,7 +653,7 @@ class SyncOutboxManager @Inject constructor(
                 }
             },
             deviceId = deviceId,
-            syncVersion = checkout.syncVersion + 1,
+            syncVersion = checkout.syncVersion,
             createdAtUtc = checkout.createdAtUtc,
             modifiedAtUtc = checkout.modifiedAtUtc,
             syncedAtUtc = null

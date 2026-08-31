@@ -3,6 +3,7 @@
 **Feature:** Equipment Sync
 **Status:** ✅ COMPLETE
 **Completed:** January 20, 2026
+**Last updated:** August 31, 2026 by sbalslev
 **Note:** Implemented as part of Distributed Membership Management System (Phase 3)
 
 ---
@@ -25,6 +26,23 @@ All equipment sync functionality is documented in:
 - ✅ Conflict detection for concurrent checkouts
 - ✅ Offline operation support
 - ✅ Display tablet variant for wall-mounted dashboards
+
+## Maintenance fix - August 31, 2026
+
+Trainer equipment operations were writing directly to Room without consistently adding inventory and checkout records to the persistent sync outbox. Status changes also retained `syncedAtUtc`, which excluded previously synchronized records from later sync attempts. Sync acknowledgements incorrectly incremented content versions.
+
+The fix:
+
+- Clears `syncedAtUtc` and increments `syncVersion` for local equipment mutations.
+- Stamps acknowledgements without changing content versions.
+- Queues equipment items and checkouts from trainer and shared repository workflows.
+- Includes equipment items when assembling per-device outbox payloads.
+- Preserves persisted versions during outbox serialization.
+
+Validation:
+
+- `SyncOutboxManagerTest` passes for the trainer debug variant.
+- `compileTrainerDebugKotlin` passes.
 
 ## Related Files
 

@@ -14,6 +14,11 @@
   - **Notes**: Added required category selection for Pistol, Luftpistol,
     Luftriffel, Riffel, Langdistance, and Andet. Categories persist locally
     and sync through laptop and online storage.
+- [x] M-2026-08-31 Fix trainer equipment synchronization
+  - **Started**: 2026-08-31 20:30:00 UTC+2
+  - **Completed**: 2026-08-31 21:58:30 UTC+2
+  - **Duration**: 1h 28m
+  - **Notes**: Mark equipment mutations as unsynced, preserve content versions on acknowledgement, and queue trainer inventory and checkout changes for per-device delivery.
 - [x] M-2026-02-23 Add email export for member list
   - **Started**: 2026-02-23 10:00:00 UTC+1
   - **Completed**: 2026-02-23 10:25:00 UTC+1

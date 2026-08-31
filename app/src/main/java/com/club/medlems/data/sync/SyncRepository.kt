@@ -199,6 +199,10 @@ class SyncRepository @Inject constructor(
         // Process practice sessions (append-only with conflict detection)
         payload.entities.practiceSessions.forEach { syncSession ->
             try {
+                if (practiceSessionDao.countById(syncSession.id) > 0) {
+                    return@forEach
+                }
+
                 val existingSessions = practiceSessionDao.sessionsForMemberOnDate(
                     syncSession.internalMemberId,
                     syncSession.localDate
@@ -267,8 +271,10 @@ class SyncRepository @Inject constructor(
                     // New equipment item - insert it
                     equipmentItemDao.insert(syncItem.toEntity())
                     equipmentItemsProcessed++
-                } else if (syncItem.syncVersion > existing.syncVersion) {
-                    // Incoming has higher version - update local record
+                } else if (syncItem.syncVersion > existing.syncVersion ||
+                    (payload.deviceType == DeviceType.LAPTOP &&
+                        syncItem.modifiedAtUtc > existing.modifiedAtUtc)) {
+                    // Laptop timestamps recover rows whose versions were inflated by old sync acknowledgements.
                     equipmentItemDao.update(syncItem.toEntity())
                     equipmentItemsProcessed++
                     Log.d(TAG, "Updated equipment item ${syncItem.id}: version=${syncItem.syncVersion}")

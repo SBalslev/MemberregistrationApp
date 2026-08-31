@@ -149,6 +149,8 @@ Equipment sync uses **version-based conflict resolution**:
 1. Each entity has a `syncVersion` field
 2. When syncing, the higher `syncVersion` wins
 3. The `syncVersion` is incremented on each local modification
+4. Sync acknowledgements update `syncedAtUtc` without changing `syncVersion`
+5. Local modifications clear `syncedAtUtc` and enter the per-device outbox
 
 For concurrent checkout conflicts:
 
@@ -178,6 +180,7 @@ For concurrent checkout conflicts:
 Equipment sync is covered by:
 
 - **Android unit tests**: SyncVersionTest, DeviceTypeFilteringTest
+- **Android outbox regression tests**: SyncOutboxManagerTest verifies equipment payload collection and version preservation
 - **Laptop Vitest tests**: syncService.test.ts
 
 ## See Also

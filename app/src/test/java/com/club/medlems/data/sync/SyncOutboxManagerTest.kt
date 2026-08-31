@@ -1,5 +1,9 @@
 package com.club.medlems.data.sync
 
+import com.club.medlems.data.entity.EquipmentCheckout
+import com.club.medlems.data.entity.EquipmentItem
+import com.club.medlems.data.entity.EquipmentStatus
+import com.club.medlems.data.entity.EquipmentType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -327,6 +331,42 @@ class SyncOutboxManagerTest {
         assertEquals("Should have 0 check-ins", 0, entities.checkIns.size)
         assertEquals("Should have 0 sessions", 0, entities.practiceSessions.size)
         assertEquals("Should have 0 members", 0, entities.members.size)
+    }
+
+    @Test
+    fun `collectEntitiesForDevice should include equipment with persisted versions`() = runBlocking {
+        val timestamp = Instant.parse("2026-03-01T10:00:00Z")
+        val item = EquipmentItem(
+            id = "equipment-1",
+            serialNumber = "RIFLE-001",
+            type = EquipmentType.TrainingMaterial,
+            status = EquipmentStatus.CheckedOut,
+            createdByDeviceId = "trainer-1",
+            createdAtUtc = timestamp,
+            modifiedAtUtc = timestamp,
+            deviceId = "trainer-1",
+            syncVersion = 4
+        )
+        val checkout = EquipmentCheckout(
+            id = "checkout-1",
+            equipmentId = item.id,
+            internalMemberId = "member-1",
+            checkedOutAtUtc = timestamp,
+            checkedOutByDeviceId = "trainer-1",
+            createdAtUtc = timestamp,
+            modifiedAtUtc = timestamp,
+            deviceId = "trainer-1",
+            syncVersion = 7
+        )
+
+        manager.queueEquipmentItem(item, "trainer-1", OutboxOperation.UPDATE)
+        manager.queueEquipmentCheckout(checkout, "trainer-1", OutboxOperation.UPDATE)
+
+        val (entities, outboxIds) = manager.collectEntitiesForDevice("laptop-1", DeviceType.LAPTOP)
+
+        assertEquals(2, outboxIds.size)
+        assertEquals(4, entities.equipmentItems.single().syncVersion)
+        assertEquals(7, entities.equipmentCheckouts.single().syncVersion)
     }
 
     @Test

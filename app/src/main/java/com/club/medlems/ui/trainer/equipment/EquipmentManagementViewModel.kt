@@ -12,6 +12,9 @@ import com.club.medlems.data.entity.EquipmentStatus
 import com.club.medlems.data.entity.EquipmentType
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.PracticeType
+import com.club.medlems.data.sync.OutboxOperation
+import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.data.sync.SyncOutboxManager
 import com.club.medlems.domain.trainer.TrainerSessionManager
 import com.club.medlems.network.TrustManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -89,7 +92,9 @@ class EquipmentManagementViewModel @Inject constructor(
     private val equipmentCheckoutDao: EquipmentCheckoutDao,
     private val memberDao: MemberDao,
     private val trainerSessionManager: TrainerSessionManager,
-    private val trustManager: TrustManager
+    private val trustManager: TrustManager,
+    private val syncOutboxManager: SyncOutboxManager,
+    private val syncManager: SyncManager
 ) : ViewModel() {
 
     companion object {
@@ -266,10 +271,13 @@ class EquipmentManagementViewModel @Inject constructor(
                     createdByDeviceId = deviceId,
                     createdAtUtc = now,
                     modifiedAtUtc = now,
-                    deviceId = deviceId
+                    deviceId = deviceId,
+                    syncVersion = 1
                 )
 
                 equipmentItemDao.insert(item)
+                queueEquipmentItem(item, deviceId, OutboxOperation.INSERT)
+                triggerEquipmentSync()
                 Log.i(TAG, "Created equipment: $serialNumber")
 
                 _uiState.value = _uiState.value.copy(
@@ -383,11 +391,16 @@ class EquipmentManagementViewModel @Inject constructor(
                     checkoutNotes = buildCheckoutNotes(notes, trainerId),
                     createdAtUtc = now,
                     modifiedAtUtc = now,
-                    deviceId = deviceId
+                    deviceId = deviceId,
+                    syncVersion = 1
                 )
 
                 equipmentItemDao.updateStatus(equipmentId, EquipmentStatus.CheckedOut, now)
                 equipmentCheckoutDao.insert(checkout)
+                queueEquipmentItemUpdate(equipmentId, deviceId)
+                syncOutboxManager.queueEquipmentCheckout(checkout, deviceId, OutboxOperation.INSERT)
+                syncManager.notifyEntityChanged("EquipmentCheckout", checkout.id)
+                triggerEquipmentSync()
 
                 Log.i(TAG, "Checked out ${equipment.serialNumber} to ${member.firstName} ${member.lastName}")
 
@@ -448,6 +461,9 @@ class EquipmentManagementViewModel @Inject constructor(
                 )
 
                 equipmentItemDao.updateStatus(equipmentId, EquipmentStatus.Available, now)
+                queueEquipmentCheckoutUpdate(checkout.id, deviceId)
+                queueEquipmentItemUpdate(equipmentId, deviceId)
+                triggerEquipmentSync()
 
                 val memberName = member?.let { "${it.firstName} ${it.lastName}".trim() } ?: "ukendt"
                 val serial = equipment?.serialNumber ?: equipmentId.take(8)
@@ -505,6 +521,9 @@ class EquipmentManagementViewModel @Inject constructor(
                 )
 
                 equipmentItemDao.updateStatus(checkout.equipmentId, EquipmentStatus.Available, now)
+                queueEquipmentCheckoutUpdate(checkoutId, deviceId)
+                queueEquipmentItemUpdate(checkout.equipmentId, deviceId)
+                triggerEquipmentSync()
 
                 Log.i(TAG, "Checked in equipment from checkout $checkoutId")
 
@@ -558,8 +577,11 @@ class EquipmentManagementViewModel @Inject constructor(
                         modifiedAt = now
                     )
                     equipmentItemDao.updateStatus(checkout.equipmentId, EquipmentStatus.Available, now)
+                    queueEquipmentCheckoutUpdate(checkout.id, deviceId)
+                    queueEquipmentItemUpdate(checkout.equipmentId, deviceId)
                     count++
                 }
+                triggerEquipmentSync()
 
                 Log.i(TAG, "Batch checked in $count items")
 
@@ -582,6 +604,32 @@ class EquipmentManagementViewModel @Inject constructor(
         userNotes?.trim()?.takeIf { it.isNotEmpty() }?.let { parts.add(it) }
         trainerId?.let { parts.add("[Træner: $it]") }
         return parts.joinToString(" ").takeIf { it.isNotEmpty() }?.take(500)
+    }
+
+    private suspend fun queueEquipmentItem(
+        item: EquipmentItem,
+        deviceId: String,
+        operation: OutboxOperation
+    ) {
+        syncOutboxManager.queueEquipmentItem(item, deviceId, operation)
+        syncManager.notifyEntityChanged("EquipmentItem", item.id, operation.name)
+    }
+
+    private suspend fun queueEquipmentItemUpdate(equipmentId: String, deviceId: String) {
+        equipmentItemDao.get(equipmentId)?.let { item ->
+            queueEquipmentItem(item, deviceId, OutboxOperation.UPDATE)
+        }
+    }
+
+    private suspend fun queueEquipmentCheckoutUpdate(checkoutId: String, deviceId: String) {
+        equipmentCheckoutDao.get(checkoutId)?.let { checkout ->
+            syncOutboxManager.queueEquipmentCheckout(checkout, deviceId, OutboxOperation.UPDATE)
+            syncManager.notifyEntityChanged("EquipmentCheckout", checkout.id, OutboxOperation.UPDATE.name)
+        }
+    }
+
+    private fun triggerEquipmentSync() {
+        syncManager.triggerImmediateTabletSync()
     }
 
     // ===== Member Search =====

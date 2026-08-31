@@ -153,7 +153,22 @@ class EquipmentViewModel @Inject constructor(
      */
     fun setMaintenance(equipmentId: String) {
         viewModelScope.launch {
-            equipmentRepository.setMaintenance(equipmentId)
+            updateEquipmentStatus(
+                result = equipmentRepository.setMaintenance(equipmentId),
+                successMessage = "Udstyr sendt til vedligeholdelse"
+            )
+        }
+    }
+
+    /**
+     * Returns equipment to active service.
+     */
+    fun setAvailable(equipmentId: String) {
+        viewModelScope.launch {
+            updateEquipmentStatus(
+                result = equipmentRepository.setAvailable(equipmentId),
+                successMessage = "Udstyr sat tilbage i drift"
+            )
         }
     }
     
@@ -162,8 +177,24 @@ class EquipmentViewModel @Inject constructor(
      */
     fun retireEquipment(equipmentId: String) {
         viewModelScope.launch {
-            equipmentRepository.retireEquipment(equipmentId)
+            updateEquipmentStatus(
+                result = equipmentRepository.retireEquipment(equipmentId),
+                successMessage = "Udstyr pensioneret"
+            )
         }
+    }
+
+    private fun updateEquipmentStatus(result: Result<Unit>, successMessage: String) {
+        result.fold(
+            onSuccess = {
+                _uiState.value = _uiState.value.copy(successMessage = successMessage, error = null)
+            },
+            onFailure = { error ->
+                _uiState.value = _uiState.value.copy(
+                    error = error.message ?: "Kunne ikke ændre udstyrets status"
+                )
+            }
+        )
     }
     
     // ===== Checkout/Checkin Operations =====

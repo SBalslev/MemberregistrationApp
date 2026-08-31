@@ -2,6 +2,7 @@ package com.club.medlems.ui.equipment
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -24,6 +26,9 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -32,6 +37,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -82,6 +88,8 @@ fun EquipmentListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     
     var showAddDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var statusFilter by remember { mutableStateOf<EquipmentStatus?>(null) }
     
     // Show snackbar for success/error messages
     LaunchedEffect(uiState.successMessage, uiState.error) {
@@ -96,6 +104,15 @@ fun EquipmentListScreen(
     }
     
     var equipmentBeingEdited by remember { mutableStateOf<EquipmentItem?>(null) }
+    val filteredEquipment = equipment.filter { item ->
+        val query = searchQuery.trim()
+        val matchesSearch = query.isEmpty() ||
+            item.serialNumber.contains(query, ignoreCase = true) ||
+            item.description?.contains(query, ignoreCase = true) == true ||
+            getEquipmentTypeDisplayName(item.type).contains(query, ignoreCase = true)
+        val matchesStatus = statusFilter == null || item.status == statusFilter
+        matchesSearch && matchesStatus
+    }
     
     Scaffold(
         topBar = {
@@ -152,21 +169,84 @@ fun EquipmentListScreen(
                 }
             }
         } else {
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(padding)
             ) {
-                items(equipment, key = { it.id }) { item ->
-                    EquipmentItemCard(
-                        item = item,
-                        onCheckout = { onNavigateToCheckout(item.id) },
-                        onEdit = { equipmentBeingEdited = item },
-                        onSetMaintenance = { viewModel.setMaintenance(item.id) },
-                        onRetire = { viewModel.retireEquipment(item.id) }
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Søg efter serienummer, type eller beskrivelse") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    EquipmentStatusFilterChip(
+                        selected = statusFilter == null,
+                        label = "Alle (${equipment.size})",
+                        onClick = { statusFilter = null }
                     )
+                    EquipmentStatus.entries.forEach { status ->
+                        val count = equipment.count { it.status == status }
+                        EquipmentStatusFilterChip(
+                            selected = statusFilter == status,
+                            label = "${getEquipmentStatusDisplayName(status)} ($count)",
+                            onClick = { statusFilter = status }
+                        )
+                    }
+                }
+
+                Text(
+                    text = if (filteredEquipment.size == equipment.size) {
+                        "${equipment.size} styk udstyr"
+                    } else {
+                        "Viser ${filteredEquipment.size} af ${equipment.size}"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+
+                if (filteredEquipment.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Intet udstyr matcher søgningen",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 88.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(filteredEquipment, key = { it.id }) { item ->
+                            EquipmentItemCard(
+                                item = item,
+                                onCheckout = { onNavigateToCheckout(item.id) },
+                                onEdit = { equipmentBeingEdited = item },
+                                onSetMaintenance = { viewModel.setMaintenance(item.id) },
+                                onSetAvailable = { viewModel.setAvailable(item.id) },
+                                onRetire = { viewModel.retireEquipment(item.id) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -211,6 +291,7 @@ private fun EquipmentItemCard(
     onCheckout: () -> Unit,
     onEdit: () -> Unit,
     onSetMaintenance: () -> Unit,
+    onSetAvailable: () -> Unit,
     onRetire: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -258,8 +339,8 @@ private fun EquipmentItemCard(
             Box {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(
-                        Icons.Default.Build,
-                        contentDescription = "Actions",
+                        Icons.Default.MoreVert,
+                        contentDescription = "Handlinger for ${item.serialNumber}",
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -290,7 +371,7 @@ private fun EquipmentItemCard(
                             }
                         )
                     }
-                    if (item.status != EquipmentStatus.Maintenance) {
+                    if (item.status == EquipmentStatus.Available) {
                         DropdownMenuItem(
                             text = { Text("S\u00e6t til vedligeholdelse") },
                             onClick = {
@@ -302,9 +383,21 @@ private fun EquipmentItemCard(
                             }
                         )
                     }
-                    if (item.status != EquipmentStatus.Retired) {
+                    if (item.status == EquipmentStatus.Maintenance || item.status == EquipmentStatus.Retired) {
                         DropdownMenuItem(
-                            text = { Text("Pensioner") },
+                            text = { Text("Sæt tilbage i drift") },
+                            onClick = {
+                                showMenu = false
+                                onSetAvailable()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Refresh, contentDescription = null)
+                            }
+                        )
+                    }
+                    if (item.status != EquipmentStatus.Retired && item.status != EquipmentStatus.CheckedOut) {
+                        DropdownMenuItem(
+                            text = { Text("Pensionér") },
                             onClick = {
                                 showMenu = false
                                 showRetireConfirmDialog = true
@@ -330,10 +423,10 @@ private fun EquipmentItemCard(
                     tint = MaterialTheme.colorScheme.error
                 )
             },
-            title = { Text("Pensioner udstyr") },
+            title = { Text("Pensionér udstyr") },
             text = {
                 Column {
-                    Text("Er du sikker på, at du vil pensionere dette udstyr?")
+                    Text("Vil du pensionere dette udstyr?")
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = item.serialNumber,
@@ -349,7 +442,7 @@ private fun EquipmentItemCard(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Denne handling kan ikke fortrydes.",
+                        text = "Udstyret kan senere sættes tilbage i drift.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -363,7 +456,7 @@ private fun EquipmentItemCard(
                     }
                 ) {
                     Text(
-                        "Pensioner",
+                        "Pensionér",
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -378,12 +471,34 @@ private fun EquipmentItemCard(
 }
 
 @Composable
+private fun EquipmentStatusFilterChip(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) }
+    )
+}
+
+private fun getEquipmentStatusDisplayName(status: EquipmentStatus): String {
+    return when (status) {
+        EquipmentStatus.Available -> "Tilgængeligt"
+        EquipmentStatus.CheckedOut -> "Udlånt"
+        EquipmentStatus.Maintenance -> "Til vedligeholdelse"
+        EquipmentStatus.Retired -> "Pensioneret"
+    }
+}
+
+@Composable
 private fun StatusBadge(status: EquipmentStatus) {
     val (backgroundColor, textColor, label) = when (status) {
         EquipmentStatus.Available -> Triple(
             Color(0xFF4CAF50),
             Color.White,
-            "Ledig"
+            "Tilgængeligt"
         )
         EquipmentStatus.CheckedOut -> Triple(
             Color(0xFFFFC107),
@@ -448,7 +563,7 @@ private fun EquipmentFormDialog(
                     OutlinedTextField(
                         value = selectedType?.let { getEquipmentTypeDisplayName(it) } ?: "",
                         onValueChange = { },
-                        label = { Text("Kategori *") },
+                        label = { Text("Udstyrstype *") },
                         readOnly = true,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -459,6 +574,7 @@ private fun EquipmentFormDialog(
                         onDismissRequest = { showTypeDropdown = false }
                     ) {
                         listOf(
+                            EquipmentType.TrainingMaterial,
                             EquipmentType.Pistol,
                             EquipmentType.LuftPistol,
                             EquipmentType.LuftRiffel,

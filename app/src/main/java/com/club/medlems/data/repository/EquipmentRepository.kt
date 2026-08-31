@@ -64,7 +64,7 @@ class EquipmentRepository @Inject constructor(
             val existing = equipmentItemDao.getBySerialNumber(serialNumber)
             if (existing != null) {
                 return@withContext Result.failure(
-                    IllegalArgumentException("Equipment with serial number '$serialNumber' already exists")
+                    IllegalArgumentException("Udstyr med serienummer '$serialNumber' findes allerede")
                 )
             }
             
@@ -80,10 +80,14 @@ class EquipmentRepository @Inject constructor(
                 createdByDeviceId = deviceId,
                 createdAtUtc = now,
                 modifiedAtUtc = now,
-                deviceId = deviceId
+                deviceId = deviceId,
+                syncVersion = 1
             )
             
             equipmentItemDao.insert(item)
+            syncOutboxManager.queueEquipmentItem(item, deviceId, OutboxOperation.INSERT)
+            syncManager.notifyEntityChanged("EquipmentItem", item.id)
+            syncManager.triggerImmediateTabletSync()
             Log.i(TAG, "Created equipment item: $serialNumber")
             Result.success(item)
         } catch (e: Exception) {
@@ -97,8 +101,17 @@ class EquipmentRepository @Inject constructor(
      */
     suspend fun updateEquipmentItem(item: EquipmentItem): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val updated = item.copy(modifiedAtUtc = Clock.System.now())
+            val deviceId = trustManager.getThisDeviceId()
+            val updated = item.copy(
+                modifiedAtUtc = Clock.System.now(),
+                deviceId = deviceId,
+                syncVersion = item.syncVersion + 1,
+                syncedAtUtc = null
+            )
             equipmentItemDao.update(updated)
+            syncOutboxManager.queueEquipmentItem(updated, deviceId, OutboxOperation.UPDATE)
+            syncManager.notifyEntityChanged("EquipmentItem", updated.id, OutboxOperation.UPDATE.name)
+            syncManager.triggerImmediateTabletSync()
             Log.i(TAG, "Updated equipment item: ${item.serialNumber}")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -144,7 +157,31 @@ class EquipmentRepository @Inject constructor(
      */
     suspend fun setMaintenance(equipmentId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            val deviceId = trustManager.getThisDeviceId()
             equipmentItemDao.updateStatus(equipmentId, EquipmentStatus.Maintenance, Clock.System.now())
+            equipmentItemDao.get(equipmentId)?.let { updatedItem ->
+                syncOutboxManager.queueEquipmentItem(updatedItem, deviceId, OutboxOperation.UPDATE)
+                syncManager.notifyEntityChanged("EquipmentItem", equipmentId, OutboxOperation.UPDATE.name)
+            }
+            syncManager.triggerImmediateTabletSync()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Returns equipment to available status.
+     */
+    suspend fun setAvailable(equipmentId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val deviceId = trustManager.getThisDeviceId()
+            equipmentItemDao.updateStatus(equipmentId, EquipmentStatus.Available, Clock.System.now())
+            equipmentItemDao.get(equipmentId)?.let { updatedItem ->
+                syncOutboxManager.queueEquipmentItem(updatedItem, deviceId, OutboxOperation.UPDATE)
+                syncManager.notifyEntityChanged("EquipmentItem", equipmentId, OutboxOperation.UPDATE.name)
+            }
+            syncManager.triggerImmediateTabletSync()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -156,7 +193,13 @@ class EquipmentRepository @Inject constructor(
      */
     suspend fun retireEquipment(equipmentId: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            val deviceId = trustManager.getThisDeviceId()
             equipmentItemDao.updateStatus(equipmentId, EquipmentStatus.Retired, Clock.System.now())
+            equipmentItemDao.get(equipmentId)?.let { updatedItem ->
+                syncOutboxManager.queueEquipmentItem(updatedItem, deviceId, OutboxOperation.UPDATE)
+                syncManager.notifyEntityChanged("EquipmentItem", equipmentId, OutboxOperation.UPDATE.name)
+            }
+            syncManager.triggerImmediateTabletSync()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -228,16 +271,21 @@ class EquipmentRepository @Inject constructor(
             equipmentItemDao.updateStatus(equipmentId, EquipmentStatus.CheckedOut, now)
 
             // Create checkout record
-            equipmentCheckoutDao.insert(checkout)
+            val versionedCheckout = checkout.copy(syncVersion = 1)
+            equipmentCheckoutDao.insert(versionedCheckout)
 
             // Queue checkout for sync and trigger reactive sync
-            syncOutboxManager.queueEquipmentCheckout(checkout, deviceId, OutboxOperation.INSERT)
-            syncManager.notifyEntityChanged("EquipmentCheckout", checkout.id)
+            equipmentItemDao.get(equipmentId)?.let { updatedItem ->
+                syncOutboxManager.queueEquipmentItem(updatedItem, deviceId, OutboxOperation.UPDATE)
+                syncManager.notifyEntityChanged("EquipmentItem", updatedItem.id, OutboxOperation.UPDATE.name)
+            }
+            syncOutboxManager.queueEquipmentCheckout(versionedCheckout, deviceId, OutboxOperation.INSERT)
+            syncManager.notifyEntityChanged("EquipmentCheckout", versionedCheckout.id)
             // Trigger immediate tablet sync (non-blocking)
             syncManager.triggerImmediateTabletSync()
 
             Log.i(TAG, "Checked out equipment ${equipment.serialNumber} to member $membershipId")
-            Result.success(checkout)
+            Result.success(versionedCheckout)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to checkout equipment", e)
             Result.failure(e)
@@ -292,6 +340,10 @@ class EquipmentRepository @Inject constructor(
 
             // Update equipment status back to available
             equipmentItemDao.updateStatus(checkout.equipmentId, EquipmentStatus.Available, now)
+            equipmentItemDao.get(checkout.equipmentId)?.let { updatedItem ->
+                syncOutboxManager.queueEquipmentItem(updatedItem, deviceId, OutboxOperation.UPDATE)
+                syncManager.notifyEntityChanged("EquipmentItem", updatedItem.id, OutboxOperation.UPDATE.name)
+            }
 
             Log.i(TAG, "Checked in equipment from checkout $checkoutId")
             Result.success(Unit)
@@ -352,6 +404,12 @@ class EquipmentRepository @Inject constructor(
                 notes = notes,
                 modifiedAt = Clock.System.now()
             )
+            val deviceId = trustManager.getThisDeviceId()
+            equipmentCheckoutDao.get(checkoutId)?.let { updatedCheckout ->
+                syncOutboxManager.queueEquipmentCheckout(updatedCheckout, deviceId, OutboxOperation.UPDATE)
+                syncManager.notifyEntityChanged("EquipmentCheckout", checkoutId, OutboxOperation.UPDATE.name)
+            }
+            syncManager.triggerImmediateTabletSync()
             Log.i(TAG, "Resolved conflict for checkout $checkoutId with $resolution")
             Result.success(Unit)
         } catch (e: Exception) {

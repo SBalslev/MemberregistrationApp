@@ -27,13 +27,28 @@
     description)
   - `ui/equipment/CurrentCheckoutsScreen.kt` (tab labels, empty states,
     checkout/conflict cards, checkin dialog, conflict resolution dialog)
+- Improved the trainer-tablet inventory workflow for larger equipment lists:
+  - Search by serial number, equipment type, or description.
+  - Filter by available, checked out, maintenance, or retired status with
+    per-status counts.
+  - Added a result count, translated overflow actions, and state-safe actions.
+  - Added a synchronized "Sæt tilbage i drift" action for maintenance and
+    retired equipment.
+  - Added all seven equipment types to the add/edit dropdown, including
+    training material.
+- Improved laptop equipment management with accurate status counts and
+  filters, translated status/type labels, duplicate serial-number validation,
+  edit support, and synchronized maintenance/retirement actions.
+- Added laptop equipment-item outbox collection to automatic and manual tablet
+  push payloads.
 
 ## Validation
 
-- Ran `:app:compileTrainerDebugKotlin`. Compilation reached the same
-  pre-existing unresolved `onKrydserChanged` reference in
-  `TrainerDashboardScreen.kt` as before; no new errors were introduced by
-  this change, confirming the edited files compile cleanly up to that point.
+- `:app:compileTrainerDebugKotlin` passes.
+- `SyncOutboxManagerTest` passes for the trainer debug variant.
+- Laptop TypeScript compilation passes.
+- Laptop focused sync tests pass: 71 tests across `syncService.test.ts` and
+  `syncOutboxRepository.test.ts`.
 
 ## Related documentation
 

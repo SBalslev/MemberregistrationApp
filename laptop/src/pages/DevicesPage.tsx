@@ -669,6 +669,7 @@ export function DevicesPage({ initialTab }: { initialTab?: 'devices' | 'conflict
                                 memberDeletions,
                                 checkIns: outboxData.checkIns || [],
                                 practiceSessions: outboxData.practiceSessions || [],
+                                equipmentItems: outboxData.equipmentItems || [],
                                 equipmentCheckouts: outboxData.equipmentCheckouts || [],
                                 trainerInfos,
                                 trainerDisciplines,
