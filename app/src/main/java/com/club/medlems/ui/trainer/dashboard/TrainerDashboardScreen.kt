@@ -1055,6 +1055,12 @@ class AddSessionViewModel @Inject constructor(
         }
     }
 
+    fun onKrydserChanged(krydser: String) {
+        if (krydser.isEmpty() || krydser.all { it.isDigit() }) {
+            _state.value = _state.value.copy(practiceKrydser = krydser)
+        }
+    }
+
     private fun isRegistreringspligtig(type: PracticeType): Boolean {
         return when (type) {
             PracticeType.LuftRiffel, PracticeType.LuftPistol -> false
