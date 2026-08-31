@@ -9,8 +9,8 @@
 declare(strict_types=1);
 
 // API version - increment when making changes
-const API_VERSION = '1.6.0';
-const API_BUILD_DATE = '2026-02-01';
+const API_VERSION = '1.7.0';
+const API_BUILD_DATE = '2026-08-31';
 
 // Expected file versions - update these when releasing new versions
 const EXPECTED_FILE_VERSIONS = [

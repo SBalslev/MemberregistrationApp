@@ -764,6 +764,12 @@ class SyncRepository @Inject constructor(
         serialNumber = serialNumber,
         type = when (type) {
             com.club.medlems.data.entity.EquipmentType.TrainingMaterial -> EquipmentType.TRAINING_MATERIAL
+            com.club.medlems.data.entity.EquipmentType.Pistol -> EquipmentType.PISTOL
+            com.club.medlems.data.entity.EquipmentType.LuftPistol -> EquipmentType.AIR_PISTOL
+            com.club.medlems.data.entity.EquipmentType.LuftRiffel -> EquipmentType.AIR_RIFLE
+            com.club.medlems.data.entity.EquipmentType.Riffel -> EquipmentType.RIFLE
+            com.club.medlems.data.entity.EquipmentType.Langdistance -> EquipmentType.LONG_DISTANCE
+            com.club.medlems.data.entity.EquipmentType.Andet -> EquipmentType.OTHER
         },
         description = description,
         status = when (status) {
@@ -784,6 +790,12 @@ class SyncRepository @Inject constructor(
         serialNumber = serialNumber,
         type = when (type) {
             EquipmentType.TRAINING_MATERIAL -> com.club.medlems.data.entity.EquipmentType.TrainingMaterial
+            EquipmentType.PISTOL -> com.club.medlems.data.entity.EquipmentType.Pistol
+            EquipmentType.AIR_PISTOL -> com.club.medlems.data.entity.EquipmentType.LuftPistol
+            EquipmentType.AIR_RIFLE -> com.club.medlems.data.entity.EquipmentType.LuftRiffel
+            EquipmentType.RIFLE -> com.club.medlems.data.entity.EquipmentType.Riffel
+            EquipmentType.LONG_DISTANCE -> com.club.medlems.data.entity.EquipmentType.Langdistance
+            EquipmentType.OTHER -> com.club.medlems.data.entity.EquipmentType.Andet
         },
         description = description,
         status = when (status) {

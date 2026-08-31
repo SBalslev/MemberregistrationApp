@@ -28,7 +28,7 @@ const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
 
 // Expected API version - update this when deploying new API versions
-const EXPECTED_API_VERSION = '1.6.0';
+const EXPECTED_API_VERSION = '1.7.0';
 
 // ===== Types =====
 

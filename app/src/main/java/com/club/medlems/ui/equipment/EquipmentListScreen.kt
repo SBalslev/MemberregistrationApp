@@ -1,6 +1,7 @@
 package com.club.medlems.ui.equipment
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -56,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.club.medlems.data.entity.EquipmentItem
 import com.club.medlems.data.entity.EquipmentStatus
+import com.club.medlems.data.entity.EquipmentType
 
 /**
  * Screen displaying all equipment items with management options.
@@ -92,13 +95,15 @@ fun EquipmentListScreen(
         }
     }
     
+    var equipmentBeingEdited by remember { mutableStateOf<EquipmentItem?>(null) }
+    
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Equipment Inventory") },
+                title = { Text("Udstyr") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Tilbage")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -113,7 +118,7 @@ fun EquipmentListScreen(
                 onClick = { showAddDialog = true },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Equipment")
+                Icon(Icons.Default.Add, contentDescription = "Tilf\u00f8j udstyr")
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -134,13 +139,13 @@ fun EquipmentListScreen(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "No equipment registered",
+                        "Intet udstyr registreret",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Tap + to add equipment",
+                        "Tryk p\u00e5 + for at tilf\u00f8je udstyr",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -158,6 +163,7 @@ fun EquipmentListScreen(
                     EquipmentItemCard(
                         item = item,
                         onCheckout = { onNavigateToCheckout(item.id) },
+                        onEdit = { equipmentBeingEdited = item },
                         onSetMaintenance = { viewModel.setMaintenance(item.id) },
                         onRetire = { viewModel.retireEquipment(item.id) }
                     )
@@ -168,11 +174,32 @@ fun EquipmentListScreen(
     
     // Add Equipment Dialog
     if (showAddDialog) {
-        AddEquipmentDialog(
+        EquipmentFormDialog(
+            title = "Tilf\u00f8j udstyr",
+            confirmLabel = "Tilf\u00f8j",
+            initialSerialNumber = "",
+            initialType = null,
+            initialDescription = "",
             onDismiss = { showAddDialog = false },
-            onAdd = { serialNumber, description ->
-                viewModel.createEquipment(serialNumber, description = description)
+            onConfirm = { serialNumber, type, description ->
+                viewModel.createEquipment(serialNumber, type, description)
                 showAddDialog = false
+            }
+        )
+    }
+    
+    // Edit Equipment Dialog
+    equipmentBeingEdited?.let { item ->
+        EquipmentFormDialog(
+            title = "Rediger udstyr",
+            confirmLabel = "Gem",
+            initialSerialNumber = item.serialNumber,
+            initialType = item.type,
+            initialDescription = item.description ?: "",
+            onDismiss = { equipmentBeingEdited = null },
+            onConfirm = { serialNumber, type, description ->
+                viewModel.updateEquipment(item, serialNumber, type, description)
+                equipmentBeingEdited = null
             }
         )
     }
@@ -182,6 +209,7 @@ fun EquipmentListScreen(
 private fun EquipmentItemCard(
     item: EquipmentItem,
     onCheckout: () -> Unit,
+    onEdit: () -> Unit,
     onSetMaintenance: () -> Unit,
     onRetire: () -> Unit
 ) {
@@ -207,6 +235,11 @@ private fun EquipmentItemCard(
                     text = item.serialNumber,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = getEquipmentTypeDisplayName(item.type),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
                 if (item.description != null) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -235,9 +268,19 @@ private fun EquipmentItemCard(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
+                    DropdownMenuItem(
+                        text = { Text("Rediger") },
+                        onClick = {
+                            showMenu = false
+                            onEdit()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Edit, contentDescription = null)
+                        }
+                    )
                     if (item.status == EquipmentStatus.Available) {
                         DropdownMenuItem(
-                            text = { Text("Checkout") },
+                            text = { Text("Udl\u00e5n") },
                             onClick = {
                                 showMenu = false
                                 onCheckout()
@@ -249,7 +292,7 @@ private fun EquipmentItemCard(
                     }
                     if (item.status != EquipmentStatus.Maintenance) {
                         DropdownMenuItem(
-                            text = { Text("Set Maintenance") },
+                            text = { Text("S\u00e6t til vedligeholdelse") },
                             onClick = {
                                 showMenu = false
                                 onSetMaintenance()
@@ -261,7 +304,7 @@ private fun EquipmentItemCard(
                     }
                     if (item.status != EquipmentStatus.Retired) {
                         DropdownMenuItem(
-                            text = { Text("Retire") },
+                            text = { Text("Pensioner") },
                             onClick = {
                                 showMenu = false
                                 showRetireConfirmDialog = true
@@ -340,22 +383,22 @@ private fun StatusBadge(status: EquipmentStatus) {
         EquipmentStatus.Available -> Triple(
             Color(0xFF4CAF50),
             Color.White,
-            "Available"
+            "Ledig"
         )
         EquipmentStatus.CheckedOut -> Triple(
             Color(0xFFFFC107),
             Color.Black,
-            "Checked Out"
+            "Udl\u00e5nt"
         )
         EquipmentStatus.Maintenance -> Triple(
             Color(0xFFFF9800),
             Color.White,
-            "Maintenance"
+            "Vedligeholdelse"
         )
         EquipmentStatus.Retired -> Triple(
             Color(0xFF9E9E9E),
             Color.White,
-            "Retired"
+            "Pensioneret"
         )
     }
     
@@ -374,30 +417,70 @@ private fun StatusBadge(status: EquipmentStatus) {
 }
 
 @Composable
-private fun AddEquipmentDialog(
+private fun EquipmentFormDialog(
+    title: String,
+    confirmLabel: String,
+    initialSerialNumber: String,
+    initialType: EquipmentType?,
+    initialDescription: String,
     onDismiss: () -> Unit,
-    onAdd: (serialNumber: String, description: String?) -> Unit
+    onConfirm: (serialNumber: String, type: EquipmentType, description: String?) -> Unit
 ) {
-    var serialNumber by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
+    var serialNumber by remember { mutableStateOf(initialSerialNumber) }
+    var selectedType by remember { mutableStateOf(initialType) }
+    var description by remember { mutableStateOf(initialDescription) }
+    var showTypeDropdown by remember { mutableStateOf(false) }
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Equipment") },
+        title = { Text(title) },
         text = {
             Column {
                 OutlinedTextField(
                     value = serialNumber,
                     onValueChange = { serialNumber = it },
-                    label = { Text("Serial Number *") },
+                    label = { Text("Serienummer *") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
+                Box {
+                    OutlinedTextField(
+                        value = selectedType?.let { getEquipmentTypeDisplayName(it) } ?: "",
+                        onValueChange = { },
+                        label = { Text("Kategori *") },
+                        readOnly = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showTypeDropdown = true }
+                    )
+                    DropdownMenu(
+                        expanded = showTypeDropdown,
+                        onDismissRequest = { showTypeDropdown = false }
+                    ) {
+                        listOf(
+                            EquipmentType.Pistol,
+                            EquipmentType.LuftPistol,
+                            EquipmentType.LuftRiffel,
+                            EquipmentType.Riffel,
+                            EquipmentType.Langdistance,
+                            EquipmentType.Andet
+                        ).forEach { type ->
+                            DropdownMenuItem(
+                                text = { Text(getEquipmentTypeDisplayName(type)) },
+                                onClick = {
+                                    selectedType = type
+                                    showTypeDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it.take(200) },
-                    label = { Text("Description (optional)") },
+                    label = { Text("Beskrivelse (valgfri)") },
                     maxLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = { Text("${description.length}/200") }
@@ -406,16 +489,34 @@ private fun AddEquipmentDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onAdd(serialNumber.trim(), description.trim().ifEmpty { null }) },
-                enabled = serialNumber.isNotBlank()
+                onClick = {
+                    onConfirm(
+                        serialNumber.trim(),
+                        requireNotNull(selectedType),
+                        description.trim().ifEmpty { null }
+                    )
+                },
+                enabled = serialNumber.isNotBlank() && selectedType != null
             ) {
-                Text("Add")
+                Text(confirmLabel)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Annuller")
             }
         }
     )
+}
+
+private fun getEquipmentTypeDisplayName(type: EquipmentType): String {
+    return when (type) {
+        EquipmentType.TrainingMaterial -> "Tr\u00e6ningsmateriale"
+        EquipmentType.Pistol -> "Pistol"
+        EquipmentType.LuftPistol -> "Luftpistol"
+        EquipmentType.LuftRiffel -> "Luftriffel"
+        EquipmentType.Riffel -> "Riffel"
+        EquipmentType.Langdistance -> "Langdistance"
+        EquipmentType.Andet -> "Andet"
+    }
 }

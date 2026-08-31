@@ -201,7 +201,14 @@ export interface NewMemberRegistration {
 // Sync-compatible equipment status - matches Android sync types
 export type EquipmentStatus = 'AVAILABLE' | 'CHECKED_OUT' | 'MAINTENANCE' | 'RETIRED';
 // Sync-compatible equipment type - matches Android sync types
-export type EquipmentType = 'TRAINING_MATERIAL';
+export type EquipmentType =
+  | 'TRAINING_MATERIAL'
+  | 'PISTOL'
+  | 'AIR_PISTOL'
+  | 'AIR_RIFLE'
+  | 'RIFLE'
+  | 'LONG_DISTANCE'
+  | 'OTHER';
 export type ConflictStatus = 'PENDING' | 'RESOLVED' | 'CANCELLED';
 
 export interface EquipmentItem {

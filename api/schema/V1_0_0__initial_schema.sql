@@ -242,7 +242,7 @@ CREATE TABLE IF NOT EXISTS scan_events (
 CREATE TABLE IF NOT EXISTS equipment_items (
     id VARCHAR(36) PRIMARY KEY,
     serial_number VARCHAR(50) NOT NULL UNIQUE,
-    type ENUM('TrainingMaterial') NOT NULL DEFAULT 'TrainingMaterial',
+    type ENUM('TrainingMaterial', 'PISTOL', 'AIR_PISTOL', 'AIR_RIFLE', 'RIFLE', 'LONG_DISTANCE', 'OTHER') NOT NULL DEFAULT 'TrainingMaterial',
     description VARCHAR(200),
     status ENUM('Available', 'CheckedOut', 'Maintenance', 'Retired') NOT NULL DEFAULT 'Available',
     discipline VARCHAR(50),

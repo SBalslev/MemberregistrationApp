@@ -407,6 +407,7 @@ function pullEquipmentItems(string $since, int $limit, ?string $excludeDevice = 
             'id' => $row['id'],
             'serial_number' => $row['serial_number'],
             'type' => $row['type'],
+            'equipment_type' => $row['type'],
             'description' => $row['description'],
             'status' => $row['status'],
             'discipline' => $row['discipline'],

@@ -607,7 +607,7 @@ function processEquipmentItemsPush(array $items, string $deviceId): array
                 "UPDATE equipment_items SET serial_number = ?, type = ?, description = ?, status = ?, discipline = ?, device_id = ?, sync_version = ?, modified_at_utc = ?, synced_at_utc = NOW() WHERE id = ?",
                 [
                     $item['serial_number'],
-                    $item['type'] ?? 'TrainingMaterial',
+                    $item['equipment_type'] ?? $item['type'] ?? 'TrainingMaterial',
                     $item['description'] ?? null,
                     $item['status'] ?? 'Available',
                     $item['discipline'] ?? null,
@@ -624,7 +624,7 @@ function processEquipmentItemsPush(array $items, string $deviceId): array
                 [
                     $id,
                     $item['serial_number'],
-                    $item['type'] ?? 'TrainingMaterial',
+                    $item['equipment_type'] ?? $item['type'] ?? 'TrainingMaterial',
                     $item['description'] ?? null,
                     $item['status'] ?? 'Available',
                     $item['discipline'] ?? null,

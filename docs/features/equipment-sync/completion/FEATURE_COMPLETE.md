@@ -20,6 +20,7 @@ All equipment sync functionality is documented in:
 ## Capabilities
 
 - ✅ Equipment item sync (create, update, status changes)
+- ✅ Required registration category: Pistol, Luftpistol, Luftriffel, Riffel, Langdistance, or Andet
 - ✅ Checkout/check-in sync with member linking
 - ✅ Conflict detection for concurrent checkouts
 - ✅ Offline operation support
@@ -39,3 +40,6 @@ All equipment sync functionality is documented in:
 ---
 
 **This feature is complete and production-ready.**
+
+See [equipment categorization completion](EQUIPMENT-CATEGORIZATION-COMPLETION.md)
+for the category extension.

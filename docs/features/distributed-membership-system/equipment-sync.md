@@ -50,7 +50,7 @@ Represents a piece of equipment (rifle, pistol, accessory, etc.)
 |-------|------|-------------|
 | id | String | Unique identifier |
 | serialNumber | String | Physical serial number |
-| type | Enum | TRAINING_MATERIAL, RIFLE, PISTOL, ACCESSORY, etc. |
+| type | Enum | TRAINING_MATERIAL, PISTOL, AIR_PISTOL, AIR_RIFLE, RIFLE, LONG_DISTANCE, or OTHER |
 | status | Enum | AVAILABLE, CHECKED_OUT, MAINTENANCE, RETIRED |
 | description | String? | Optional notes |
 | syncVersion | Long | Incremented on each update |

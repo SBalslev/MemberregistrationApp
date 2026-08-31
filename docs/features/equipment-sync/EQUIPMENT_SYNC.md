@@ -40,7 +40,7 @@ Equipment items and their checkout records now sync bidirectionally between Andr
 |-------|------|-------------|
 | id | String | Unique identifier (UUID) |
 | serialNumber | String | Human-readable equipment identifier |
-| type | String | Equipment category (e.g., "TRAINING_MATERIAL") |
+| type | String | TRAINING_MATERIAL, PISTOL, AIR_PISTOL, AIR_RIFLE, RIFLE, LONG_DISTANCE, or OTHER |
 | description | String? | Optional description (max 200 chars) |
 | status | String | AVAILABLE, CHECKED_OUT, MAINTENANCE, RETIRED |
 | deviceId | String | Device that last modified this record |
