@@ -1,0 +1,1 @@
+"""Common-room display service."""

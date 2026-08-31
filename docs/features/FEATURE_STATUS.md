@@ -1,7 +1,7 @@
 # Feature Status Overview
 
 **Project:** Medlemscheckin (Club Member Check-in System)
-**Last Updated:** 2026-05-17
+**Last Updated:** 2026-08-31
 **Updated By:** sbalslev
 
 ---
@@ -11,6 +11,15 @@
 | Feature | Status | Target | Documentation |
 |---------|--------|--------|---------------|
 | **Enhanced Trial Registration** | 🔄 In Progress (~90%) | TBD | [prd.md](enhanced-trial-registration/prd.md) |
+| **Common-room Display** | 📋 Planned | TBD | [prd.md](common-room-display/prd.md) |
+
+### Common-room display
+
+**Summary:** Raspberry Pi 2 TV display with redacted club statistics, permanent
+photos, QR-based temporary photo uploads, and trainer moderation.
+
+**Status:** Planning complete. Implementation is organized into six phases in
+[tasks.md](common-room-display/tasks.md).
 
 ### Enhanced Trial Registration
 

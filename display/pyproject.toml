@@ -1,0 +1,19 @@
+[project]
+name = "medlemscheckin-common-room-display"
+version = "0.1.0"
+description = "Raspberry Pi common-room display for Medlemscheckin"
+requires-python = ">=3.10"
+dependencies = ["Pillow>=10,<13", "qrcode>=8,<9"]
+
+[project.scripts]
+common-room-display = "common_room_display.server:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+common_room_display = ["static/*.html"]

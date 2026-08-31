@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="da" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    (() => {
+      const param = new URLSearchParams(window.location.search).get("clawpilotTheme");
+      const theme =
+        param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <title>ISS Sportsskytter</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --cp-bg: #f7f4ef;
+      --cp-bg-elevated: #fcfbf8;
+      --cp-surface: #ffffff;
+      --cp-surface-soft: #f5f5f5;
+      --cp-border: #dedede;
+      --cp-border-strong: #919191;
+      --cp-text: #242424;
+      --cp-text-muted: #5c5c5c;
+      --cp-text-soft: #6f6f6f;
+      --cp-accent: #b11f4b;
+      --cp-accent-hover: #9a1a41;
+      --cp-accent-soft: rgba(177, 31, 75, 0.08);
+      --cp-accent-fg: #ffffff;
+      --cp-success: #16a34a;
+      --cp-danger: #dc2626;
+      --cp-warning: #f59e0b;
+      --cp-link: #0078d4;
+      --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+      --cp-overlay: rgba(255, 255, 255, 0.8);
+      --cp-panel: rgba(255, 255, 255, 0.86);
+      --cp-panel-strong: rgba(255, 255, 255, 0.96);
+      --cp-sheen: rgba(255, 255, 255, 0.55);
+      --cp-highlight: rgba(177, 31, 75, 0.12);
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --cp-bg: #3d3b3a;
+      --cp-bg-elevated: #343231;
+      --cp-surface: #292929;
+      --cp-surface-soft: #2e2e2e;
+      --cp-border: #474747;
+      --cp-border-strong: #5f5f5f;
+      --cp-text: #dedede;
+      --cp-text-muted: #919191;
+      --cp-text-soft: #b0b0b0;
+      --cp-accent: #fd8ea1;
+      --cp-accent-hover: #fb7b91;
+      --cp-accent-soft: rgba(253, 142, 161, 0.14);
+      --cp-accent-fg: #1a1a1a;
+      --cp-success: #4ade80;
+      --cp-danger: #f87171;
+      --cp-warning: #fbbf24;
+      --cp-link: #4da6ff;
+      --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+      --cp-overlay: rgba(41, 41, 41, 0.88);
+      --cp-panel: rgba(41, 41, 41, 0.72);
+      --cp-panel-strong: rgba(41, 41, 41, 0.96);
+      --cp-sheen: rgba(255, 255, 255, 0.04);
+      --cp-highlight: rgba(253, 142, 161, 0.12);
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--cp-bg);
+      color: var(--cp-text);
+      font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    #stage { position: relative; width: 100%; height: 100%; }
+    .slide {
+      position: absolute; inset: 0; display: grid; align-content: center;
+      padding: clamp(2rem, 6vw, 7rem); opacity: 0; transition: opacity 900ms ease;
+    }
+    .slide.active { opacity: 1; }
+    .photo { padding: 0; background: var(--cp-bg-elevated); }
+    .photo img { width: 100%; height: 100%; object-fit: contain; }
+    .eyebrow { color: var(--cp-accent); font-size: clamp(1.25rem, 2.3vw, 2rem); font-weight: 700; }
+    h1 { max-width: 16ch; margin: 0.25em 0; font-size: clamp(3.5rem, 8vw, 8rem); line-height: 0.95; letter-spacing: 0; }
+    .stats { display: flex; gap: clamp(2rem, 6vw, 6rem); margin-top: 2rem; }
+    .metric strong { display: block; color: var(--cp-accent); font-size: clamp(3rem, 7vw, 7rem); }
+    .metric span { color: var(--cp-text-muted); font-size: clamp(1.1rem, 2vw, 2rem); }
+    .status { position: fixed; right: 2rem; bottom: 1.5rem; color: var(--cp-text-muted); font-size: 1rem; }
+    .status.stale { color: var(--cp-warning); }
+    .upload-qr { position: fixed; left: 2rem; bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem; border: 1px solid var(--cp-border); border-radius: 0.625rem; background: var(--cp-panel-strong); }
+    .upload-qr img { width: 5rem; height: 5rem; }
+    .upload-qr span { max-width: 8rem; color: var(--cp-text-muted); font-size: 1rem; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main id="stage" aria-live="polite"></main>
+  <aside class="upload-qr"><img src="/api/upload-qr.png" alt="QR-kode til fotoupload"><span>Tilføj et foto</span></aside>
+  <div id="status" class="status">Starter...</div>
+  <script>
+    const stage = document.getElementById("stage");
+    const status = document.getElementById("status");
+    let slides = [];
+    let current = 0;
+
+    function statisticsSlide(snapshot) {
+      if (!snapshot.available || !snapshot.feed) return null;
+      const stats = snapshot.feed.stats;
+      const element = document.createElement("section");
+      element.className = "slide";
+      element.innerHTML = `
+        <div class="eyebrow">I dag i klubben</div>
+        <h1>God træning</h1>
+        <div class="stats">
+          <div class="metric"><strong>${stats.participantCount}</strong><span>deltagere</span></div>
+          <div class="metric"><strong>${stats.sessionCount}</strong><span>resultater</span></div>
+          <div class="metric"><strong>${stats.totalPoints}</strong><span>point i alt</span></div>
+        </div>`;
+      return element;
+    }
+
+    function photoSlide(photo) {
+      const element = document.createElement("section");
+      element.className = "slide photo";
+      const image = document.createElement("img");
+      image.src = photo.url;
+      image.alt = "Klubfoto";
+      element.appendChild(image);
+      return element;
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch("/api/playlist", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const playlist = await response.json();
+        const nextSlides = [statisticsSlide(playlist.statistics), ...playlist.photos.map(photoSlide)].filter(Boolean);
+        if (nextSlides.length === 0) {
+          const empty = document.createElement("section");
+          empty.className = "slide";
+          empty.innerHTML = '<div class="eyebrow">ISS Sportsskytter</div><h1>Velkommen i klubben</h1>';
+          nextSlides.push(empty);
+        }
+        stage.replaceChildren(...nextSlides);
+        slides = nextSlides;
+        current = 0;
+        slides[0].classList.add("active");
+        status.textContent = playlist.statistics.stale ? "Viser gemte klubdata" : "Opdateret";
+        status.classList.toggle("stale", playlist.statistics.stale);
+      } catch (error) {
+        status.textContent = "Displaytjenesten kan ikke kontaktes";
+        status.classList.add("stale");
+      }
+    }
+
+    function advance() {
+      if (slides.length < 2) return;
+      slides[current].classList.remove("active");
+      current = (current + 1) % slides.length;
+      slides[current].classList.add("active");
+    }
+
+    refresh();
+    setInterval(advance, 12000);
+    setInterval(refresh, 60000);
+  </script>
+</body>
+</html>

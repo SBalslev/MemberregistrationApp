@@ -16,6 +16,8 @@ import com.club.medlems.data.sync.SyncResponse
 import com.club.medlems.data.sync.SyncResponseStatus
 import com.club.medlems.data.sync.SyncSchemaVersion
 import com.club.medlems.data.sync.SyncStatusResponse
+import com.club.medlems.network.display.DisplayFeedRateLimiter
+import com.club.medlems.network.display.DisplayFeedService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -63,7 +65,8 @@ class SyncApiServer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val trustManager: TrustManager,
     private val syncRepository: SyncRepository,
-    private val syncOutboxManager: SyncOutboxManager
+    private val syncOutboxManager: SyncOutboxManager,
+    private val displayFeedService: DisplayFeedService
 ) {
     companion object {
         private const val TAG = "SyncApiServer"
@@ -79,6 +82,7 @@ class SyncApiServer @Inject constructor(
     
     private var currentDeviceInfo: DeviceInfo? = null
     private var currentNetworkId: String? = null
+    private val displayFeedRateLimiter = DisplayFeedRateLimiter()
     
     // Callback for when a new device pairs successfully
     var onDevicePaired: ((DeviceInfo) -> Unit)? = null
@@ -188,6 +192,17 @@ class SyncApiServer @Inject constructor(
         }
         
         routing {
+            // Public display projection. This route never returns sync entities.
+            get("/api/display/v1/feed") {
+                if (!displayFeedRateLimiter.tryAcquire()) {
+                    Log.w(TAG, "Display feed rate limit exceeded")
+                    call.respond(HttpStatusCode.TooManyRequests, "Too many display feed requests")
+                    return@get
+                }
+                Log.d(TAG, "Serving public display feed")
+                call.respond(displayFeedService.getFeed())
+            }
+
             // Health check and status endpoint
             get("/api/sync/status") {
                 val deviceInfo = currentDeviceInfo

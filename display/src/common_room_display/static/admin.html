@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Administrer fotos</title>
+  <style>
+    :root { color-scheme: light; --cp-bg: #f7f4ef; --cp-surface: #fff; --cp-border: #dedede; --cp-text: #242424; --cp-muted: #5c5c5c; --cp-accent: #b11f4b; --cp-danger: #b42318; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--cp-bg); color: var(--cp-text); font-family: Aptos, Calibri, sans-serif; }
+    main { width: min(70rem, 100%); margin: 0 auto; padding: 2rem 1.25rem; }
+    h1 { margin: 0 0 1.5rem; letter-spacing: 0; }
+    form { max-width: 24rem; padding: 1.25rem; background: var(--cp-surface); border: 1px solid var(--cp-border); }
+    label { display: block; margin-bottom: 0.5rem; font-weight: 700; }
+    input, button { min-height: 2.75rem; padding: 0.65rem 0.85rem; font: inherit; }
+    input { width: 100%; border: 1px solid var(--cp-border); }
+    button { border: 0; background: var(--cp-accent); color: #fff; font-weight: 700; cursor: pointer; }
+    button.danger { background: var(--cp-danger); }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1rem; }
+    article { border: 1px solid var(--cp-border); background: var(--cp-surface); }
+    article img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #eee; }
+    article div { display: flex; gap: 0.5rem; padding: 0.75rem; }
+    article button { flex: 1; }
+    #message { min-height: 1.5rem; color: var(--cp-muted); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Administrer fotos</h1>
+    <form id="login-form">
+      <label for="pin">Træner-PIN</label>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required>
+      <button type="submit">Log ind</button>
+    </form>
+    <section id="manager" hidden>
+      <div class="toolbar"><strong>Fotos på skærmen</strong><button id="logout" type="button">Log ud</button></div>
+      <div id="media" class="grid"></div>
+    </section>
+    <p id="message" role="status"></p>
+  </main>
+  <script>
+    const loginForm = document.getElementById("login-form");
+    const manager = document.getElementById("manager");
+    const mediaGrid = document.getElementById("media");
+    const message = document.getElementById("message");
+    let csrfToken = "";
+
+    async function request(path, options = {}) {
+      const response = await fetch(path, options);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+      return body;
+    }
+
+    function mediaCard(item, kind) {
+      const article = document.createElement("article");
+      if (item.url) {
+        const image = document.createElement("img");
+        image.src = item.url;
+        image.alt = "Klubfoto";
+        article.appendChild(image);
+      }
+      const actions = document.createElement("div");
+      if (kind === "temporary" && item.status === "active") {
+        const promote = document.createElement("button");
+        promote.textContent = "Behold";
+        promote.addEventListener("click", () => moderate(`/api/admin/media/temporary/${item.id}/promote`, "POST"));
+        actions.appendChild(promote);
+      }
+      const remove = document.createElement("button");
+      remove.className = "danger";
+      remove.textContent = "Slet";
+      remove.addEventListener("click", () => moderate(`/api/admin/media/${kind}/${item.id}`, "DELETE"));
+      actions.appendChild(remove);
+      article.appendChild(actions);
+      return article;
+    }
+
+    async function loadMedia() {
+      const data = await request("/api/admin/media");
+      const activeTemporary = data.temporary.filter((item) => item.status === "active");
+      mediaGrid.replaceChildren(
+        ...activeTemporary.map((item) => mediaCard(item, "temporary")),
+        ...data.permanent.map((item) => mediaCard(item, "permanent"))
+      );
+      message.textContent = mediaGrid.children.length ? "" : "Der er ingen fotos.";
+    }
+
+    async function moderate(path, method) {
+      try {
+        await request(path, { method, headers: { "X-CSRF-Token": csrfToken } });
+        await loadMedia();
+      } catch (error) { message.textContent = error.message; }
+    }
+
+    async function restoreSession() {
+      try {
+        const data = await request("/api/admin/session");
+        if (!data.authenticated) return;
+        csrfToken = data.csrfToken;
+        loginForm.hidden = true;
+        manager.hidden = false;
+        await loadMedia();
+      } catch (_) { loginForm.hidden = false; }
+    }
+
+    loginForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const data = await request("/api/admin/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin: document.getElementById("pin").value })
+        });
+        csrfToken = data.csrfToken;
+        loginForm.reset();
+        loginForm.hidden = true;
+        manager.hidden = false;
+        await loadMedia();
+      } catch (error) { message.textContent = error.message; }
+    });
+
+    document.getElementById("logout").addEventListener("click", async () => {
+      await request("/api/admin/logout", { method: "POST", headers: { "X-CSRF-Token": csrfToken } });
+      csrfToken = "";
+      manager.hidden = true;
+      loginForm.hidden = false;
+    });
+
+    restoreSession();
+  </script>
+</body>
+</html>

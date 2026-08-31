@@ -1,0 +1,23 @@
+[Unit]
+Description=Medlemscheckin common-room Chromium kiosk
+After=systemd-user-sessions.service common-room-display.service
+Requires=common-room-display.service
+
+[Service]
+Type=simple
+User=display
+Group=display
+PAMName=login
+TTYPath=/dev/tty7
+StandardInput=tty
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+RuntimeDirectory=medlemscheckin-kiosk
+Environment=XDG_RUNTIME_DIR=/run/medlemscheckin-kiosk
+ExecStart=/usr/local/lib/medlemscheckin-display/start-kiosk.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

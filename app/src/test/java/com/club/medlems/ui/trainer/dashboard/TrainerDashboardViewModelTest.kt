@@ -3,6 +3,7 @@ package com.club.medlems.ui.trainer.dashboard
 import com.club.medlems.data.dao.CheckInDao
 import com.club.medlems.data.dao.MemberDao
 import com.club.medlems.data.dao.MemberNameProjection
+import com.club.medlems.data.dao.PolicyViolationDao
 import com.club.medlems.data.dao.PracticeSessionDao
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.Member
@@ -56,6 +57,7 @@ class TrainerDashboardViewModelTest {
     private lateinit var checkInDao: CheckInDao
     private lateinit var practiceSessionDao: PracticeSessionDao
     private lateinit var memberDao: MemberDao
+    private lateinit var policyViolationDao: PolicyViolationDao
     private lateinit var trainerSessionManager: TrainerSessionManager
     private lateinit var syncManager: SyncManager
 
@@ -79,6 +81,7 @@ class TrainerDashboardViewModelTest {
             onBlocking { getRecentTrialMembers(any()) } doReturn emptyList()
             onBlocking { getMemberNames(any()) } doReturn emptyList()
         }
+        policyViolationDao = mock()
         trainerSessionManager = mock {
             on { sessionState } doReturn sessionStateFlow
             on { isSessionActive } doReturn true
@@ -101,6 +104,7 @@ class TrainerDashboardViewModelTest {
             checkInDao,
             practiceSessionDao,
             memberDao,
+            policyViolationDao,
             trainerSessionManager,
             syncManager
         ).also { viewModel = it }
@@ -112,6 +116,7 @@ class TrainerDashboardViewModelTest {
             checkInDao,
             practiceSessionDao,
             memberDao,
+            policyViolationDao,
             trainerSessionManager,
             syncManager
         ).also { viewModel = it }

@@ -2,6 +2,7 @@ package com.club.medlems.domain.csv
 
 import com.club.medlems.data.dao.CheckInDao
 import com.club.medlems.data.dao.MemberDao
+import com.club.medlems.data.dao.PolicyViolationDao
 import com.club.medlems.data.dao.PracticeSessionDao
 import com.club.medlems.data.dao.ScanEventDao
 import com.club.medlems.data.entity.Member
@@ -35,7 +36,8 @@ class CsvServiceTest {
             memberDao = memberDao,
             checkInDao = mock<CheckInDao>(),
             sessionDao = sessionDao,
-            scanEventDao = mock<ScanEventDao>()
+            scanEventDao = mock<ScanEventDao>(),
+            policyViolationDao = mock<PolicyViolationDao>()
         )
 
         val csv = listOf(
@@ -72,7 +74,8 @@ class CsvServiceTest {
             memberDao = memberDao,
             checkInDao = mock<CheckInDao>(),
             sessionDao = sessionDao,
-            scanEventDao = mock<ScanEventDao>()
+            scanEventDao = mock<ScanEventDao>(),
+            policyViolationDao = mock<PolicyViolationDao>()
         )
 
         val csv = listOf(
@@ -98,7 +101,8 @@ class CsvServiceTest {
             memberDao = memberDao,
             checkInDao = mock<CheckInDao>(),
             sessionDao = sessionDao,
-            scanEventDao = mock<ScanEventDao>()
+            scanEventDao = mock<ScanEventDao>(),
+            policyViolationDao = mock<PolicyViolationDao>()
         )
 
         val csv = listOf(

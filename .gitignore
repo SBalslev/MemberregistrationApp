@@ -39,6 +39,13 @@ google-services.json
 captures/
 out/
 
+# Common-room display local state
+display/config.json
+display/data/
+display/**/__pycache__/
+display/**/*.pyc
+display/src/*.egg-info/
+
 # Temporary/accidental wrapper directory
 wrapper_tmp/
 temp.wrapper.*
