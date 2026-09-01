@@ -784,6 +784,11 @@ class SyncRepository @Inject constructor(
             com.club.medlems.data.entity.EquipmentStatus.Maintenance -> EquipmentStatus.MAINTENANCE
             com.club.medlems.data.entity.EquipmentStatus.Retired -> EquipmentStatus.RETIRED
         },
+        cardStatus = cardStatus,
+        cardFileReference = cardFileReference,
+        cardPrintedAtUtc = cardPrintedAtUtc,
+        cardRequestedAtUtc = cardRequestedAtUtc,
+        cardRequestedByDeviceId = cardRequestedByDeviceId,
         deviceId = deviceId,
         syncVersion = syncVersion,
         createdAtUtc = createdAtUtc,
@@ -810,6 +815,11 @@ class SyncRepository @Inject constructor(
             EquipmentStatus.MAINTENANCE -> com.club.medlems.data.entity.EquipmentStatus.Maintenance
             EquipmentStatus.RETIRED -> com.club.medlems.data.entity.EquipmentStatus.Retired
         },
+        cardStatus = cardStatus ?: "none",
+        cardFileReference = cardFileReference,
+        cardPrintedAtUtc = cardPrintedAtUtc,
+        cardRequestedAtUtc = cardRequestedAtUtc,
+        cardRequestedByDeviceId = cardRequestedByDeviceId,
         createdByDeviceId = deviceId,
         createdAtUtc = createdAtUtc,
         modifiedAtUtc = modifiedAtUtc,

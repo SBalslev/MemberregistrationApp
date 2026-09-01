@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -76,7 +77,8 @@ import kotlinx.datetime.toLocalDateTime
 @Composable
 fun CurrentCheckoutsScreen(
     viewModel: EquipmentViewModel = hiltViewModel(),
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToScanCheckin: () -> Unit = {}
 ) {
     val checkoutDetails by viewModel.checkoutDetails.collectAsState()
     val pendingConflicts by viewModel.pendingConflicts.collectAsState()
@@ -106,6 +108,11 @@ fun CurrentCheckoutsScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Tilbage")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onNavigateToScanCheckin) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan retur")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

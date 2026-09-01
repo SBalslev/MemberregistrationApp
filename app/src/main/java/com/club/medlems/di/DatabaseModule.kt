@@ -609,13 +609,32 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * MIGRATION_18_19: Equipment QR Code Card Tracking
+     *
+     * Adds QR label print/request tracking columns to EquipmentItem, mirroring
+     * the Member card tracking fields, to support scanning equipment QR codes
+     * for checkout/check-in.
+     *
+     * @see [equipment-checkout-process] - QR-based equipment checkout/check-in
+     */
+    private val MIGRATION_18_19 = object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE EquipmentItem ADD COLUMN cardStatus TEXT NOT NULL DEFAULT 'none'")
+            db.execSQL("ALTER TABLE EquipmentItem ADD COLUMN cardFileReference TEXT")
+            db.execSQL("ALTER TABLE EquipmentItem ADD COLUMN cardPrintedAtUtc TEXT")
+            db.execSQL("ALTER TABLE EquipmentItem ADD COLUMN cardRequestedAtUtc TEXT")
+            db.execSQL("ALTER TABLE EquipmentItem ADD COLUMN cardRequestedByDeviceId TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18).build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19).build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()

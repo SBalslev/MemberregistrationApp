@@ -1,16 +1,26 @@
 package com.club.medlems.ui.equipment
 
+import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.club.medlems.data.dao.MemberDao
 import com.club.medlems.data.entity.ConflictStatus
 import com.club.medlems.data.entity.EquipmentCheckout
 import com.club.medlems.data.entity.EquipmentItem
 import com.club.medlems.data.entity.EquipmentStatus
 import com.club.medlems.data.entity.EquipmentType
 import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.MemberType
 import com.club.medlems.data.repository.EquipmentRepository
 import com.club.medlems.data.repository.MemberRepository
+import com.club.medlems.data.sync.OutboxOperation
+import com.club.medlems.data.sync.SyncManager
+import com.club.medlems.data.sync.SyncOutboxManager
+import com.club.medlems.domain.QrParser
+import com.club.medlems.network.TrustManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +28,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.datetime.Clock
 import javax.inject.Inject
 
 /**
@@ -33,7 +45,11 @@ import javax.inject.Inject
 @HiltViewModel
 class EquipmentViewModel @Inject constructor(
     private val equipmentRepository: EquipmentRepository,
-    private val memberRepository: MemberRepository
+    private val memberRepository: MemberRepository,
+    private val memberDao: MemberDao,
+    private val syncOutboxManager: SyncOutboxManager,
+    private val syncManager: SyncManager,
+    private val trustManager: TrustManager
 ) : ViewModel() {
     
     // ===== Equipment Inventory =====
@@ -228,6 +244,36 @@ class EquipmentViewModel @Inject constructor(
             )
         }
     }
+
+    /**
+     * Checks out equipment to a known member object.
+     *
+     * If the selected member is TRIAL and does not yet have an ID photo on record,
+     * the checkout is paused and the UI is asked to capture ID photo first.
+     */
+    fun checkoutEquipmentForMember(
+        equipmentId: String,
+        member: Member,
+        notes: String? = null
+    ) {
+        if (member.memberType == MemberType.TRIAL && member.idPhotoPath.isNullOrBlank()) {
+            _trialIdCaptureContext.value = TrialIdCaptureContext(
+                equipmentId = equipmentId,
+                member = member,
+                notes = notes
+            )
+            _uiState.value = _uiState.value.copy(
+                error = "Prøvemedlem mangler ID-billede. Tag ID-billede før udlån."
+            )
+            return
+        }
+
+        checkoutEquipment(
+            equipmentId = equipmentId,
+            membershipId = member.membershipId ?: member.internalId,
+            notes = notes
+        )
+    }
     
     /**
      * Checks in (returns) equipment.
@@ -274,7 +320,200 @@ class EquipmentViewModel @Inject constructor(
             equipmentRepository.resolveConflict(checkoutId, ConflictStatus.Cancelled, notes)
         }
     }
-    
+
+    // ===== QR Scan: Checkout Flow (scan equipment, then scan/select member) =====
+
+    private val _scannedEquipment = MutableStateFlow<EquipmentItem?>(null)
+    val scannedEquipment: StateFlow<EquipmentItem?> = _scannedEquipment.asStateFlow()
+
+    /**
+     * Handles a scanned equipment QR code during the checkout flow.
+     * Looks up the equipment and, if available, stages it for member selection.
+     * Any other status (checked out, maintenance, retired, or unrecognized code)
+     * surfaces an error so the trainer can fall back to manual selection.
+     */
+    fun onEquipmentQrScanned(raw: String) {
+        val equipmentId = QrParser.extractEquipmentId(raw)
+        if (equipmentId == null) {
+            _uiState.value = _uiState.value.copy(error = "Ugyldigt QR-udstyrskort")
+            return
+        }
+        viewModelScope.launch {
+            val equipment = equipmentRepository.getEquipmentById(equipmentId)
+            when {
+                equipment == null -> _uiState.value = _uiState.value.copy(error = "Udstyr ikke fundet")
+                equipment.status != EquipmentStatus.Available -> _uiState.value = _uiState.value.copy(
+                    error = "Udstyr er ikke tilg\u00e6ngeligt (status: ${equipment.status})"
+                )
+                else -> _scannedEquipment.value = equipment
+            }
+        }
+    }
+
+    /** Clears the equipment staged via QR scan for checkout (e.g. user cancels or switches to manual pick). */
+    fun clearScannedEquipment() {
+        _scannedEquipment.value = null
+    }
+
+    /**
+     * Handles a scanned member QR code during the checkout flow, resolving it to
+     * a [Member] for confirmation. Falls back with an error if not found so the
+     * trainer can use manual member search instead.
+     */
+    fun onMemberQrScanned(raw: String, onResolved: (Member) -> Unit) {
+        val memberId = QrParser.extractMemberId(raw)
+        if (memberId == null) {
+            _uiState.value = _uiState.value.copy(error = "Ugyldigt QR-medlemskort")
+            return
+        }
+        viewModelScope.launch {
+            val member = memberRepository.getMemberByAnyId(memberId)
+            if (member == null) {
+                _uiState.value = _uiState.value.copy(error = "Medlem ikke fundet")
+            } else {
+                onResolved(member)
+            }
+        }
+    }
+
+    // ===== QR Scan: Check-in Flow (scan equipment only) =====
+
+    /**
+     * Handles a scanned equipment QR code during the check-in flow: resolves the
+     * active checkout for that equipment and checks it in immediately.
+     * Falls back with an error (e.g. equipment not currently checked out, or the
+     * code is unrecognized) so the trainer can use the manual list instead.
+     */
+    fun checkinByEquipmentQr(raw: String) {
+        val equipmentId = QrParser.extractEquipmentId(raw)
+        if (equipmentId == null) {
+            _uiState.value = _uiState.value.copy(error = "Ugyldigt QR-udstyrskort")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+            val equipment = equipmentRepository.getEquipmentById(equipmentId)
+            if (equipment == null) {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = "Udstyr ikke fundet")
+                return@launch
+            }
+            val checkout = equipmentRepository.getActiveCheckoutForEquipment(equipmentId)
+            if (checkout == null) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "${equipment.serialNumber} er ikke udl\u00e5nt"
+                )
+                return@launch
+            }
+            val member = memberRepository.getMemberByInternalId(checkout.internalMemberId)
+            val memberName = member?.let { "${it.firstName} ${it.lastName}".trim() } ?: "ukendt medlem"
+
+            val result = equipmentRepository.checkinEquipment(checkout.id)
+            result.fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        successMessage = "${equipment.serialNumber} returneret fra $memberName"
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = error.message ?: "Kunne ikke returnere udstyr"
+                    )
+                }
+            )
+        }
+    }
+
+    // ===== Trial member ID photo capture during checkout =====
+
+    private val _trialIdCaptureContext = MutableStateFlow<TrialIdCaptureContext?>(null)
+    val trialIdCaptureContext: StateFlow<TrialIdCaptureContext?> = _trialIdCaptureContext.asStateFlow()
+
+    fun cancelTrialIdCapture() {
+        _trialIdCaptureContext.value = null
+    }
+
+    /**
+     * Completes the pending trial checkout by persisting captured ID photo,
+     * syncing the member update, then performing the original checkout.
+     */
+    fun completeTrialIdCapture(photoPath: String) {
+        val pending = _trialIdCaptureContext.value ?: run {
+            _uiState.value = _uiState.value.copy(error = "Ingen afventende udlån med ID-foto")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                val now = Clock.System.now()
+                val updatedMember = pending.member.copy(
+                    idPhotoPath = photoPath,
+                    updatedAtUtc = now
+                )
+
+                withContext(Dispatchers.IO) {
+                    memberDao.upsert(updatedMember)
+
+                    val profilePhotoBase64 = try {
+                        pending.member.registrationPhotoPath?.let { path ->
+                            val photoFile = File(path)
+                            if (photoFile.exists()) Base64.encodeToString(photoFile.readBytes(), Base64.NO_WRAP) else null
+                        }
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    val idPhotoBase64 = try {
+                        val idPhotoFile = File(photoPath)
+                        if (idPhotoFile.exists()) Base64.encodeToString(idPhotoFile.readBytes(), Base64.NO_WRAP) else null
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    syncOutboxManager.queueMember(
+                        updatedMember,
+                        trustManager.getThisDeviceId(),
+                        OutboxOperation.UPDATE,
+                        photoBase64 = profilePhotoBase64,
+                        idPhotoBase64 = idPhotoBase64
+                    )
+                    syncManager.notifyEntityChanged("Member", updatedMember.internalId)
+                }
+
+                _trialIdCaptureContext.value = null
+
+                val result = equipmentRepository.checkoutEquipment(
+                    equipmentId = pending.equipmentId,
+                    membershipId = updatedMember.membershipId ?: updatedMember.internalId,
+                    notes = pending.notes
+                )
+                result.fold(
+                    onSuccess = {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            successMessage = "ID-billede gemt. Udstyr udlånt."
+                        )
+                    },
+                    onFailure = { error ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = error.message ?: "Kunne ikke udlåne udstyr"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Kunne ikke gemme ID-billede: ${e.message}"
+                )
+            }
+        }
+    }
+
     // ===== Member Search for Checkout =====
     
     private val _memberSearchResults = MutableStateFlow<List<Member>>(emptyList())
@@ -354,4 +593,10 @@ data class CheckoutWithDetails(
     val checkout: EquipmentCheckout,
     val equipment: EquipmentItem,
     val member: Member
+)
+
+data class TrialIdCaptureContext(
+    val equipmentId: String,
+    val member: Member,
+    val notes: String?
 )

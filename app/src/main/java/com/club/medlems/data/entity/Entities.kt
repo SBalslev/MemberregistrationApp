@@ -278,6 +278,14 @@ data class EquipmentItem(
     val createdAtUtc: Instant,
     val modifiedAtUtc: Instant,
 
+    // === QR Code Card Tracking (mirrors Member card tracking) ===
+    /** Status of the printed QR label for this equipment: none, requested, printed, delivered */
+    val cardStatus: String = "none",
+    val cardFileReference: String? = null,
+    val cardPrintedAtUtc: String? = null,
+    val cardRequestedAtUtc: String? = null,
+    val cardRequestedByDeviceId: String? = null,
+
     // Sync metadata fields
     val deviceId: String? = null,
     val syncVersion: Long = 0,

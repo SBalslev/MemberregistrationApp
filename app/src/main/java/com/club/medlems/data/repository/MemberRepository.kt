@@ -79,6 +79,15 @@ class MemberRepository @Inject constructor(
         }
     
     /**
+     * Gets a member by their internal ID or membership ID (searches both).
+     * Used for QR scan lookups where the ID type isn't known ahead of time.
+     */
+    suspend fun getMemberByAnyId(id: String): Member? =
+        withContext(Dispatchers.IO) {
+            memberDao.get(id)
+        }
+
+    /**
      * Gets all members.
      */
     suspend fun getAllMembers(): List<Member> = withContext(Dispatchers.IO) {

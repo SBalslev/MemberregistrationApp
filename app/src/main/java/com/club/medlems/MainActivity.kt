@@ -91,6 +91,8 @@ sealed class NavRoute(val route: String) {
         fun build(equipmentId: String) = "equipment/checkout/$equipmentId"
         fun buildNoSelection() = "equipment/checkout/_"
     }
+    data object EquipmentCheckoutScan: NavRoute("equipment/checkout-scan")
+    data object EquipmentCheckinScan: NavRoute("equipment/checkin-scan")
     data object CurrentCheckouts: NavRoute("equipment/checkouts")
     data object MemberEquipmentCheckout: NavRoute("trainer/members/{membershipId}/equipment") {
         fun build(membershipId: String) = "trainer/members/$membershipId/equipment"
@@ -237,6 +239,9 @@ fun AppRoot(
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToCheckout = { equipmentId ->
                         navController.navigate(NavRoute.EquipmentCheckout.build(equipmentId))
+                    },
+                    onNavigateToScanCheckout = {
+                        navController.navigate(NavRoute.EquipmentCheckoutScan.route)
                     }
                 )
             }
@@ -248,9 +253,36 @@ fun AppRoot(
                     onCheckoutComplete = { navController.popBackStack() }
                 )
             }
+            composable(NavRoute.EquipmentCheckoutScan.route) {
+                com.club.medlems.ui.equipment.EquipmentCheckoutScanScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToManualCheckout = { equipmentId ->
+                        navController.navigate(
+                            equipmentId?.let { NavRoute.EquipmentCheckout.build(it) }
+                                ?: NavRoute.EquipmentCheckout.buildNoSelection()
+                        ) {
+                            popUpTo(NavRoute.EquipmentCheckoutScan.route) { inclusive = true }
+                        }
+                    },
+                    onCheckoutComplete = { navController.popBackStack() }
+                )
+            }
+            composable(NavRoute.EquipmentCheckinScan.route) {
+                com.club.medlems.ui.equipment.EquipmentCheckinScanScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToManualList = {
+                        navController.navigate(NavRoute.CurrentCheckouts.route) {
+                            popUpTo(NavRoute.EquipmentCheckinScan.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
             composable(NavRoute.CurrentCheckouts.route) {
                 com.club.medlems.ui.equipment.CurrentCheckoutsScreen(
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToScanCheckin = {
+                        navController.navigate(NavRoute.EquipmentCheckinScan.route)
+                    }
                 )
             }
             
