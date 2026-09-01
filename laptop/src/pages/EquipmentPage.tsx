@@ -5,8 +5,8 @@
  * @see [design.md FR-8] - Equipment checkout tracking
  */
 
-import { useState, useEffect } from 'react';
-import { Package, Search, User, Clock, AlertTriangle, CheckCircle, X, Pencil, Wrench, RotateCcw, Ban } from 'lucide-react';
+import { useState, useEffect, useDeferredValue } from 'react';
+import { Package, Search, User, Clock, AlertTriangle, CheckCircle, X, Pencil, Wrench, RotateCcw, Ban, Plus, SlidersHorizontal } from 'lucide-react';
 import { execute, query } from '../database';
 import { queueEquipmentItem } from '../database/syncOutboxRepository';
 import type { EquipmentItem, EquipmentCheckout, EquipmentStatus, EquipmentType } from '../types/entities';
@@ -19,6 +19,17 @@ interface EquipmentWithCheckout extends EquipmentItem {
     memberName: string;
     checkoutTime: string;
   };
+}
+
+interface EquipmentFormValues {
+  name: string;
+  serialNumber: string;
+  type: EquipmentType;
+  description: string;
+}
+
+interface EquipmentEditValues extends EquipmentFormValues {
+  id: string;
 }
 
 const equipmentTypeLabels: Record<string, string> = {
@@ -50,13 +61,36 @@ const equipmentTypes = Object.entries(equipmentTypeLabels)
   .filter(([value]) => value === value.toUpperCase()) as [EquipmentType, string][];
 
 type StatusFilter = 'all' | EquipmentStatus;
+type CategoryFilter = 'all' | EquipmentType;
+type SortOption = 'name' | 'serialNumber' | 'status' | 'modifiedAtUtc';
+
+const statusSortOrder: Record<EquipmentStatus, number> = {
+  MAINTENANCE: 0,
+  CHECKED_OUT: 1,
+  AVAILABLE: 2,
+  RETIRED: 3
+};
+
+function getEquipmentType(item: EquipmentItem): EquipmentType {
+  const type = item.equipmentType ?? item.type;
+  return type === 'TrainingMaterial' as EquipmentType ? 'TRAINING_MATERIAL' : type;
+}
+
+function getEquipmentTypeLabel(item: EquipmentItem): string {
+  const type = getEquipmentType(item);
+  return equipmentTypeLabels[type] ?? type;
+}
 
 export function EquipmentPage() {
   const [equipment, setEquipment] = useState<EquipmentWithCheckout[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
+  const [sortOption, setSortOption] = useState<SortOption>('name');
   const [selectedItem, setSelectedItem] = useState<EquipmentWithCheckout | null>(null);
   const [editingItem, setEditingItem] = useState<EquipmentWithCheckout | null>(null);
+  const [isAddingItem, setIsAddingItem] = useState(false);
   const [retiringItem, setRetiringItem] = useState<EquipmentWithCheckout | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -72,9 +106,9 @@ export function EquipmentPage() {
       
       // Get active checkouts (where not yet checked in)
       const checkouts = query<EquipmentCheckout & { memberName: string }>(`
-        SELECT ec.*, (m.firstName || ' ' || m.lastName) as memberName
+        SELECT ec.*, COALESCE(NULLIF(TRIM(m.firstName || ' ' || m.lastName), ''), 'Ukendt medlem') as memberName
         FROM EquipmentCheckout ec
-        JOIN Member m ON ec.internalMemberId = m.internalId
+        LEFT JOIN Member m ON ec.internalMemberId = m.internalId
         WHERE ec.checkedInAtUtc IS NULL
       `);
 
@@ -98,21 +132,44 @@ export function EquipmentPage() {
   }
 
   const filteredEquipment = equipment.filter(item => {
-    const matchesSearch = searchQuery === '' || 
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.serialNumber?.toLowerCase().includes(searchQuery.toLowerCase());
-    
+    const normalizedQuery = deferredSearchQuery.trim().toLocaleLowerCase('da-DK');
+    const searchableValues = [
+      item.name,
+      item.serialNumber,
+      item.description,
+      item.notes,
+      getEquipmentTypeLabel(item),
+      item.currentCheckout?.memberName
+    ];
+    const matchesSearch = normalizedQuery === '' || searchableValues.some(value =>
+      value?.toLocaleLowerCase('da-DK').includes(normalizedQuery)
+    );
     const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+    const matchesCategory = categoryFilter === 'all' || getEquipmentType(item) === categoryFilter;
 
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesCategory;
+  }).sort((left, right) => {
+    if (sortOption === 'serialNumber') return left.serialNumber.localeCompare(right.serialNumber, 'da-DK', { numeric: true });
+    if (sortOption === 'status') return statusSortOrder[left.status] - statusSortOrder[right.status] || left.name.localeCompare(right.name, 'da-DK');
+    if (sortOption === 'modifiedAtUtc') return right.modifiedAtUtc.localeCompare(left.modifiedAtUtc);
+    return left.name.localeCompare(right.name, 'da-DK');
   });
 
   const stats = {
     total: equipment.length,
     available: equipment.filter(e => e.status === 'AVAILABLE').length,
     checkedOut: equipment.filter(e => e.status === 'CHECKED_OUT').length,
-    needsMaintenance: equipment.filter(e => e.status === 'MAINTENANCE').length
+    needsMaintenance: equipment.filter(e => e.status === 'MAINTENANCE').length,
+    retired: equipment.filter(e => e.status === 'RETIRED').length
   };
+
+  const hasActiveFilters = searchQuery.trim() !== '' || statusFilter !== 'all' || categoryFilter !== 'all';
+
+  function clearFilters() {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setCategoryFilter('all');
+  }
 
   function toSyncableItem(item: EquipmentItem) {
     return {
@@ -176,6 +233,27 @@ export function EquipmentPage() {
     void syncEquipmentChange();
   }
 
+  async function createEquipment(values: EquipmentFormValues) {
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    execute(
+      `INSERT INTO EquipmentItem (
+         id, serialNumber, name, description, equipmentType, status, discipline, notes,
+         createdAtUtc, createdByDeviceId, modifiedAtUtc, syncedAtUtc, syncVersion
+       ) VALUES (?, ?, ?, ?, ?, 'AVAILABLE', NULL, NULL, ?, 'laptop-master', ?, NULL, 1)`,
+      [id, values.serialNumber.trim(), values.name.trim(), values.description.trim() || null, values.type, now, now]
+    );
+    const created = query<EquipmentItem>('SELECT * FROM EquipmentItem WHERE id = ?', [id])[0];
+    if (created) {
+      queueEquipmentItem(toSyncableItem(created), 'INSERT');
+    }
+    setIsAddingItem(false);
+    await loadEquipment();
+    setSelectedItem(created ?? null);
+    setMessage('Udstyret er oprettet og klar til synkronisering.');
+    void syncEquipmentChange();
+  }
+
   if (isLoading) {
     return (
       <div className="h-full flex">
@@ -210,52 +288,100 @@ export function EquipmentPage() {
       <div className="min-w-0 flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="p-4 sm:p-6 border-b border-gray-200 bg-white">
-          <h1 className="text-2xl font-bold text-gray-900">Udstyr</h1>
-          <p className="text-gray-600 mt-1">Administrer våben og udstyr</p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Udstyr</h1>
+              <p className="text-gray-600 mt-1">Administrer våben og udstyr</p>
+            </div>
+            <button
+              onClick={() => setIsAddingItem(true)}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-700"
+            >
+              <Plus className="h-5 w-5" />
+              Tilføj udstyr
+            </button>
+          </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 xl:gap-4 mt-4">
-            <div className="bg-gray-50 rounded-lg p-3">
+          <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-5">
+            <button onClick={() => setStatusFilter('all')} className={`rounded-lg p-3 text-left ${statusFilter === 'all' ? 'bg-gray-200 ring-2 ring-gray-400' : 'bg-gray-50 hover:bg-gray-100'}`}>
               <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
               <div className="text-sm text-gray-600">I alt</div>
-            </div>
-            <div className="bg-green-50 rounded-lg p-3">
+            </button>
+            <button onClick={() => setStatusFilter('AVAILABLE')} className={`rounded-lg p-3 text-left ${statusFilter === 'AVAILABLE' ? 'bg-green-100 ring-2 ring-green-500' : 'bg-green-50 hover:bg-green-100'}`}>
               <div className="text-2xl font-bold text-green-700">{stats.available}</div>
               <div className="text-sm text-green-600">Tilgængeligt</div>
-            </div>
-            <div className="bg-blue-50 rounded-lg p-3">
+            </button>
+            <button onClick={() => setStatusFilter('CHECKED_OUT')} className={`rounded-lg p-3 text-left ${statusFilter === 'CHECKED_OUT' ? 'bg-blue-100 ring-2 ring-blue-500' : 'bg-blue-50 hover:bg-blue-100'}`}>
               <div className="text-2xl font-bold text-blue-700">{stats.checkedOut}</div>
               <div className="text-sm text-blue-600">Udlånt</div>
-            </div>
-            <div className="bg-amber-50 rounded-lg p-3">
+            </button>
+            <button onClick={() => setStatusFilter('MAINTENANCE')} className={`rounded-lg p-3 text-left ${statusFilter === 'MAINTENANCE' ? 'bg-amber-100 ring-2 ring-amber-500' : 'bg-amber-50 hover:bg-amber-100'}`}>
               <div className="text-2xl font-bold text-amber-700">{stats.needsMaintenance}</div>
               <div className="text-sm text-amber-600">Til vedligeholdelse</div>
-            </div>
+            </button>
+            <button onClick={() => setStatusFilter('RETIRED')} className={`rounded-lg p-3 text-left ${statusFilter === 'RETIRED' ? 'bg-gray-300 ring-2 ring-gray-500' : 'bg-gray-100 hover:bg-gray-200'}`}>
+              <div className="text-2xl font-bold text-gray-700">{stats.retired}</div>
+              <div className="text-sm text-gray-600">Pensioneret</div>
+            </button>
           </div>
 
           {/* Search and filter */}
-          <div className="flex flex-col xl:flex-row gap-3 mt-4">
+          <div className="mt-4 space-y-2" role="search">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
-                type="text"
-                placeholder="Søg efter navn eller serienummer..."
+                type="search"
+                aria-label="Søg i udstyr"
+                placeholder="Søg navn, serienummer, kategori, beskrivelse eller låner..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">Alle</option>
-              <option value="AVAILABLE">Tilgængeligt</option>
-              <option value="CHECKED_OUT">Udlånt</option>
-              <option value="MAINTENANCE">Til vedligeholdelse</option>
-              <option value="RETIRED">Pensioneret</option>
-            </select>
+            <div className="flex flex-wrap items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4 text-gray-400" aria-hidden="true" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                aria-label="Filtrer efter status"
+                className="min-w-44 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">Status: Alle</option>
+                <option value="AVAILABLE">Tilgængeligt ({stats.available})</option>
+                <option value="CHECKED_OUT">Udlånt ({stats.checkedOut})</option>
+                <option value="MAINTENANCE">Til vedligeholdelse ({stats.needsMaintenance})</option>
+                <option value="RETIRED">Pensioneret ({stats.retired})</option>
+              </select>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
+                aria-label="Filtrer efter kategori"
+                className="min-w-44 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">Kategori: Alle</option>
+                {equipmentTypes.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <select
+                value={sortOption}
+                onChange={(e) => setSortOption(e.target.value as SortOption)}
+                aria-label="Sortér udstyr"
+                className="min-w-44 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="name">Sortér: Navn</option>
+                <option value="serialNumber">Sortér: Serienummer</option>
+                <option value="status">Sortér: Kræver handling</option>
+                <option value="modifiedAtUtc">Sortér: Senest ændret</option>
+              </select>
+              <span className="text-sm text-gray-500">Viser {filteredEquipment.length} af {equipment.length}</span>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className="ml-auto text-sm font-medium text-blue-700 hover:text-blue-900">
+                  Ryd filtre
+                </button>
+              )}
+            </div>
           </div>
           {message && (
             <div className="mt-3 flex items-center justify-between rounded-md bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
@@ -273,6 +399,9 @@ export function EquipmentPage() {
             <div className="text-center py-12 text-gray-500">
               <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
               <p>Intet udstyr fundet</p>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className="mt-3 text-sm font-medium text-blue-700 hover:text-blue-900">Ryd filtre</button>
+              )}
             </div>
           ) : (
             <div className="grid gap-3">
@@ -280,40 +409,47 @@ export function EquipmentPage() {
                 <button
                   key={item.id}
                   onClick={() => setSelectedItem(item)}
-                  className={`w-full text-left p-4 rounded-lg border transition-all ${
+                  aria-pressed={selectedItem?.id === item.id}
+                  className={`w-full rounded-lg border p-4 text-left transition-all ${
                     selectedItem?.id === item.id
                       ? 'border-blue-500 bg-blue-50'
                       : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${equipmentStatusStyles[item.status]}`}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className={`shrink-0 rounded-lg p-2 ${equipmentStatusStyles[item.status]}`}>
                         <Package className="w-5 h-5" />
                       </div>
-                      <div>
-                        <div className="font-medium text-gray-900">{item.name}</div>
-                        <div className="text-sm text-gray-500">
-                          {equipmentTypeLabels[item.equipmentType ?? item.type] ?? item.equipmentType ?? item.type}
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-gray-900">{item.name}</div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
+                          <span>{getEquipmentTypeLabel(item)}</span>
+                          <span className="font-mono">SN: {item.serialNumber}</span>
                         </div>
-                        {item.serialNumber && (
-                          <div className="text-sm text-gray-500">SN: {item.serialNumber}</div>
+                        {item.description && (
+                          <p className="mt-1 line-clamp-2 text-sm text-gray-600">{item.description}</p>
                         )}
                       </div>
                     </div>
-                    <div className="text-right">
-                      {item.currentCheckout ? (
-                        <div className="flex items-center gap-1 text-blue-600">
+                    <div className="shrink-0 text-right">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-sm ${equipmentStatusStyles[item.status]}`}>
+                        {item.status === 'AVAILABLE' && <CheckCircle className="w-4 h-4" />}
+                        {item.status === 'MAINTENANCE' && <Wrench className="w-4 h-4" />}
+                        {item.status === 'RETIRED' && <Ban className="w-4 h-4" />}
+                        {equipmentStatusLabels[item.status]}
+                      </span>
+                      {item.currentCheckout && (
+                        <div className="mt-2 text-blue-700">
+                          <div className="flex items-center justify-end gap-1">
                           <User className="w-4 h-4" />
                           <span className="text-sm">{item.currentCheckout.memberName}</span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-end gap-1 text-xs text-gray-500">
+                            <Clock className="h-3.5 w-3.5" />
+                            {new Date(item.currentCheckout.checkoutTime).toLocaleString('da-DK')}
+                          </div>
                         </div>
-                      ) : (
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm ${equipmentStatusStyles[item.status]}`}>
-                          {item.status === 'AVAILABLE' && <CheckCircle className="w-4 h-4" />}
-                          {item.status === 'MAINTENANCE' && <Wrench className="w-4 h-4" />}
-                          {item.status === 'RETIRED' && <Ban className="w-4 h-4" />}
-                          {equipmentStatusLabels[item.status]}
-                        </span>
                       )}
                     </div>
                   </div>
@@ -346,9 +482,7 @@ export function EquipmentPage() {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{selectedItem.name}</h2>
-                <p className="text-gray-500">
-                  {equipmentTypeLabels[selectedItem.equipmentType ?? selectedItem.type] ?? selectedItem.equipmentType ?? selectedItem.type}
-                </p>
+                <p className="text-gray-500">{getEquipmentTypeLabel(selectedItem)}</p>
               </div>
             </div>
 
@@ -366,6 +500,13 @@ export function EquipmentPage() {
                 <div className="p-4 bg-gray-50 rounded-lg">
                   <div className="text-sm text-gray-500 mb-1">Serienummer</div>
                   <div className="font-mono text-gray-900">{selectedItem.serialNumber}</div>
+                </div>
+              )}
+
+              {selectedItem.description && (
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <div className="text-sm text-gray-500 mb-1">Beskrivelse</div>
+                  <div className="whitespace-pre-wrap text-gray-900">{selectedItem.description}</div>
                 </div>
               )}
 
@@ -391,6 +532,11 @@ export function EquipmentPage() {
                   <div className="text-gray-900">{selectedItem.notes}</div>
                 </div>
               )}
+
+              <div className="border-t border-gray-200 pt-4 text-xs text-gray-500">
+                <div>Senest ændret: {new Date(selectedItem.modifiedAtUtc).toLocaleString('da-DK')}</div>
+                <div className="mt-1">Synkronisering: {selectedItem.syncedAtUtc ? 'Synkroniseret' : 'Afventer synkronisering'}</div>
+              </div>
 
               {selectedItem.status === 'MAINTENANCE' && (
                 <div className="p-4 bg-amber-50 rounded-lg flex items-start gap-3">
@@ -447,10 +593,26 @@ export function EquipmentPage() {
           </div>
         </div>
       )}
-      <EquipmentEditDialog
+      <EquipmentFormDialog
+        key={isAddingItem ? 'add-open' : 'add-closed'}
+        isOpen={isAddingItem}
+        title="Tilføj udstyr"
+        confirmLabel="Tilføj"
+        item={null}
+        onClose={() => setIsAddingItem(false)}
+        onSave={createEquipment}
+        serialNumberInUse={serialNumber => equipment.some(candidate =>
+          candidate.serialNumber.toLowerCase() === serialNumber.trim().toLowerCase()
+        )}
+      />
+      <EquipmentFormDialog
+        key={editingItem?.id ?? 'edit-closed'}
+        isOpen={editingItem != null}
+        title="Rediger udstyr"
+        confirmLabel="Gem ændringer"
         item={editingItem}
         onClose={() => setEditingItem(null)}
-        onSave={saveEquipment}
+        onSave={values => editingItem && void saveEquipment({ ...values, id: editingItem.id })}
         serialNumberInUse={serialNumber => equipment.some(candidate =>
           candidate.id !== editingItem?.id &&
           candidate.serialNumber.toLowerCase() === serialNumber.trim().toLowerCase()
@@ -469,68 +631,55 @@ export function EquipmentPage() {
   );
 }
 
-interface EquipmentEditValues {
-  id: string;
-  name: string;
-  serialNumber: string;
-  type: EquipmentType;
-  description: string;
-}
-
-function EquipmentEditDialog({
+function EquipmentFormDialog({
+  isOpen,
+  title,
+  confirmLabel,
   item,
   onClose,
   onSave,
   serialNumberInUse
 }: {
+  isOpen: boolean;
+  title: string;
+  confirmLabel: string;
   item: EquipmentWithCheckout | null;
   onClose: () => void;
-  onSave: (values: EquipmentEditValues) => void;
+  onSave: (values: EquipmentFormValues) => void;
   serialNumberInUse: (serialNumber: string) => boolean;
 }) {
-  const [name, setName] = useState('');
-  const [serialNumber, setSerialNumber] = useState('');
-  const [type, setType] = useState<EquipmentType>('TRAINING_MATERIAL');
-  const [description, setDescription] = useState('');
-  const dialogRef = useFocusTrap<HTMLDivElement>({ enabled: item != null });
-
-  useEffect(() => {
-    if (!item) return;
-    setName(item.name);
-    setSerialNumber(item.serialNumber);
-    setType(item.equipmentType ?? item.type);
-    setDescription(item.description ?? '');
-  }, [item]);
+  const [name, setName] = useState(item?.name ?? '');
+  const [serialNumber, setSerialNumber] = useState(item?.serialNumber ?? '');
+  const [type, setType] = useState<EquipmentType>(item ? getEquipmentType(item) : 'TRAINING_MATERIAL');
+  const [description, setDescription] = useState(item?.description ?? '');
+  const dialogRef = useFocusTrap<HTMLDivElement>({ enabled: isOpen });
 
   const isDuplicateSerialNumber = serialNumber.trim().length > 0 && serialNumberInUse(serialNumber);
   const isValid = name.trim().length > 0 && serialNumber.trim().length > 0 && !isDuplicateSerialNumber;
   const save = () => {
-    if (!item || !isValid) return;
-    onSave({ id: item.id, name, serialNumber, type, description });
+    if (!isValid) return;
+    onSave({ name, serialNumber, type, description });
   };
 
-  useDialogKeyboard(item != null, onClose, save);
+  useDialogKeyboard(isOpen, onClose, save);
 
-  if (!item) return null;
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button className="fixed inset-0 bg-black/50" onClick={onClose} aria-label="Luk dialog" />
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="equipment-edit-title" className="relative w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
-        <div className="mb-5 flex items-start justify-between">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="equipment-form-title" className="relative w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+        <div className="mb-5">
           <div>
-            <h2 id="equipment-edit-title" className="text-xl font-semibold text-gray-900">Rediger udstyr</h2>
-            <p className="mt-1 text-sm text-gray-500">Opdater identifikation og beskrivelse.</p>
+            <h2 id="equipment-form-title" className="text-xl font-semibold text-gray-900">{title}</h2>
+            <p className="mt-1 text-sm text-gray-500">Angiv identifikation, kategori og beskrivelse.</p>
           </div>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600" title="Luk" aria-label="Luk dialog">
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="text-sm font-medium text-gray-700">
             Navn
-            <input value={name} onChange={event => setName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" required />
+            <input autoFocus value={name} onChange={event => setName(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" required />
           </label>
           <label className="text-sm font-medium text-gray-700">
             Serienummer
@@ -538,7 +687,7 @@ function EquipmentEditDialog({
             {isDuplicateSerialNumber && <span className="mt-1 block text-xs text-red-600">Serienummeret bruges allerede.</span>}
           </label>
           <label className="text-sm font-medium text-gray-700 sm:col-span-2">
-            Udstyrstype
+            Kategori
             <select value={type} onChange={event => setType(event.target.value as EquipmentType)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2">
               {equipmentTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
@@ -552,8 +701,11 @@ function EquipmentEditDialog({
 
         <div className="mt-6 flex justify-end gap-3">
           <button onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50">Annuller</button>
-          <button onClick={save} disabled={!isValid} className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Gem ændringer</button>
+          <button onClick={save} disabled={!isValid} className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{confirmLabel}</button>
         </div>
+        <button onClick={onClose} className="absolute right-4 top-4 p-2 text-gray-400 hover:text-gray-600" title="Luk" aria-label="Luk dialog">
+          <X className="h-5 w-5" />
+        </button>
       </div>
     </div>
   );

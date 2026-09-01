@@ -42,13 +42,41 @@
 - Added laptop equipment-item outbox collection to automatic and manual tablet
   push payloads.
 
+## Follow-up equipment UX improvements
+
+- Replaced the trainer category field with an exposed dropdown that shows all
+  supported categories and a visible dropdown indicator.
+- Added a direct "Sæt i drift" action to trainer inventory cards when equipment
+  is under maintenance. The existing overflow action remains available.
+- Expanded the laptop overview with clickable status totals, including retired
+  equipment, and added category and status filters.
+- Added sorting by name, serial number, action priority, and modification time.
+- Expanded laptop search to include names, serial numbers, categories,
+  descriptions, notes, and current borrowers.
+- Added compact row details for category, serial number, description, status,
+  borrower, and checkout time.
+- Expanded the laptop detail panel with descriptions, notes, modification time,
+  and pending synchronization state.
+- Added a shared laptop add/edit form with category selection and duplicate
+  serial-number validation.
+- New laptop equipment is marked unsynchronized, added to the persistent
+  outbox as an insert, and submitted through the normal sync trigger.
+
 ## Validation
 
 - `:app:compileTrainerDebugKotlin` passes.
+- `:app:assembleTrainerRelease` passes for the corrected trainer UI. The
+  corrected release is not confirmed installed because the tablet disconnected
+  during `adb install -r`.
 - `SyncOutboxManagerTest` passes for the trainer debug variant.
 - Laptop TypeScript compilation passes.
+- Laptop production build passes.
+- Laptop equipment page tests pass: 4 tests covering search, combined filters,
+  action-priority sorting, duplicate validation, and sync-aware creation.
 - Laptop focused sync tests pass: 71 tests across `syncService.test.ts` and
   `syncOutboxRepository.test.ts`.
+- Browser checks pass at 867 px and 760 px viewport widths without horizontal
+  overflow. The add/edit modal remains usable at the narrower width.
 
 ## Related documentation
 

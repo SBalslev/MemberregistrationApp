@@ -36,6 +36,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -336,76 +338,86 @@ private fun EquipmentItemCard(
             
             Spacer(modifier = Modifier.width(16.dp))
             
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = "Handlinger for ${item.serialNumber}",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (item.status == EquipmentStatus.Maintenance) {
+                    TextButton(onClick = onSetAvailable) {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Sæt i drift")
+                    }
                 }
-                
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Rediger") },
-                        onClick = {
-                            showMenu = false
-                            onEdit()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.Edit, contentDescription = null)
+
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "Handlinger for ${item.serialNumber}",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Rediger") },
+                            onClick = {
+                                showMenu = false
+                                onEdit()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Edit, contentDescription = null)
+                            }
+                        )
+                        if (item.status == EquipmentStatus.Available) {
+                            DropdownMenuItem(
+                                text = { Text("Udl\u00e5n") },
+                                onClick = {
+                                    showMenu = false
+                                    onCheckout()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Check, contentDescription = null)
+                                }
+                            )
                         }
-                    )
-                    if (item.status == EquipmentStatus.Available) {
-                        DropdownMenuItem(
-                            text = { Text("Udl\u00e5n") },
-                            onClick = {
-                                showMenu = false
-                                onCheckout()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Check, contentDescription = null)
-                            }
-                        )
-                    }
-                    if (item.status == EquipmentStatus.Available) {
-                        DropdownMenuItem(
-                            text = { Text("S\u00e6t til vedligeholdelse") },
-                            onClick = {
-                                showMenu = false
-                                onSetMaintenance()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Build, contentDescription = null)
-                            }
-                        )
-                    }
-                    if (item.status == EquipmentStatus.Maintenance || item.status == EquipmentStatus.Retired) {
-                        DropdownMenuItem(
-                            text = { Text("Sæt tilbage i drift") },
-                            onClick = {
-                                showMenu = false
-                                onSetAvailable()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Refresh, contentDescription = null)
-                            }
-                        )
-                    }
-                    if (item.status != EquipmentStatus.Retired && item.status != EquipmentStatus.CheckedOut) {
-                        DropdownMenuItem(
-                            text = { Text("Pensionér") },
-                            onClick = {
-                                showMenu = false
-                                showRetireConfirmDialog = true
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Delete, contentDescription = null)
-                            }
-                        )
+                        if (item.status == EquipmentStatus.Available) {
+                            DropdownMenuItem(
+                                text = { Text("S\u00e6t til vedligeholdelse") },
+                                onClick = {
+                                    showMenu = false
+                                    onSetMaintenance()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Build, contentDescription = null)
+                                }
+                            )
+                        }
+                        if (item.status == EquipmentStatus.Maintenance || item.status == EquipmentStatus.Retired) {
+                            DropdownMenuItem(
+                                text = { Text("Sæt tilbage i drift") },
+                                onClick = {
+                                    showMenu = false
+                                    onSetAvailable()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Refresh, contentDescription = null)
+                                }
+                            )
+                        }
+                        if (item.status != EquipmentStatus.Retired && item.status != EquipmentStatus.CheckedOut) {
+                            DropdownMenuItem(
+                                text = { Text("Pensionér") },
+                                onClick = {
+                                    showMenu = false
+                                    showRetireConfirmDialog = true
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Delete, contentDescription = null)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -531,6 +543,7 @@ private fun StatusBadge(status: EquipmentStatus) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EquipmentFormDialog(
     title: String,
@@ -559,17 +572,23 @@ private fun EquipmentFormDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Box {
+                ExposedDropdownMenuBox(
+                    expanded = showTypeDropdown,
+                    onExpandedChange = { showTypeDropdown = !showTypeDropdown }
+                ) {
                     OutlinedTextField(
                         value = selectedType?.let { getEquipmentTypeDisplayName(it) } ?: "",
                         onValueChange = { },
-                        label = { Text("Udstyrstype *") },
+                        label = { Text("Kategori *") },
                         readOnly = true,
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = showTypeDropdown)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { showTypeDropdown = true }
+                            .menuAnchor()
                     )
-                    DropdownMenu(
+                    ExposedDropdownMenu(
                         expanded = showTypeDropdown,
                         onDismissRequest = { showTypeDropdown = false }
                     ) {
