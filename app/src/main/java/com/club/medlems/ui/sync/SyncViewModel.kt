@@ -282,6 +282,13 @@ class SyncViewModel @Inject constructor(
         }
     }
 
+    fun exportPairingProfile(passphrase: String): String =
+        trustManager.exportPairingProfile(passphrase)
+
+    fun importPairingProfile(serializedProfile: String, passphrase: String) {
+        trustManager.importPairingProfile(serializedProfile, passphrase)
+    }
+
     /**
      * Generates a 6-digit pairing code for other devices to connect to this tablet.
      * The code is valid for 5 minutes.

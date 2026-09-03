@@ -1,5 +1,8 @@
 package com.club.medlems.ui.sync
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,6 +40,8 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Wifi
@@ -45,6 +50,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -65,6 +71,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +79,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -85,6 +93,8 @@ import com.club.medlems.data.sync.SyncLogLevel
 import com.club.medlems.network.DiscoveredDevice
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.coroutines.launch
+import java.io.IOException
 
 /**
  * Screen for device discovery and pairing.
@@ -111,10 +121,45 @@ fun DevicePairingScreen(
     var showGeneratedCodeDialog by remember { mutableStateOf(false) }
     var pairingCode by remember { mutableStateOf("") }
     var targetIpAddress by remember { mutableStateOf("") }
+    var transferPassphrase by remember { mutableStateOf("") }
+    var pendingTransferUri by remember { mutableStateOf<Uri?>(null) }
+    var showExportTransferDialog by remember { mutableStateOf(false) }
+    var showImportTransferDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     val generatedCode by viewModel.generatedPairingCode.collectAsState()
     
     val snackbarHostState = remember { SnackbarHostState() }
+    val exportTransferLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val profile = viewModel.exportPairingProfile(transferPassphrase)
+                    val output = context.contentResolver.openOutputStream(uri)
+                        ?: throw IOException("Could not open the selected file")
+                    output.bufferedWriter(Charsets.UTF_8).use { it.write(profile) }
+                    snackbarHostState.showSnackbar("Parringskonfiguration eksporteret")
+                } catch (e: IOException) {
+                    snackbarHostState.showSnackbar("Kunne ikke gemme: ${e.message}")
+                } catch (e: IllegalArgumentException) {
+                    snackbarHostState.showSnackbar("Eksport fejlede: ${e.message}")
+                } finally {
+                    transferPassphrase = ""
+                }
+            }
+        } else {
+            transferPassphrase = ""
+        }
+    }
+    val importTransferLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            pendingTransferUri = uri
+            showImportTransferDialog = true
+        }
+    }
     
     // Handle sync result events
     LaunchedEffect(syncResultEvent) {
@@ -210,6 +255,39 @@ fun DevicePairingScreen(
                 isScanning = isScanning
             )
             
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Flyt parring mellem builds", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Eksporter fra release og importer i debug (eller omvendt). " +
+                            "Filen er krypteret med en selvvalgt adgangskode. Kør ikke begge builds samtidigt.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { showExportTransferDialog = true },
+                            enabled = trustedDevices.isNotEmpty()
+                        ) {
+                            Icon(Icons.Default.FileDownload, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Eksporter")
+                        }
+                        OutlinedButton(onClick = {
+                            importTransferLauncher.launch(arrayOf("application/octet-stream", "application/json"))
+                        }) {
+                            Icon(Icons.Default.FileUpload, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Importer")
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
             
             // Pairing buttons row
@@ -369,6 +447,104 @@ fun DevicePairingScreen(
             }
         )
     }
+
+    if (showExportTransferDialog) {
+        PairingProfilePassphraseDialog(
+            title = "Eksporter parring",
+            confirmLabel = "Vælg fil",
+            confirmationRequired = true,
+            onConfirm = { passphrase ->
+                transferPassphrase = passphrase
+                showExportTransferDialog = false
+                exportTransferLauncher.launch("medlemscheckin-pairing-profile.json")
+            },
+            onDismiss = { showExportTransferDialog = false }
+        )
+    }
+
+    if (showImportTransferDialog) {
+        PairingProfilePassphraseDialog(
+            title = "Importer parring",
+            confirmLabel = "Importer",
+            confirmationRequired = false,
+            onConfirm = { passphrase ->
+                val uri = pendingTransferUri ?: return@PairingProfilePassphraseDialog
+                scope.launch {
+                    try {
+                        val input = context.contentResolver.openInputStream(uri)
+                            ?: throw IOException("Could not open the selected file")
+                        val profile = input.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                        viewModel.importPairingProfile(profile, passphrase)
+                        snackbarHostState.showSnackbar(
+                            "Parring importeret. Luk og åbn appen igen, før du synkroniserer."
+                        )
+                        showImportTransferDialog = false
+                        pendingTransferUri = null
+                    } catch (e: IOException) {
+                        snackbarHostState.showSnackbar("Kunne ikke læse: ${e.message}")
+                    } catch (e: IllegalArgumentException) {
+                        snackbarHostState.showSnackbar("Import fejlede: ${e.message}")
+                    }
+                }
+            },
+            onDismiss = {
+                showImportTransferDialog = false
+                pendingTransferUri = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun PairingProfilePassphraseDialog(
+    title: String,
+    confirmLabel: String,
+    confirmationRequired: Boolean,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var passphrase by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    val canConfirm = passphrase.length >= 12 &&
+        (!confirmationRequired || passphrase == confirmation)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Brug mindst 12 tegn. Gem adgangskoden sikkert, da den kræves ved import.")
+                OutlinedTextField(
+                    value = passphrase,
+                    onValueChange = { passphrase = it },
+                    label = { Text("Adgangskode") },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (confirmationRequired) {
+                    OutlinedTextField(
+                        value = confirmation,
+                        onValueChange = { confirmation = it },
+                        label = { Text("Gentag adgangskode") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(passphrase) }, enabled = canConfirm) {
+                Text(confirmLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuller")
+            }
+        }
+    )
 }
 
 /**

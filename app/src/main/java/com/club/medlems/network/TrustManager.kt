@@ -399,6 +399,67 @@ class TrustManager @Inject constructor(
     fun isPaired(): Boolean {
         return getNetworkId() != null && getPersistentToken() != null
     }
+
+    /**
+     * Creates a passphrase-protected pairing profile for moving this device identity
+     * between release and debug builds on the same physical tablet.
+     */
+    fun exportPairingProfile(passphrase: String): String {
+        val networkId = getNetworkId()
+            ?: throw PairingProfileTransferException("This device is not paired to a network")
+        val deviceInfo = getThisDeviceInfo()
+            ?: throw PairingProfileTransferException("This device identity has not been configured")
+        val persistentToken = getPersistentToken()
+            ?: throw PairingProfileTransferException("This device has no pairing token")
+
+        val profile = PairingProfileTransferData(
+            networkId = networkId,
+            deviceId = getThisDeviceId(),
+            deviceInfo = SyncJson.json.encodeToString(DeviceInfo.serializer(), deviceInfo),
+            trustedDevices = SyncJson.json.encodeToString(
+                ListSerializer(DeviceInfo.serializer()),
+                _trustedDevices.value
+            ),
+            connectionProfiles = SyncJson.json.encodeToString(
+                MapSerializer(String.serializer(), DeviceConnectionProfile.serializer()),
+                _connectionProfiles.value
+            ),
+            persistentToken = persistentToken,
+            deviceTokens = SyncJson.json.encodeToString(
+                MapSerializer(String.serializer(), String.serializer()),
+                getDeviceTokens()
+            )
+        )
+        return PairingProfileTransfer.encrypt(profile, passphrase)
+    }
+
+    /**
+     * Replaces this install's pairing configuration with a validated transferred profile.
+     * The app must be restarted afterwards so active sync services use the imported identity.
+     */
+    fun importPairingProfile(serializedProfile: String, passphrase: String) {
+        val profile = PairingProfileTransfer.decrypt(serializedProfile, passphrase)
+        val deviceInfo = decodeTransferredDeviceInfo(profile.deviceInfo)
+        val trustedDevices = decodeTransferredTrustedDevices(profile.trustedDevices)
+        val connectionProfiles = decodeTransferredConnectionProfiles(profile.connectionProfiles)
+        val deviceTokens = decodeTransferredDeviceTokens(profile.deviceTokens)
+
+        validateTransferredProfile(profile, deviceInfo, trustedDevices, connectionProfiles, deviceTokens)
+
+        prefs.edit()
+            .putString(KEY_NETWORK_ID, profile.networkId)
+            .putString(KEY_THIS_DEVICE_ID, profile.deviceId)
+            .putString(KEY_THIS_DEVICE_INFO, profile.deviceInfo)
+            .putString(KEY_TRUSTED_DEVICES, profile.trustedDevices)
+            .putString(KEY_CONNECTION_PROFILES, profile.connectionProfiles)
+            .putString(KEY_PERSISTENT_TOKEN, profile.persistentToken)
+            .putString(KEY_DEVICE_TOKENS, profile.deviceTokens)
+            .commit()
+
+        _trustedDevices.value = trustedDevices
+        _connectionProfiles.value = connectionProfiles
+        Log.i(TAG, "Imported pairing profile for ${deviceInfo.name}")
+    }
     
     /**
      * Clears all trust data (factory reset of sync configuration).
@@ -408,6 +469,62 @@ class TrustManager @Inject constructor(
         _trustedDevices.value = emptyList()
         _connectionProfiles.value = emptyMap()
         Log.i(TAG, "Cleared all trust data")
+    }
+
+    private fun decodeTransferredDeviceInfo(value: String): DeviceInfo = try {
+        SyncJson.json.decodeFromString(DeviceInfo.serializer(), value)
+    } catch (e: Exception) {
+        throw PairingProfileTransferException("Pairing configuration has an invalid device identity", e)
+    }
+
+    private fun decodeTransferredTrustedDevices(value: String): List<DeviceInfo> = try {
+        SyncJson.json.decodeFromString(ListSerializer(DeviceInfo.serializer()), value)
+    } catch (e: Exception) {
+        throw PairingProfileTransferException("Pairing configuration has an invalid trusted-device list", e)
+    }
+
+    private fun decodeTransferredConnectionProfiles(value: String): Map<String, DeviceConnectionProfile> = try {
+        SyncJson.json.decodeFromString(
+            MapSerializer(String.serializer(), DeviceConnectionProfile.serializer()),
+            value
+        )
+    } catch (e: Exception) {
+        throw PairingProfileTransferException("Pairing configuration has invalid connection profiles", e)
+    }
+
+    private fun decodeTransferredDeviceTokens(value: String): Map<String, String> = try {
+        SyncJson.json.decodeFromString(
+            MapSerializer(String.serializer(), String.serializer()),
+            value
+        )
+    } catch (e: Exception) {
+        throw PairingProfileTransferException("Pairing configuration has invalid device tokens", e)
+    }
+
+    private fun validateTransferredProfile(
+        profile: PairingProfileTransferData,
+        deviceInfo: DeviceInfo,
+        trustedDevices: List<DeviceInfo>,
+        connectionProfiles: Map<String, DeviceConnectionProfile>,
+        deviceTokens: Map<String, String>
+    ) {
+        if (profile.formatVersion != 1 ||
+            profile.networkId.isBlank() ||
+            profile.deviceId.isBlank() ||
+            profile.persistentToken.isBlank() ||
+            deviceInfo.id != profile.deviceId
+        ) {
+            throw PairingProfileTransferException("Pairing configuration is incomplete")
+        }
+        if (trustedDevices.any { !it.isTrusted } || trustedDevices.map { it.id }.toSet().size != trustedDevices.size) {
+            throw PairingProfileTransferException("Pairing configuration has an invalid trusted-device list")
+        }
+        if (connectionProfiles.any { (id, connection) -> id != connection.deviceId || trustedDevices.none { it.id == id } }) {
+            throw PairingProfileTransferException("Pairing configuration has invalid connection profiles")
+        }
+        if (deviceTokens.any { (id, token) -> id.isBlank() || token.isBlank() || trustedDevices.none { it.id == id } }) {
+            throw PairingProfileTransferException("Pairing configuration has invalid device tokens")
+        }
     }
     
     private fun loadTrustedDevices() {
