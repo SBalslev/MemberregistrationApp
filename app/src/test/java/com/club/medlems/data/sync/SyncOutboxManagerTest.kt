@@ -4,11 +4,15 @@ import com.club.medlems.data.entity.EquipmentCheckout
 import com.club.medlems.data.entity.EquipmentItem
 import com.club.medlems.data.entity.EquipmentStatus
 import com.club.medlems.data.entity.EquipmentType
+import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.MemberStatus
+import com.club.medlems.data.entity.MemberType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.*
 import org.junit.Before
@@ -367,6 +371,37 @@ class SyncOutboxManagerTest {
         assertEquals(2, outboxIds.size)
         assertEquals(4, entities.equipmentItems.single().syncVersion)
         assertEquals(7, entities.equipmentCheckouts.single().syncVersion)
+    }
+
+    @Test
+    fun `queueMember should preserve membership card tracking fields`() = runBlocking {
+        val timestamp = Instant.parse("2026-09-07T10:00:00Z")
+        val member = Member(
+            internalId = "member-1",
+            membershipId = null,
+            memberType = MemberType.TRIAL,
+            status = MemberStatus.ACTIVE,
+            firstName = "Test",
+            lastName = "Member",
+            cardStatus = "requested",
+            cardFileReference = "card.pdf",
+            cardPrintedAtUtc = "2026-09-06T10:00:00Z",
+            cardRequestedAtUtc = "2026-09-07T10:00:00Z",
+            cardRequestedByDeviceId = "trainer-1",
+            createdAtUtc = timestamp,
+            updatedAtUtc = timestamp,
+            deviceId = "trainer-1",
+            syncVersion = 3
+        )
+
+        manager.queueMember(member, "trainer-1", OutboxOperation.UPDATE)
+
+        val payload = json.decodeFromString<SyncableMember>(fakeDao.entries.values.single().payload)
+        assertEquals("requested", payload.cardStatus)
+        assertEquals("card.pdf", payload.cardFileReference)
+        assertEquals("2026-09-06T10:00:00Z", payload.cardPrintedAtUtc)
+        assertEquals("2026-09-07T10:00:00Z", payload.cardRequestedAtUtc)
+        assertEquals("trainer-1", payload.cardRequestedByDeviceId)
     }
 
     @Test

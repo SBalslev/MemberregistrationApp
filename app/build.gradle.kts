@@ -21,8 +21,8 @@ android {
         applicationId = "com.club.medlems"
         minSdk = 23
         targetSdk = 34
-        versionCode = 10332 // Semantic: major*10000 + minor*100 + patch
-        versionName = "1.3.32"
+        versionCode = 10333 // Semantic: major*10000 + minor*100 + patch
+        versionName = "1.3.33"
 
         buildConfigField("String", "MINIDRAET_API_BASE_URL", "\"https://iss-skydning.dk/api/v1\"")
 

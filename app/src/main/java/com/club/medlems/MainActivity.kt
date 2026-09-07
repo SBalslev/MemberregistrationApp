@@ -3,6 +3,7 @@ package com.club.medlems
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.*
@@ -347,6 +348,7 @@ fun AppRoot(
 
             // Trainer dashboard screen
             composable(NavRoute.TrainerDashboard.route) {
+                BackHandler { }
                 TrainerDashboardScreen(
                     onLogout = {
                         navController.navigate(NavRoute.TrainerAuth.route) {
