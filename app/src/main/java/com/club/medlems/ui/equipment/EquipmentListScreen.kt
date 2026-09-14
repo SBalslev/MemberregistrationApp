@@ -26,7 +26,9 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -39,6 +41,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -88,12 +91,15 @@ fun EquipmentListScreen(
     onNavigateToScanCheckout: () -> Unit = {}
 ) {
     val equipment by viewModel.allEquipment.collectAsState()
+    val checkoutDetails by viewModel.checkoutDetails.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     
     var showAddDialog by remember { mutableStateOf(false) }
+    var checkoutBeingReturned by remember { mutableStateOf<CheckoutWithDetails?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var statusFilter by remember { mutableStateOf<EquipmentStatus?>(null) }
+    var typeFilter by remember { mutableStateOf<EquipmentType?>(null) }
     
     // Show snackbar for success/error messages
     LaunchedEffect(uiState.successMessage, uiState.error) {
@@ -108,14 +114,19 @@ fun EquipmentListScreen(
     }
     
     var equipmentBeingEdited by remember { mutableStateOf<EquipmentItem?>(null) }
+    val checkoutByEquipmentId = checkoutDetails.associateBy { it.equipment.id }
     val filteredEquipment = equipment.filter { item ->
         val query = searchQuery.trim()
+        val activeCheckout = checkoutByEquipmentId[item.id]
+        val borrowerName = activeCheckout?.member?.let { "${it.firstName} ${it.lastName}" }.orEmpty()
         val matchesSearch = query.isEmpty() ||
             item.serialNumber.contains(query, ignoreCase = true) ||
             item.description?.contains(query, ignoreCase = true) == true ||
-            getEquipmentTypeDisplayName(item.type).contains(query, ignoreCase = true)
+            getEquipmentTypeDisplayName(item.type).contains(query, ignoreCase = true) ||
+            borrowerName.contains(query, ignoreCase = true)
         val matchesStatus = statusFilter == null || item.status == statusFilter
-        matchesSearch && matchesStatus
+        val matchesType = typeFilter == null || item.type == typeFilter
+        matchesSearch && matchesStatus && matchesType
     }
     
     Scaffold(
@@ -186,7 +197,7 @@ fun EquipmentListScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    label = { Text("Søg efter serienummer, type eller beskrivelse") },
+                    label = { Text("Søg efter udstyr eller låner") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     singleLine = true,
                     modifier = Modifier
@@ -216,6 +227,40 @@ fun EquipmentListScreen(
                     }
                 }
 
+                val equipmentForTypeCounts = equipment.filter { item ->
+                    statusFilter == null || item.status == statusFilter
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Type:",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    EquipmentStatusFilterChip(
+                        selected = typeFilter == null,
+                        label = "Alle (${equipmentForTypeCounts.size})",
+                        onClick = { typeFilter = null }
+                    )
+                    equipment
+                        .map { it.type }
+                        .distinct()
+                        .forEach { type ->
+                            val count = equipmentForTypeCounts.count { it.type == type }
+                            EquipmentStatusFilterChip(
+                                selected = typeFilter == type,
+                                label = "${getEquipmentTypeDisplayName(type)} ($count)",
+                                onClick = { typeFilter = type }
+                            )
+                        }
+                }
+
                 Text(
                     text = if (filteredEquipment.size == equipment.size) {
                         "${equipment.size} styk udstyr"
@@ -243,12 +288,14 @@ fun EquipmentListScreen(
                     LazyColumn(
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(filteredEquipment, key = { it.id }) { item ->
                             EquipmentItemCard(
                                 item = item,
+                                activeCheckout = checkoutByEquipmentId[item.id],
                                 onCheckout = { onNavigateToCheckout(item.id) },
+                                onCheckin = { checkoutBeingReturned = it },
                                 onEdit = { equipmentBeingEdited = item },
                                 onSetMaintenance = { viewModel.setMaintenance(item.id) },
                                 onSetAvailable = { viewModel.setAvailable(item.id) },
@@ -292,12 +339,25 @@ fun EquipmentListScreen(
             }
         )
     }
+
+    checkoutBeingReturned?.let { checkout ->
+        CheckinDialog(
+            checkout = checkout,
+            onDismiss = { checkoutBeingReturned = null },
+            onConfirm = { notes ->
+                viewModel.checkinEquipment(checkout.checkout.id, notes)
+                checkoutBeingReturned = null
+            }
+        )
+    }
 }
 
 @Composable
 private fun EquipmentItemCard(
     item: EquipmentItem,
+    activeCheckout: CheckoutWithDetails?,
     onCheckout: () -> Unit,
+    onCheckin: (CheckoutWithDetails) -> Unit,
     onEdit: () -> Unit,
     onSetMaintenance: () -> Unit,
     onSetAvailable: () -> Unit,
@@ -313,44 +373,36 @@ private fun EquipmentItemCard(
             containerColor = MaterialTheme.colorScheme.surface
         )
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.serialNumber,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = getEquipmentTypeDisplayName(item.type),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                if (item.description != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = item.serialNumber,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
                     )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                StatusBadge(status = item.status)
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (item.status == EquipmentStatus.Maintenance) {
-                    TextButton(onClick = onSetAvailable) {
-                        Icon(Icons.Default.Refresh, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Sæt i drift")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = getEquipmentTypeDisplayName(item.type),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        item.description?.let { description ->
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
 
@@ -389,6 +441,18 @@ private fun EquipmentItemCard(
                                 }
                             )
                         }
+                        if (item.status == EquipmentStatus.CheckedOut && activeCheckout != null) {
+                            DropdownMenuItem(
+                                text = { Text("Returnér") },
+                                onClick = {
+                                    showMenu = false
+                                    onCheckin(activeCheckout)
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+                                }
+                            )
+                        }
                         if (item.status == EquipmentStatus.Available) {
                             DropdownMenuItem(
                                 text = { Text("S\u00e6t til vedligeholdelse") },
@@ -424,6 +488,56 @@ private fun EquipmentItemCard(
                                     Icon(Icons.Default.Delete, contentDescription = null)
                                 }
                             )
+                        }
+                    }
+                }
+            }
+
+            if (activeCheckout != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Person,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Udlånt til ${activeCheckout.member.firstName} ${activeCheckout.member.lastName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                StatusBadge(status = item.status)
+                when {
+                    item.status == EquipmentStatus.Available -> {
+                        FilledTonalButton(onClick = onCheckout) {
+                            Icon(Icons.Default.Check, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Udlån")
+                        }
+                    }
+                    item.status == EquipmentStatus.CheckedOut && activeCheckout != null -> {
+                        FilledTonalButton(onClick = { onCheckin(activeCheckout) }) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Returnér")
+                        }
+                    }
+                    item.status == EquipmentStatus.Maintenance -> {
+                        FilledTonalButton(onClick = onSetAvailable) {
+                            Icon(Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Sæt i drift")
                         }
                     }
                 }

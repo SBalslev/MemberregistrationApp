@@ -1,6 +1,6 @@
 # Equipment edit screen and Danish translation completion
 
-**Last Updated:** 2026-09-01 by sbalslev
+**Last Updated:** 2026-09-14 by sbalslev
 
 ## What was implemented
 
@@ -44,6 +44,15 @@
 
 ## Follow-up equipment UX improvements
 
+- Added the current borrower's name to checked-out cards in the trainer
+  inventory.
+- Added a return action to checked-out inventory cards. It reuses the existing
+  check-in confirmation, optional return note, history update, and sync flow.
+- Compacted trainer inventory cards to show more equipment at once and moved
+  checkout, return, and restore actions out of the overflow menu.
+- Extended trainer inventory search to match current borrower names.
+- Added equipment type filter chips with counts that reflect the selected
+  status, allowing category and status filters to be combined.
 - Replaced the trainer category field with an exposed dropdown that shows all
   supported categories and a visible dropdown indicator.
 - Added a direct "Sæt i drift" action to trainer inventory cards when equipment
@@ -64,6 +73,7 @@
 
 ## Validation
 
+- `:app:compileTrainerDebugKotlin` passes after the borrower and return changes.
 - `:app:compileTrainerDebugKotlin` passes.
 - `:app:assembleTrainerRelease` passes for the corrected trainer UI. The
   corrected release is not confirmed installed because the tablet disconnected

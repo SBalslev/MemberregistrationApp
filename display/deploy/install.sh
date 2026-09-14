@@ -44,9 +44,14 @@ python3 -m venv "$INSTALL_DIR/.venv"
 
 if [ ! -f "$CONFIG_DIR/config.json" ]; then
     cp "$SOURCE_DIR/config.example.json" "$CONFIG_DIR/config.json"
+    sed -i \
+        -e "s#\"dataDirectory\": \"data\"#\"dataDirectory\": \"$DATA_DIR\"#" \
+        -e "s#\"permanentMediaDirectory\": \"data/media/permanent\"#\"permanentMediaDirectory\": \"$DATA_DIR/media/permanent\"#" \
+        "$CONFIG_DIR/config.json"
 fi
 
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR" "$DATA_DIR"
+chown root:"$SERVICE_USER" "$CONFIG_DIR" "$CONFIG_DIR/config.json"
 chmod 0750 "$CONFIG_DIR"
 chmod 0640 "$CONFIG_DIR/config.json"
 

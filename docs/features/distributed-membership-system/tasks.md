@@ -2,11 +2,20 @@
 
 > **Design Document**: [design.md](design.md)
 > **Created**: January 14, 2026
-> **Last Updated**: August 31, 2026 by sbalslev
+> **Last Updated**: September 14, 2026 by sbalslev
 > **Overall Progress**: ~100% complete (34/34 parent tasks, 196/196 sub-tasks)
 
 ## Maintenance updates
 
+- [x] M-2026-09-14 Show equipment borrowers and return action on trainer tablet
+  - **Started**: 2026-09-14 18:52:42 UTC+2
+  - **Completed**: 2026-09-14 21:15:44 UTC+2
+  - **Duration**: 2h 23m
+  - **Notes**: Checked-out inventory cards now show the member name and offer
+    a return action using the existing check-in confirmation and sync workflow.
+    Cards use a compact layout with direct checkout, return, and restore actions,
+    equipment search also matches borrower names, and category chips filter the
+    inventory by equipment type together with the existing status filter.
 - [x] M-2026-08-31 Add equipment categories
   - **Started**: 2026-08-31 20:42:09 UTC+2
   - **Completed**: 2026-08-31 21:01:26 UTC+2

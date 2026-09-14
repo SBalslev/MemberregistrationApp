@@ -1,6 +1,6 @@
 # Distributed Membership Management System - Design Document
 
-**Last Updated:** 2026-09-01
+**Last Updated:** 2026-09-14
 **Updated By:** sbalslev
 
 ## Introduction/Overview
@@ -143,6 +143,11 @@ As a club member or admin, I want to see practice sessions recorded across all d
 **FR-5.5** Trainer Tablet SHALL display all currently checked-out equipment with member names.
 
 **FR-5.6** Trainer Tablet SHALL allow checking in (returning) equipment from members.
+
+The trainer inventory implements FR-5.5 and FR-5.6 inline: each checked-out
+equipment card shows the current member and provides a return action with an
+optional check-in note. The return uses the checkout record so history and sync
+metadata remain intact.
 
 **FR-5.7** If equipment is checked out while offline, the system SHALL prevent duplicate checkouts when syncing.
 

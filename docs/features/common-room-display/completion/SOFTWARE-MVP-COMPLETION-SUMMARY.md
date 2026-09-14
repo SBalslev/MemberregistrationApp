@@ -49,3 +49,11 @@ while preserving the same phone workflow.
   timing.
 - Add background expiry scheduling, audit-log retention, and free-space monitoring.
 - Run phone compatibility, power-loss, soak, and common-room pilot tests.
+
+## Hardware deployment update
+
+On 2026-09-14, the installer and backend service were validated on Raspberry Pi OS
+13. The available board identified itself as a Raspberry Pi Zero W Rev 1.1, not a
+Raspberry Pi 2. Its ARMv6 CPU lacks the NEON SIMD support required by the packaged
+Chromium release, so the browser kiosk cannot run on that board. The backend,
+display page, upload page, and trainer page remained reachable over the network.

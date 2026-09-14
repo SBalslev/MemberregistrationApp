@@ -106,7 +106,9 @@ unauthenticated client cannot change media or settings.
 ## Phase 6: Deployment and pilot
 
 - [>] **6.1** Add an idempotent Pi installation and upgrade script.
-  The installer is implemented and shell-validated but not yet run on Pi hardware.
+  The installer was run successfully on Raspberry Pi OS 13. The available test
+  device was a Raspberry Pi Zero W, whose ARMv6 CPU lacks the NEON support required
+  by current Chromium releases, so target Raspberry Pi 2 kiosk validation remains.
 - [>] **6.2** Document imaging, Wi-Fi, DHCP reservation, TV setup, credentials,
   backup, and recovery.
   Software installation, addressing, credentials, backup, and recovery are

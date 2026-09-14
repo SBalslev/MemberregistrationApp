@@ -432,7 +432,7 @@ private fun ConflictCard(
 }
 
 @Composable
-private fun CheckinDialog(
+internal fun CheckinDialog(
     checkout: CheckoutWithDetails,
     onDismiss: () -> Unit,
     onConfirm: (String?) -> Unit
