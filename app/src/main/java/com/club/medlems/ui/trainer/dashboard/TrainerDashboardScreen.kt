@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
@@ -87,6 +88,7 @@ fun TrainerDashboardScreen(
     onLogout: () -> Unit,
     onNavigateToEquipment: () -> Unit,
     onNavigateToCheckouts: () -> Unit,
+    onNavigateToActivities: () -> Unit,
     onNavigateToAdmin: () -> Unit,
     onNavigateToMinIdraetSearch: () -> Unit = {},
     onNavigateToTrialMemberDetail: (String) -> Unit = {},
@@ -98,6 +100,7 @@ fun TrainerDashboardScreen(
         onLogout = { viewModel.logout(); onLogout() },
         onNavigateToEquipment = onNavigateToEquipment,
         onNavigateToCheckouts = onNavigateToCheckouts,
+        onNavigateToActivities = onNavigateToActivities,
         onNavigateToAdmin = onNavigateToAdmin,
         onNavigateToMinIdraetSearch = onNavigateToMinIdraetSearch,
         onNavigateToTrialMemberDetail = onNavigateToTrialMemberDetail,
@@ -117,6 +120,7 @@ private fun TrainerDashboardContent(
     onLogout: () -> Unit,
     onNavigateToEquipment: () -> Unit,
     onNavigateToCheckouts: () -> Unit,
+    onNavigateToActivities: () -> Unit,
     onNavigateToAdmin: () -> Unit,
     onNavigateToMinIdraetSearch: () -> Unit,
     onNavigateToTrialMemberDetail: (String) -> Unit,
@@ -249,6 +253,19 @@ private fun TrainerDashboardContent(
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(
+                        onClick = onNavigateToActivities,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Event,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Aktiviteter", style = MaterialTheme.typography.labelMedium)
+                    }
+
                     // Assisted check-in button
                     FilledTonalButton(
                         onClick = { showAssistedCheckInDialog = true },
@@ -386,6 +403,7 @@ private fun TrainerDashboardPreviewEmpty() {
     TrainerDashboardContent(
         state = TrainerDashboardState(trainerName = "Marie", lastUpdated = "16:30"),
         onLogout = {}, onNavigateToEquipment = {}, onNavigateToCheckouts = {},
+        onNavigateToActivities = {},
         onNavigateToAdmin = {}, onNavigateToMinIdraetSearch = {},
         onNavigateToTrialMemberDetail = {}, onSearchQueryChanged = {},
         onSelectMemberForSession = {}, onClearSessionSelection = {},
@@ -430,6 +448,7 @@ private fun TrainerDashboardPreviewWithData() {
             )
         ),
         onLogout = {}, onNavigateToEquipment = {}, onNavigateToCheckouts = {},
+        onNavigateToActivities = {},
         onNavigateToAdmin = {}, onNavigateToMinIdraetSearch = {},
         onNavigateToTrialMemberDetail = {}, onSearchQueryChanged = {},
         onSelectMemberForSession = {}, onClearSessionSelection = {},
@@ -1007,6 +1026,7 @@ data class AddSessionState(
 class AddSessionViewModel @Inject constructor(
     private val practiceSessionDao: PracticeSessionDao,
     private val memberDao: MemberDao,
+    private val activityDao: com.club.medlems.data.dao.ActivityDao,
     private val policyViolationDao: PolicyViolationDao,
     private val syncOutboxManager: SyncOutboxManager,
     private val syncManager: SyncManager,
@@ -1186,6 +1206,7 @@ class AddSessionViewModel @Inject constructor(
                     krydser = krydserVal,
                     classification = _state.value.selectedClassification,
                     source = SessionSource.attendant,
+                    activityId = activityDao.active()?.id,
                     deviceId = trustManager.getThisDeviceId(),
                     syncVersion = 0,
                     syncedAtUtc = null

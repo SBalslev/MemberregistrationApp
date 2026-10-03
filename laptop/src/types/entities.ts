@@ -139,6 +139,55 @@ export interface PracticeSession {
   createdAtUtc: string;
   syncedAtUtc: string | null;
   syncVersion: number;
+  activityId?: string | null;
+}
+
+export type ActivityType = 'OPEN_DAY' | 'COMPETITION' | 'TRAINING' | 'OTHER';
+export type ActivityStatus = 'DRAFT' | 'ACTIVE' | 'COMPLETED';
+
+export interface Activity {
+  id: string;
+  title: string;
+  type: ActivityType;
+  startsAtUtc: string;
+  endsAtUtc: string | null;
+  status: ActivityStatus;
+  displayEnabled: boolean;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  deviceId: string | null;
+  syncVersion: number;
+  syncedAtUtc: string | null;
+}
+
+export interface ActivityGuest {
+  id: string;
+  activityId: string;
+  displayName: string;
+  clubName: string | null;
+  startNumber: string | null;
+  showOnDisplay: boolean;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  deviceId: string | null;
+  syncVersion: number;
+  syncedAtUtc: string | null;
+}
+
+export interface GuestResult {
+  id: string;
+  activityId: string;
+  guestId: string;
+  createdAtUtc: string;
+  localDate: string;
+  practiceType: string;
+  points: number;
+  krydser: number | null;
+  classification: string | null;
+  deviceId: string | null;
+  syncVersion: number;
+  syncedAtUtc: string | null;
+  deletedAtUtc: string | null;
 }
 
 // ===== Scan Event Types =====

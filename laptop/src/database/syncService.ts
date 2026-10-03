@@ -20,7 +20,7 @@ import { hasPendingMemberDeletion, isMessageProcessed, recordProcessedMessage, q
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
-export const SYNC_SCHEMA_VERSION = '1.8.0'; // 1.8.0: Added policy violations to sync payload
+export const SYNC_SCHEMA_VERSION = '1.11.0';
 export const SYNC_SCHEMA_MAJOR = 1;
 
 /**
@@ -52,6 +52,9 @@ export interface SyncPayload {
     memberDeletions?: SyncableMemberDeletion[];
     checkIns?: SyncableCheckIn[];
     practiceSessions?: SyncablePracticeSession[];
+    activities?: SyncableActivity[];
+    activityGuests?: SyncableActivityGuest[];
+    guestResults?: SyncableGuestResult[];
     practiceSessionDeletions?: SyncablePracticeSessionDeletion[];
     policyViolations?: SyncablePolicyViolation[];
     newMemberRegistrations?: SyncableNewMemberRegistration[];
@@ -156,6 +159,26 @@ interface SyncablePracticeSession {
   deviceId: string;
   syncVersion: number;
   createdAtUtc: string;
+  activityId?: string | null;
+}
+
+interface SyncableActivity {
+  id: string; title: string; type: string; startsAtUtc: string; endsAtUtc?: string | null;
+  status: string; displayEnabled: boolean; createdAtUtc: string; modifiedAtUtc: string;
+  deviceId: string; syncVersion: number; syncedAtUtc?: string | null;
+}
+
+interface SyncableActivityGuest {
+  id: string; activityId: string; displayName: string; clubName?: string | null;
+  startNumber?: string | null; showOnDisplay: boolean; createdAtUtc: string;
+  modifiedAtUtc: string; deviceId: string; syncVersion: number; syncedAtUtc?: string | null;
+}
+
+interface SyncableGuestResult {
+  id: string; activityId: string; guestId: string; createdAtUtc: string; localDate: string;
+  practiceType: string; points: number; krydser?: number | null; classification?: string | null;
+  modifiedAtUtc: string; deviceId: string; syncVersion: number; syncedAtUtc?: string | null;
+  deletedAtUtc?: string | null;
 }
 
 interface SyncableNewMemberRegistration {
@@ -265,6 +288,9 @@ export interface SyncResult {
   registrationsUpdated: number;
   checkInsAdded: number;
   sessionsAdded: number;
+  activitiesProcessed: number;
+  activityGuestsProcessed: number;
+  guestResultsProcessed: number;
   sessionsDeleted: number;
   policyViolationsProcessed: number;
   photosStored: number;
@@ -293,6 +319,9 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
     registrationsUpdated: 0,
     checkInsAdded: 0,
     sessionsAdded: 0,
+    activitiesProcessed: 0,
+    activityGuestsProcessed: 0,
+    guestResultsProcessed: 0,
     sessionsDeleted: 0,
     policyViolationsProcessed: 0,
     photosStored: 0,
@@ -337,6 +366,9 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
           }
         } else if (processed === 'updated') {
           result.membersUpdated++;
+          if (member.photoBase64 || member.idPhotoBase64) {
+            result.photosStored++;
+          }
         }
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -396,6 +428,32 @@ export async function processSyncPayload(payload: SyncPayload): Promise<SyncResu
         result.errors.push(`Session ${session.id}: ${msg}`);
         console.error(`[SyncService] Error processing session ${session.id}:`, error);
       }
+
+    }
+  }
+
+  for (const activity of payload.entities.activities || []) {
+    try {
+      upsertActivity(activity);
+      result.activitiesProcessed++;
+    } catch (error) {
+      result.errors.push(`Activity ${activity.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+  for (const guest of payload.entities.activityGuests || []) {
+    try {
+      upsertActivityGuest(guest);
+      result.activityGuestsProcessed++;
+    } catch (error) {
+      result.errors.push(`ActivityGuest ${guest.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+  for (const guestResult of payload.entities.guestResults || []) {
+    try {
+      upsertGuestResult(guestResult);
+      result.guestResultsProcessed++;
+    } catch (error) {
+      result.errors.push(`GuestResult ${guestResult.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -679,8 +737,17 @@ async function processMember(
   member: SyncableMember
 ): Promise<'added' | 'updated' | 'skipped'> {
   // Check if member already exists by internalId
-  const existing = query<{ internalId: string; syncVersion: number }>(
-    'SELECT internalId, syncVersion FROM Member WHERE internalId = ?',
+  const existing = query<{
+    internalId: string;
+    syncVersion: number;
+    photoPath: string | null;
+    photoThumbnail: string | null;
+    idPhotoPath: string | null;
+    idPhotoThumbnail: string | null;
+  }>(
+    `SELECT internalId, syncVersion, photoPath, photoThumbnail,
+            idPhotoPath, idPhotoThumbnail
+     FROM Member WHERE internalId = ?`,
     [member.internalId]
   );
 
@@ -688,6 +755,24 @@ async function processMember(
   // Handle memberType from Android or memberLifecycleStage (deprecated)
   const memberLifecycleStage = member.memberType || member.memberLifecycleStage || 'FULL';
   const status = member.status || 'ACTIVE';
+  const existingMember = existing[0];
+  const profilePhotoRepairNeeded = !!member.photoBase64
+    && !!existingMember
+    && !existingMember.photoPath
+    && !existingMember.photoThumbnail;
+  const idPhotoRepairNeeded = !!member.idPhotoBase64
+    && !!existingMember
+    && !existingMember.idPhotoPath
+    && !existingMember.idPhotoThumbnail;
+
+  if (
+    existingMember
+    && existingMember.syncVersion >= member.syncVersion
+    && !profilePhotoRepairNeeded
+    && !idPhotoRepairNeeded
+  ) {
+    return 'skipped';
+  }
 
   // Process profile photo if base64 provided
   let photoPath: string | null = null;
@@ -724,10 +809,27 @@ async function processMember(
     }
   }
 
-  if (existing.length > 0) {
-    // Member exists - check if we should update
-    if (existing[0].syncVersion >= member.syncVersion) {
-      return 'skipped'; // Our version is same or newer
+  if (existingMember) {
+    if (existingMember.syncVersion >= member.syncVersion) {
+      execute(
+        `UPDATE Member SET
+          photoPath = COALESCE(?, photoPath),
+          photoThumbnail = COALESCE(?, photoThumbnail),
+          idPhotoPath = COALESCE(?, idPhotoPath),
+          idPhotoThumbnail = COALESCE(?, idPhotoThumbnail),
+          syncedAtUtc = ?
+         WHERE internalId = ?`,
+        [
+          photoPath,
+          photoThumbnail,
+          idPhotoPath,
+          idPhotoThumbnail,
+          now,
+          member.internalId
+        ]
+      );
+      console.log(`[SyncService] Repaired missing photo data for member ${member.internalId}`);
+      return 'updated';
     }
 
     // Update existing member
@@ -737,8 +839,12 @@ async function processMember(
         firstName = ?, lastName = ?, birthDate = ?, gender = ?,
         email = ?, phone = ?, address = ?, zipCode = ?, city = ?,
         guardianName = ?, guardianPhone = ?, guardianEmail = ?,
-        expiresOn = ?, photoPath = ?, photoThumbnail = ?,
-        idPhotoPath = ?, idPhotoThumbnail = ?, mergedIntoId = ?,
+        expiresOn = ?,
+        photoPath = COALESCE(?, photoPath),
+        photoThumbnail = COALESCE(?, photoThumbnail),
+        idPhotoPath = COALESCE(?, idPhotoPath),
+        idPhotoThumbnail = COALESCE(?, idPhotoThumbnail),
+        mergedIntoId = ?,
         cardStatus = COALESCE(?, cardStatus),
         cardFileReference = COALESCE(?, cardFileReference),
         cardPrintedAtUtc = COALESCE(?, cardPrintedAtUtc),
@@ -1205,8 +1311,8 @@ async function processPracticeSession(session: SyncablePracticeSession): Promise
   execute(
     `INSERT INTO PracticeSession (
       id, internalMemberId, membershipId, localDate, practiceType, classification,
-      points, krydser, notes, createdAtUtc, syncedAtUtc, syncVersion
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      points, krydser, notes, createdAtUtc, syncedAtUtc, syncVersion, activityId
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       session.id,
       session.internalMemberId,
@@ -1219,11 +1325,55 @@ async function processPracticeSession(session: SyncablePracticeSession): Promise
       null, // notes not in sync payload
       session.createdAtUtc,
       new Date().toISOString(),
-      session.syncVersion
+      session.syncVersion,
+      session.activityId ?? null
     ]
   );
 
   return true;
+}
+
+function upsertActivity(activity: SyncableActivity): void {
+  execute(
+    `INSERT INTO Activity (id,title,type,startsAtUtc,endsAtUtc,status,displayEnabled,createdAtUtc,updatedAtUtc,deviceId,syncVersion,syncedAtUtc)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET title=excluded.title,type=excluded.type,startsAtUtc=excluded.startsAtUtc,
+       endsAtUtc=excluded.endsAtUtc,status=excluded.status,displayEnabled=excluded.displayEnabled,
+       updatedAtUtc=excluded.updatedAtUtc,deviceId=excluded.deviceId,syncVersion=excluded.syncVersion,syncedAtUtc=excluded.syncedAtUtc
+     WHERE excluded.syncVersion >= Activity.syncVersion`,
+    [activity.id, activity.title, activity.type, activity.startsAtUtc, activity.endsAtUtc ?? null,
+      activity.status, activity.displayEnabled ? 1 : 0, activity.createdAtUtc, activity.modifiedAtUtc,
+      activity.deviceId, activity.syncVersion, new Date().toISOString()]
+  );
+}
+
+function upsertActivityGuest(guest: SyncableActivityGuest): void {
+  execute(
+    `INSERT INTO ActivityGuest (id,activityId,displayName,clubName,startNumber,showOnDisplay,createdAtUtc,updatedAtUtc,deviceId,syncVersion,syncedAtUtc)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET activityId=excluded.activityId,displayName=excluded.displayName,
+       clubName=excluded.clubName,startNumber=excluded.startNumber,showOnDisplay=excluded.showOnDisplay,
+       updatedAtUtc=excluded.updatedAtUtc,deviceId=excluded.deviceId,syncVersion=excluded.syncVersion,syncedAtUtc=excluded.syncedAtUtc
+     WHERE excluded.syncVersion >= ActivityGuest.syncVersion`,
+    [guest.id, guest.activityId, guest.displayName, guest.clubName ?? null, guest.startNumber ?? null,
+      guest.showOnDisplay ? 1 : 0, guest.createdAtUtc, guest.modifiedAtUtc, guest.deviceId,
+      guest.syncVersion, new Date().toISOString()]
+  );
+}
+
+function upsertGuestResult(result: SyncableGuestResult): void {
+  execute(
+    `INSERT INTO GuestResult (id,activityId,guestId,createdAtUtc,localDate,practiceType,points,krydser,classification,deviceId,syncVersion,syncedAtUtc,deletedAtUtc)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET activityId=excluded.activityId,guestId=excluded.guestId,
+       localDate=excluded.localDate,practiceType=excluded.practiceType,points=excluded.points,
+       krydser=excluded.krydser,classification=excluded.classification,deviceId=excluded.deviceId,
+       syncVersion=excluded.syncVersion,syncedAtUtc=excluded.syncedAtUtc,deletedAtUtc=excluded.deletedAtUtc
+     WHERE excluded.syncVersion >= GuestResult.syncVersion`,
+    [result.id, result.activityId, result.guestId, result.createdAtUtc, result.localDate,
+      result.practiceType, result.points, result.krydser ?? null, result.classification ?? null,
+      result.deviceId, result.syncVersion, new Date().toISOString(), result.deletedAtUtc ?? null]
+  );
 }
 
 /**
@@ -1701,6 +1851,19 @@ export function getFullSyncPayload(deviceType?: string): SyncPayload {
   const { equipmentItems, equipmentCheckouts } = getEquipmentForSync();
   const { trainerInfos, trainerDisciplines } = getTrainerDataForSync();
   const practiceSessionDeletions = getPracticeSessionDeletionsForSync();
+  const activities = query<SyncableActivity>(
+    `SELECT id,title,type,startsAtUtc,endsAtUtc,status,displayEnabled,createdAtUtc,
+            updatedAtUtc AS modifiedAtUtc,COALESCE(deviceId,'laptop-master') AS deviceId,syncVersion,syncedAtUtc FROM Activity`
+  ).map(a => ({ ...a, displayEnabled: Boolean(a.displayEnabled) }));
+  const activityGuests = query<SyncableActivityGuest>(
+    `SELECT id,activityId,displayName,clubName,startNumber,showOnDisplay,createdAtUtc,
+            updatedAtUtc AS modifiedAtUtc,COALESCE(deviceId,'laptop-master') AS deviceId,syncVersion,syncedAtUtc FROM ActivityGuest`
+  ).map(g => ({ ...g, showOnDisplay: Boolean(g.showOnDisplay) }));
+  const guestResults = query<SyncableGuestResult>(
+    `SELECT id,activityId,guestId,createdAtUtc,localDate,practiceType,points,krydser,classification,
+            COALESCE(deletedAtUtc,createdAtUtc) AS modifiedAtUtc,COALESCE(deviceId,'laptop-master') AS deviceId,
+            syncVersion,syncedAtUtc,deletedAtUtc FROM GuestResult`
+  );
 
   // Only include member preferences for MEMBER_TABLET devices
   const memberPreferences = deviceType === 'MEMBER_TABLET'
@@ -1716,6 +1879,9 @@ export function getFullSyncPayload(deviceType?: string): SyncPayload {
       members,
       checkIns: [],
       practiceSessions: [],
+      activities,
+      activityGuests,
+      guestResults,
       practiceSessionDeletions,
       newMemberRegistrations: [],
       equipmentItems,

@@ -138,6 +138,10 @@ adb logcat | grep "ReadyScreen"
 - Dates in UI use Danish format dd-MM-yyyy via a shared formatter; storage remains UTC timestamps + LocalDate.
 
 ## Changelog
+- v1.3.38 (2026-10-03): Counted checked-in members in the Raspberry Pi participant metric.
+- v1.3.37 (2026-10-03): Fixed activity, guest, and guest-result peer synchronization when a pull contains no new member sessions.
+- v1.3.36 (2026-10-03): Added activity editing and synchronized editing or removal of guest results.
+- v1.3.35 (2026-10-03): Added trainer-managed activities, guest results, member-result association, synchronization, and Raspberry Pi activity display.
 - v1.3.7 (2025-08-19): Practice Session UI refresh; personal “Mine resultater” across classifications segmented by classification; Danish date formatting in UI; docs updated.
 - v1.3.6 (2025-08-19): Added “Sidste 12 mdr.” leaderboard range; docs refresh; launcher icon update.
 

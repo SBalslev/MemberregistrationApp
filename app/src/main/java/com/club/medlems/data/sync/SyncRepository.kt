@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.club.medlems.data.dao.CheckInDao
+import com.club.medlems.data.dao.ActivityDao
+import com.club.medlems.data.dao.ActivityGuestDao
+import com.club.medlems.data.dao.GuestResultDao
 import com.club.medlems.data.dao.EquipmentCheckoutDao
 import com.club.medlems.data.dao.EquipmentItemDao
 import com.club.medlems.data.dao.MemberDao
@@ -14,6 +17,9 @@ import com.club.medlems.data.dao.ScanEventDao
 import com.club.medlems.data.dao.TrainerDisciplineDao
 import com.club.medlems.data.dao.TrainerInfoDao
 import com.club.medlems.data.entity.CheckIn
+import com.club.medlems.data.entity.Activity
+import com.club.medlems.data.entity.ActivityGuest
+import com.club.medlems.data.entity.GuestResult
 import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberPreference
 import com.club.medlems.data.entity.MemberStatus
@@ -50,6 +56,9 @@ class SyncRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val memberDao: MemberDao,
     private val checkInDao: CheckInDao,
+    private val activityDao: ActivityDao,
+    private val activityGuestDao: ActivityGuestDao,
+    private val guestResultDao: GuestResultDao,
     private val practiceSessionDao: PracticeSessionDao,
     private val scanEventDao: ScanEventDao,
     private val newMemberRegistrationDao: NewMemberRegistrationDao,
@@ -87,6 +96,9 @@ class SyncRepository @Inject constructor(
         val members = memberDao.allMembers().map { it.toSyncable(deviceId) }
         val checkIns = checkInDao.checkInsCreatedAfter(since).map { it.toSyncable(deviceId) }
         val sessions = practiceSessionDao.sessionsCreatedAfter(since).map { it.toSyncable(deviceId) }
+        val activities = activityDao.all().map { it.toSyncable(deviceId) }
+        val activityGuests = activityGuestDao.all().map { it.toSyncable(deviceId) }
+        val guestResults = guestResultDao.all().map { it.toSyncable(deviceId) }
         val registrations = newMemberRegistrationDao.registrationsCreatedAfter(since)
             .map { it.toSyncable(deviceId) }
         val equipmentItems = equipmentItemDao.getUnsynced().map { it.toSyncable(deviceId) }
@@ -103,6 +115,9 @@ class SyncRepository @Inject constructor(
             members = members,
             checkIns = checkIns,
             practiceSessions = sessions,
+            activities = activities,
+            activityGuests = activityGuests,
+            guestResults = guestResults,
             newMemberRegistrations = registrations,
             equipmentItems = equipmentItems,
             equipmentCheckouts = equipmentCheckouts,
@@ -128,6 +143,9 @@ class SyncRepository @Inject constructor(
         var membersProcessed = 0
         var checkInsProcessed = 0
         var sessionsProcessed = 0
+        var activitiesProcessed = 0
+        var activityGuestsProcessed = 0
+        var guestResultsProcessed = 0
         var registrationsProcessed = 0
         val conflicts = mutableListOf<SyncConflict>()
 
@@ -196,6 +214,33 @@ class SyncRepository @Inject constructor(
             }
         }
         
+        payload.entities.activities.forEach { syncActivity ->
+            try {
+                activityDao.upsert(syncActivity.toEntity())
+                activitiesProcessed++
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing activity ${syncActivity.id}", e)
+            }
+        }
+
+        payload.entities.activityGuests.forEach { syncGuest ->
+            try {
+                activityGuestDao.upsert(syncGuest.toEntity())
+                activityGuestsProcessed++
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing activity guest ${syncGuest.id}", e)
+            }
+        }
+
+        payload.entities.guestResults.forEach { syncResult ->
+            try {
+                guestResultDao.upsert(syncResult.toEntity())
+                guestResultsProcessed++
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing guest result ${syncResult.id}", e)
+            }
+        }
+
         // Process practice sessions (append-only with conflict detection)
         payload.entities.practiceSessions.forEach { syncSession ->
             try {
@@ -372,6 +417,9 @@ class SyncRepository @Inject constructor(
             membersProcessed = membersProcessed,
             checkInsProcessed = checkInsProcessed,
             sessionsProcessed = sessionsProcessed,
+            activitiesProcessed = activitiesProcessed,
+            activityGuestsProcessed = activityGuestsProcessed,
+            guestResultsProcessed = guestResultsProcessed,
             registrationsProcessed = registrationsProcessed,
             equipmentItemsProcessed = equipmentItemsProcessed,
             equipmentCheckoutsProcessed = equipmentCheckoutsProcessed,
@@ -676,6 +724,7 @@ class SyncRepository @Inject constructor(
         krydser = krydser,
         classification = classification,
         source = source,
+        activityId = activityId,
         deviceId = deviceId,
         syncVersion = 1,
         createdAtUtc = createdAtUtc,
@@ -693,7 +742,61 @@ class SyncRepository @Inject constructor(
         krydser = krydser,
         classification = classification,
         source = source,
+        activityId = activityId,
         createdAtUtc = createdAtUtc
+    )
+
+    private fun Activity.toSyncable(deviceId: String) = SyncableActivity(
+        id, title, type, startsAtUtc, endsAtUtc, status, displayEnabled,
+        this.deviceId ?: deviceId, syncVersion, createdAtUtc, updatedAtUtc, syncedAtUtc
+    )
+
+    private fun SyncableActivity.toEntity() = Activity(
+        id, title, type, startsAtUtc, endsAtUtc, status, displayEnabled,
+        createdAtUtc, modifiedAtUtc, deviceId, syncVersion, syncedAtUtc
+    )
+
+    private fun ActivityGuest.toSyncable(deviceId: String) = SyncableActivityGuest(
+        id, activityId, displayName, clubName, startNumber, showOnDisplay,
+        this.deviceId ?: deviceId, syncVersion, createdAtUtc, updatedAtUtc, syncedAtUtc
+    )
+
+    private fun SyncableActivityGuest.toEntity() = ActivityGuest(
+        id, activityId, displayName, clubName, startNumber, showOnDisplay,
+        createdAtUtc, modifiedAtUtc, deviceId, syncVersion, syncedAtUtc
+    )
+
+    private fun GuestResult.toSyncable(deviceId: String) = SyncableGuestResult(
+        id = id,
+        activityId = activityId,
+        guestId = guestId,
+        localDate = localDate,
+        practiceType = practiceType,
+        points = points,
+        krydser = krydser,
+        classification = classification,
+        deletedAtUtc = deletedAtUtc,
+        deviceId = this.deviceId ?: deviceId,
+        syncVersion = syncVersion,
+        createdAtUtc = createdAtUtc,
+        modifiedAtUtc = deletedAtUtc ?: createdAtUtc,
+        syncedAtUtc = syncedAtUtc
+    )
+
+    private fun SyncableGuestResult.toEntity() = GuestResult(
+        id = id,
+        activityId = activityId,
+        guestId = guestId,
+        createdAtUtc = createdAtUtc,
+        localDate = localDate,
+        practiceType = practiceType,
+        points = points,
+        krydser = krydser,
+        classification = classification,
+        deviceId = deviceId,
+        syncVersion = syncVersion,
+        syncedAtUtc = syncedAtUtc,
+        deletedAtUtc = deletedAtUtc
     )
     
     private fun NewMemberRegistration.toSyncable(deviceId: String): SyncableNewMemberRegistration {
@@ -994,6 +1097,9 @@ data class SyncResult(
     val membersProcessed: Int = 0,
     val checkInsProcessed: Int = 0,
     val sessionsProcessed: Int = 0,
+    val activitiesProcessed: Int = 0,
+    val activityGuestsProcessed: Int = 0,
+    val guestResultsProcessed: Int = 0,
     val registrationsProcessed: Int = 0,
     val equipmentItemsProcessed: Int = 0,
     val equipmentCheckoutsProcessed: Int = 0,
@@ -1003,7 +1109,7 @@ data class SyncResult(
     val errorMessage: String? = null
 ) {
     val totalProcessed: Int get() = membersProcessed + checkInsProcessed +
-        sessionsProcessed + registrationsProcessed +
+        sessionsProcessed + activitiesProcessed + activityGuestsProcessed + guestResultsProcessed + registrationsProcessed +
         equipmentItemsProcessed + equipmentCheckoutsProcessed +
         trainerInfosProcessed + trainerDisciplinesProcessed
     val hasConflicts: Boolean get() = conflicts.isNotEmpty()
@@ -1016,6 +1122,9 @@ data class SyncResult(
         membersProcessed = this.membersProcessed + other.membersProcessed,
         checkInsProcessed = this.checkInsProcessed + other.checkInsProcessed,
         sessionsProcessed = this.sessionsProcessed + other.sessionsProcessed,
+        activitiesProcessed = this.activitiesProcessed + other.activitiesProcessed,
+        activityGuestsProcessed = this.activityGuestsProcessed + other.activityGuestsProcessed,
+        guestResultsProcessed = this.guestResultsProcessed + other.guestResultsProcessed,
         registrationsProcessed = this.registrationsProcessed + other.registrationsProcessed,
         equipmentItemsProcessed = this.equipmentItemsProcessed + other.equipmentItemsProcessed,
         equipmentCheckoutsProcessed = this.equipmentCheckoutsProcessed + other.equipmentCheckoutsProcessed,

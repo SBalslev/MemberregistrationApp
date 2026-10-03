@@ -84,6 +84,9 @@ export interface SyncPushPayload {
     members?: OnlineMember[];
     checkIns?: OnlineCheckIn[];
     practiceSessions?: OnlinePracticeSession[];
+    activities?: OnlineActivity[];
+    activityGuests?: OnlineActivityGuest[];
+    guestResults?: OnlineGuestResult[];
     equipmentItems?: OnlineEquipmentItem[];
     equipmentCheckouts?: OnlineEquipmentCheckout[];
     trainerInfos?: OnlineTrainerInfo[];
@@ -123,6 +126,9 @@ export interface SyncPullResult {
     members?: OnlineMember[];
     checkIns?: OnlineCheckIn[];
     practiceSessions?: OnlinePracticeSession[];
+    activities?: OnlineActivity[];
+    activityGuests?: OnlineActivityGuest[];
+    guestResults?: OnlineGuestResult[];
     equipmentItems?: OnlineEquipmentItem[];
     equipmentCheckouts?: OnlineEquipmentCheckout[];
     trainerInfos?: OnlineTrainerInfo[];
@@ -172,6 +178,10 @@ export interface EntityCounts {
   // Activity data
   check_ins: number;
   practice_sessions: number;
+  activities: number;
+  activity_guests: number;
+  guest_results: number;
+  guest_results_deleted: number;
   scan_events: number;
   // Equipment data
   equipment_items: number;
@@ -292,6 +302,26 @@ export interface OnlinePracticeSession {
   sync_version: number;
   _action?: 'upsert' | 'delete';
   _deleted?: boolean;
+  activity_id?: string | null;
+}
+
+export interface OnlineActivity {
+  id: string; title: string; type: string; starts_at_utc: string; ends_at_utc: string | null;
+  status: string; display_enabled: boolean; created_at_utc: string; modified_at_utc: string;
+  device_id: string; sync_version: number;
+}
+
+export interface OnlineActivityGuest {
+  id: string; activity_id: string; display_name: string; club_name: string | null;
+  start_number: string | null; show_on_display: boolean; created_at_utc: string;
+  modified_at_utc: string; device_id: string; sync_version: number;
+}
+
+export interface OnlineGuestResult {
+  id: string; activity_id: string; guest_id: string; created_at_utc: string; local_date: string;
+  practice_type: string; points: number; krydser: number | null; classification: string | null;
+  device_id: string; sync_version: number;
+  deleted_at_utc: string | null;
 }
 
 export interface OnlineEquipmentItem {
@@ -457,7 +487,7 @@ export interface OnlineScanEvent {
 export interface OnlinePhotoMetadata {
   id: string;
   internal_member_id: string;
-  photo_type: 'PROFILE' | 'REGISTRATION' | 'ID';
+  photo_type: 'profile' | 'registration' | 'id';
   content_hash: string;
   mime_type: string;
   file_size: number;
@@ -810,7 +840,7 @@ class OnlineApiService {
    */
   async pull(
     since: string,
-    entities: string[] = ['members', 'check_ins', 'practice_sessions', 'equipment_items', 'equipment_checkouts', 'trainer_infos', 'trainer_disciplines', 'posting_categories', 'fiscal_years', 'fee_rates', 'financial_transactions', 'transaction_lines', 'pending_fee_payments', 'scan_events', 'photos', 'new_member_registrations', 'skv_registrations', 'skv_weapons'],
+    entities: string[] = ['members', 'check_ins', 'practice_sessions', 'activities', 'activity_guests', 'guest_results', 'equipment_items', 'equipment_checkouts', 'trainer_infos', 'trainer_disciplines', 'posting_categories', 'fiscal_years', 'fee_rates', 'financial_transactions', 'transaction_lines', 'pending_fee_payments', 'scan_events', 'photos', 'new_member_registrations', 'skv_registrations', 'skv_weapons'],
     limit: number = 100,
     excludeDevice?: string
   ): Promise<SyncPullResult> {
@@ -1605,6 +1635,7 @@ export function practiceSessionToOnline(
     device_id: deviceId,
     created_at_utc: session.createdAtUtc,
     sync_version: session.syncVersion,
+    activity_id: session.activityId ?? null,
     _action: action,
   };
 }
@@ -1625,6 +1656,7 @@ export function practiceSessionFromOnline(online: OnlinePracticeSession): Partia
     notes: online.notes,
     createdAtUtc: online.created_at_utc,
     syncVersion: online.sync_version,
+    activityId: online.activity_id ?? null,
   };
 }
 

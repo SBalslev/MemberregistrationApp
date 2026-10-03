@@ -365,6 +365,17 @@ Users should always know the sync state without needing to understand the system
 
 **FR-6.4** Partial success SHALL acknowledge only successfully processed entries.
 
+**FR-6.5** Direct tablet sync SHALL repair missing member photos when an
+incoming payload contains photo bytes, even when the incoming `syncVersion`
+is unchanged.
+
+**FR-6.6** Member updates SHALL preserve existing `photoPath`,
+`photoThumbnail`, `idPhotoPath`, and `idPhotoThumbnail` values when the
+incoming payload omits the corresponding photo bytes.
+
+**FR-6.7** Full online sync SHALL download missing profile and ID photos from
+received photo metadata when the member has no local copy.
+
 ---
 
 ## Technical Design

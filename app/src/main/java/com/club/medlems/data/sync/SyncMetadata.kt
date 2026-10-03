@@ -98,7 +98,7 @@ data class DeviceInfo(
  */
 object SyncSchemaVersion {
     const val MAJOR = 1
-    const val MINOR = 8  // 1.8.0: Added policy violations to sync payload
+    const val MINOR = 11  // 1.11.0: Added guest result soft deletion
     const val PATCH = 0
     
     val version: String get() = "$MAJOR.$MINOR.$PATCH"

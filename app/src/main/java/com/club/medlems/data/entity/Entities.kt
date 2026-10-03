@@ -22,6 +22,8 @@ enum class TrainerLevel { FULL, ASSISTANT }
 enum class ScanEventType { FIRST_SCAN, REPEAT_SCAN }
 enum class SessionSource { kiosk, attendant }
 enum class PolicyViolationType { TRIAL_REG_WEAPON_REQUIRES_LOG, TRIAL_LIMIT_EXCEEDED }
+enum class ActivityType { OPEN_DAY, COMPETITION, TRAINING, OTHER }
+enum class ActivityStatus { DRAFT, ACTIVE, COMPLETED }
 
 /** Registration approval status for new member registrations - DEPRECATED: Use MemberType instead */
 @Deprecated("Use MemberType instead. Will be removed after migration.")
@@ -122,7 +124,8 @@ data class CheckIn(
     androidx.room.Index(value = ["internalMemberId"]),
     androidx.room.Index(value = ["localDate"]),
     androidx.room.Index(value = ["practiceType", "localDate"]),
-    androidx.room.Index(value = ["internalMemberId", "practiceType", "classification"])
+    androidx.room.Index(value = ["internalMemberId", "practiceType", "classification"]),
+    androidx.room.Index(value = ["activityId"])
 ])
 data class PracticeSession(
     @PrimaryKey val id: String,
@@ -138,8 +141,68 @@ data class PracticeSession(
     val krydser: Int?,
     val classification: String? = null,
     val source: SessionSource,
+    val activityId: String? = null,
     
     // Sync metadata fields
+    val deviceId: String? = null,
+    val syncVersion: Long = 0,
+    val syncedAtUtc: Instant? = null
+)
+
+@Entity(indices = [
+    Index(value = ["status"]),
+    Index(value = ["startsAtUtc"])
+])
+data class Activity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val type: ActivityType,
+    val startsAtUtc: Instant,
+    val endsAtUtc: Instant? = null,
+    val status: ActivityStatus = ActivityStatus.DRAFT,
+    val displayEnabled: Boolean = true,
+    val createdAtUtc: Instant,
+    val updatedAtUtc: Instant,
+    val deviceId: String? = null,
+    val syncVersion: Long = 0,
+    val syncedAtUtc: Instant? = null
+)
+
+@Entity(indices = [
+    Index(value = ["activityId"]),
+    Index(value = ["activityId", "displayName", "clubName"])
+])
+data class ActivityGuest(
+    @PrimaryKey val id: String,
+    val activityId: String,
+    val displayName: String,
+    val clubName: String? = null,
+    val startNumber: String? = null,
+    val showOnDisplay: Boolean = true,
+    val createdAtUtc: Instant,
+    val updatedAtUtc: Instant,
+    val deviceId: String? = null,
+    val syncVersion: Long = 0,
+    val syncedAtUtc: Instant? = null
+)
+
+@Entity(indices = [
+    Index(value = ["activityId"]),
+    Index(value = ["guestId"]),
+    Index(value = ["localDate"]),
+    Index(value = ["activityId", "practiceType"])
+])
+data class GuestResult(
+    @PrimaryKey val id: String,
+    val activityId: String,
+    val guestId: String,
+    val createdAtUtc: Instant,
+    val localDate: LocalDate,
+    val practiceType: PracticeType,
+    val points: Int,
+    val krydser: Int? = null,
+    val classification: String? = null,
+    val deletedAtUtc: Instant? = null,
     val deviceId: String? = null,
     val syncVersion: Long = 0,
     val syncedAtUtc: Instant? = null

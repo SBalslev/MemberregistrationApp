@@ -52,6 +52,50 @@ vi.mock('./db', () => {
   };
 });
 
+describe('Activity sync payloads', () => {
+  it('upserts activities, guests, and guest results from a tablet', async () => {
+    vi.clearAllMocks();
+
+    const result = await processSyncPayload({
+      schemaVersion: '1.11.0',
+      deviceId: 'tablet-activity',
+      deviceType: 'TRAINER_TABLET',
+      timestamp: '2026-10-03T09:00:00Z',
+      entities: {
+        activities: [{
+          id: 'activity-1', title: 'Åben dag', type: 'OPEN_DAY',
+          startsAtUtc: '2026-10-03T09:00:00Z', status: 'ACTIVE', displayEnabled: true,
+          createdAtUtc: '2026-10-03T09:00:00Z', modifiedAtUtc: '2026-10-03T09:00:00Z',
+          deviceId: 'tablet-activity', syncVersion: 1,
+        }],
+        activityGuests: [{
+          id: 'guest-1', activityId: 'activity-1', displayName: 'Gæst',
+          showOnDisplay: true, createdAtUtc: '2026-10-03T09:01:00Z',
+          modifiedAtUtc: '2026-10-03T09:01:00Z', deviceId: 'tablet-activity', syncVersion: 1,
+        }],
+        guestResults: [{
+          id: 'result-1', activityId: 'activity-1', guestId: 'guest-1',
+          createdAtUtc: '2026-10-03T09:02:00Z', modifiedAtUtc: '2026-10-03T09:02:00Z',
+          localDate: '2026-10-03', practiceType: 'Riffel', points: 50,
+          deviceId: 'tablet-activity', syncVersion: 2,
+          deletedAtUtc: '2026-10-03T09:03:00Z',
+        }],
+      },
+    });
+
+    expect(result.activitiesProcessed).toBe(1);
+    expect(result.activityGuestsProcessed).toBe(1);
+    expect(result.guestResultsProcessed).toBe(1);
+    expect(vi.mocked(execute).mock.calls.some(([sql]) => String(sql).includes('INSERT INTO Activity '))).toBe(true);
+    expect(vi.mocked(execute).mock.calls.some(([sql]) => String(sql).includes('INSERT INTO ActivityGuest'))).toBe(true);
+    expect(vi.mocked(execute).mock.calls.some(([sql]) => String(sql).includes('INSERT INTO GuestResult'))).toBe(true);
+    const guestResultCall = vi.mocked(execute).mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO GuestResult')
+    );
+    expect(guestResultCall?.[1]).toContain('2026-10-03T09:03:00Z');
+  });
+});
+
 vi.mock('../utils/photoStorage', () => ({
   processPhoto: vi.fn()
 }));
@@ -59,6 +103,7 @@ vi.mock('../utils/photoStorage', () => ({
 // Import after mocking
 import { execute, query } from './db';
 import { getTrainerDataForSync, processSyncPayload } from './syncService';
+import { processPhoto } from '../utils/photoStorage';
 
 // Type definitions for test payloads
 interface SyncableNewMemberRegistration {
@@ -541,6 +586,93 @@ describe('Schema consistency guards', () => {
     const insertParams = insertCall?.[1] as unknown[] | undefined;
     expect(insertParams).toBeTruthy();
     expect(insertParams).toContain('ADULT');
+  });
+
+  it('should repair a missing member photo when the incoming sync version is unchanged', async () => {
+    vi.mocked(query).mockImplementation((sql: string) => {
+      if (sql.includes('FROM Member WHERE internalId = ?')) {
+        return [{
+          internalId: 'member-123',
+          syncVersion: 1,
+          photoPath: null,
+          photoThumbnail: null,
+          idPhotoPath: null,
+          idPhotoThumbnail: null
+        }];
+      }
+      return [];
+    });
+    vi.mocked(processPhoto).mockResolvedValue({
+      photoPath: 'C:\\photos\\member-123.jpg',
+      photoThumbnail: 'data:image/jpeg;base64,thumbnail'
+    });
+
+    await processSyncPayload({
+      schemaVersion: '1.8.0',
+      deviceId: 'tablet-1',
+      deviceType: 'MEMBER_TABLET',
+      timestamp: '2026-10-03T08:00:00Z',
+      entities: {
+        members: [{
+          internalId: 'member-123',
+          memberType: 'TRIAL',
+          firstName: 'Johan',
+          lastName: 'Larsen',
+          photoBase64: 'cGhvdG8=',
+          deviceId: 'tablet-1',
+          syncVersion: 1,
+          createdAtUtc: '2026-09-15T16:42:25Z',
+          modifiedAtUtc: '2026-09-15T17:10:20Z'
+        }]
+      }
+    });
+
+    const repairCall = vi.mocked(execute).mock.calls.find(([sql]) =>
+      typeof sql === 'string' && sql.includes('photoPath = COALESCE')
+    );
+    expect(repairCall).toBeTruthy();
+    expect(repairCall?.[1]).toContain('C:\\photos\\member-123.jpg');
+  });
+
+  it('should preserve existing photo columns when a newer member update has no photo payload', async () => {
+    vi.mocked(query).mockImplementation((sql: string) => {
+      if (sql.includes('FROM Member WHERE internalId = ?')) {
+        return [{
+          internalId: 'member-124',
+          syncVersion: 1,
+          photoPath: 'C:\\photos\\member-124.jpg',
+          photoThumbnail: 'data:image/jpeg;base64,thumbnail',
+          idPhotoPath: null,
+          idPhotoThumbnail: null
+        }];
+      }
+      return [];
+    });
+
+    await processSyncPayload({
+      schemaVersion: '1.8.0',
+      deviceId: 'tablet-1',
+      deviceType: 'MEMBER_TABLET',
+      timestamp: '2026-10-03T08:00:00Z',
+      entities: {
+        members: [{
+          internalId: 'member-124',
+          memberType: 'TRIAL',
+          firstName: 'Johan',
+          lastName: 'Larsen',
+          deviceId: 'tablet-1',
+          syncVersion: 2,
+          createdAtUtc: '2026-09-15T16:42:25Z',
+          modifiedAtUtc: '2026-10-03T08:00:00Z'
+        }]
+      }
+    });
+
+    const updateCall = vi.mocked(execute).mock.calls.find(([sql]) =>
+      typeof sql === 'string' && sql.includes('UPDATE Member SET')
+    );
+    expect(updateCall?.[0]).toContain('photoPath = COALESCE(?, photoPath)');
+    expect(updateCall?.[0]).toContain('photoThumbnail = COALESCE(?, photoThumbnail)');
   });
 
 });

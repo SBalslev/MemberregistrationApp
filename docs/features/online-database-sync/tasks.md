@@ -1,6 +1,6 @@
 # Online database sync tasks
 
-**Last updated:** 2026-05-17 by sbalslev
+**Last updated:** 2026-09-28 by sbalslev
 
 ## Sync reliability fixes
 
@@ -27,3 +27,10 @@
   - **Completed**: 2026-05-17 20:40:00 UTC+0
   - **Duration**: 10m
   - Sync pull now returns an `errors` array with entity-level failures instead of a hard 500.
+
+- [x] **ODBS-5** Include parent members in child pushes
+  - **Started**: 2026-09-28 21:05:00 UTC+2
+  - **Completed**: 2026-09-28 21:12:15 UTC+2
+  - **Duration**: 7m 15s
+  - Incremental sync now includes members referenced by pending check-ins and practice sessions before pushing child records.
+  - Missing local parent records produce an actionable sync error before contacting the cloud database.

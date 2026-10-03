@@ -122,8 +122,58 @@ data class SyncablePracticeSession(
     val krydser: Int?,
     val classification: String? = null,
     val source: SessionSource,
+    val activityId: String? = null,
     
     // Sync metadata
+    override val deviceId: String,
+    override val syncVersion: Long,
+    override val createdAtUtc: Instant,
+    override val modifiedAtUtc: Instant,
+    override val syncedAtUtc: Instant? = null
+) : SyncMetadata
+
+@Serializable
+data class SyncableActivity(
+    val id: String,
+    val title: String,
+    val type: com.club.medlems.data.entity.ActivityType,
+    val startsAtUtc: Instant,
+    val endsAtUtc: Instant? = null,
+    val status: com.club.medlems.data.entity.ActivityStatus,
+    val displayEnabled: Boolean,
+    override val deviceId: String,
+    override val syncVersion: Long,
+    override val createdAtUtc: Instant,
+    override val modifiedAtUtc: Instant,
+    override val syncedAtUtc: Instant? = null
+) : SyncMetadata
+
+@Serializable
+data class SyncableActivityGuest(
+    val id: String,
+    val activityId: String,
+    val displayName: String,
+    val clubName: String? = null,
+    val startNumber: String? = null,
+    val showOnDisplay: Boolean,
+    override val deviceId: String,
+    override val syncVersion: Long,
+    override val createdAtUtc: Instant,
+    override val modifiedAtUtc: Instant,
+    override val syncedAtUtc: Instant? = null
+) : SyncMetadata
+
+@Serializable
+data class SyncableGuestResult(
+    val id: String,
+    val activityId: String,
+    val guestId: String,
+    val localDate: LocalDate,
+    val practiceType: PracticeType,
+    val points: Int,
+    val krydser: Int? = null,
+    val classification: String? = null,
+    val deletedAtUtc: Instant? = null,
     override val deviceId: String,
     override val syncVersion: Long,
     override val createdAtUtc: Instant,

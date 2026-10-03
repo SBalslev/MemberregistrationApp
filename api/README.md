@@ -40,6 +40,8 @@ Edit `config.php`:
 On your hosting control panel, set:
 - `DB_PASSWORD` - Your MySQL password
 - `JWT_SECRET` - Random 32+ character string
+- `DISPLAY_RELAY_DEVICE_TOKEN` - Random 64-character hex string used only by the
+  common-room display
 
 ### 4. Create Database Tables
 
@@ -47,6 +49,15 @@ Run the SQL schema file via phpMyAdmin or MySQL client:
 ```bash
 mysql -u username -p database_name < schema/V1_0_0__initial_schema.sql
 ```
+
+Apply later migrations in version order. The common-room photo relay requires:
+
+```bash
+mysql -u username -p database_name < schema/V1_9_0__add_display_photo_relay.sql
+```
+
+The hosting configuration must allow 12 MB HTTPS request bodies and MySQL packets
+of at least 16 MB for the relay's 10 MB photo limit.
 
 ### 5. Set File Permissions
 
@@ -81,6 +92,13 @@ curl -X POST https://iss-skydning.dk/api/v1/auth/token \
 | GET | /v1/sync/status | Yes | Get sync status |
 | POST | /v1/photos | Yes | Upload photo |
 | GET | /v1/photos/{id} | Yes | Download photo |
+| GET | /v1/display-relay/upload | QR capability | Mobile photo upload page |
+| POST | /v1/display-relay/photos | QR capability | Queue a temporary display photo |
+| POST | /v1/display-relay/invitations | Display token | Create a rotating upload invitation |
+| GET | /v1/display-relay/photos/next | Display token | Read the next queued photo |
+| GET | /v1/display-relay/photos/{id} | Display token | Download a queued photo |
+| POST | /v1/display-relay/photos/{id}/ack | Display token | Confirm local delivery |
+| POST | /v1/display-relay/photos/{id}/reject | Display token | Reject an invalid photo |
 
 ## Security Features
 
@@ -90,6 +108,10 @@ curl -X POST https://iss-skydning.dk/api/v1/auth/token \
 - Optional IP allowlist
 - Security event logging
 - API access audit trail
+- Rotating 256-bit display-upload capability URLs
+- Bounded display-photo size, dimensions, invitation quota, client quota, and
+  retention
+- Outbound-only Raspberry Pi delivery with a separate device credential
 
 ## Troubleshooting
 

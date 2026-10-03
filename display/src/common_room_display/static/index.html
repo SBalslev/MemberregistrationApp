@@ -72,60 +72,366 @@
       color: var(--cp-text);
       font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    #stage { position: relative; width: 100%; height: 100%; }
-    .slide {
-      position: absolute; inset: 0; display: grid; align-content: center;
-      padding: clamp(2rem, 6vw, 7rem); opacity: 0; transition: opacity 900ms ease;
+    #stage {
+      display: grid;
+      grid-template-columns: minmax(0, 3fr) minmax(32rem, 2fr);
+      width: 100%;
+      height: 100%;
     }
-    .slide.active { opacity: 1; }
-    .photo { padding: 0; background: var(--cp-bg-elevated); }
-    .photo img { width: 100%; height: 100%; object-fit: contain; }
-    .eyebrow { color: var(--cp-accent); font-size: clamp(1.25rem, 2.3vw, 2rem); font-weight: 700; }
-    h1 { max-width: 16ch; margin: 0.25em 0; font-size: clamp(3.5rem, 8vw, 8rem); line-height: 0.95; letter-spacing: 0; }
-    .stats { display: flex; gap: clamp(2rem, 6vw, 6rem); margin-top: 2rem; }
-    .metric strong { display: block; color: var(--cp-accent); font-size: clamp(3rem, 7vw, 7rem); }
-    .metric span { color: var(--cp-text-muted); font-size: clamp(1.1rem, 2vw, 2rem); }
-    .status { position: fixed; right: 2rem; bottom: 1.5rem; color: var(--cp-text-muted); font-size: 1rem; }
+    .photo-panel {
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      background: var(--cp-bg-elevated);
+    }
+    .photo-panel img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .photo-empty {
+      display: grid;
+      height: 100%;
+      place-content: center;
+      padding: 3rem;
+      text-align: center;
+    }
+    .photo-empty h1 {
+      margin: 0.25em 0;
+      font-size: clamp(3.5rem, 6vw, 7rem);
+      line-height: 0.95;
+    }
+    .stats-panel {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: clamp(1rem, 1.7vh, 2rem);
+      overflow: hidden;
+      padding: clamp(1.5rem, 2.5vw, 3.5rem);
+      border-left: 1px solid var(--cp-border);
+      background: var(--cp-surface);
+    }
+    .eyebrow {
+      color: var(--cp-accent);
+      font-size: clamp(1.25rem, 1.6vw, 2.25rem);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .stats-panel h1 {
+      margin: 0.15em 0 0;
+      font-size: clamp(3.5rem, 4.5vw, 6.5rem);
+      line-height: 0.95;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+    .metric {
+      min-width: 0;
+      padding: clamp(0.75rem, 1vw, 1.25rem);
+      border: 1px solid var(--cp-border);
+      border-radius: 16px;
+      background: var(--cp-surface-soft);
+    }
+    .metric strong {
+      display: block;
+      overflow: hidden;
+      color: var(--cp-accent);
+      font-size: clamp(2.75rem, 3.5vw, 5.5rem);
+      line-height: 1;
+      text-overflow: ellipsis;
+    }
+    .metric span {
+      color: var(--cp-text-muted);
+      font-size: clamp(1rem, 1.2vw, 1.75rem);
+    }
+    .data-section { min-height: 0; }
+    .data-section h2 {
+      margin: 0 0 0.65rem;
+      color: var(--cp-text-muted);
+      font-size: clamp(1.25rem, 1.4vw, 1.9rem);
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .leaderboards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .leaderboard {
+      min-width: 0;
+      padding: 1rem;
+      border: 1px solid var(--cp-border);
+      border-radius: 16px;
+      background: var(--cp-surface-soft);
+    }
+    .leaderboard h3 {
+      margin: 0 0 0.6rem;
+      color: var(--cp-accent);
+      font-size: clamp(1.25rem, 1.5vw, 2rem);
+    }
+    .score-row {
+      display: grid;
+      grid-template-columns: 2rem minmax(0, 1fr) auto;
+      gap: 0.5rem;
+      align-items: baseline;
+      padding: 0.45rem 0;
+      border-top: 1px solid var(--cp-border);
+      font-size: clamp(1.1rem, 1.25vw, 1.75rem);
+    }
+    .score-row:first-of-type { border-top: 0; }
+    .score-rank { color: var(--cp-text-muted); }
+    .score-name {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .score-affiliation { color: var(--cp-text-muted); font-size: 0.82em; }
+    .score-points { color: var(--cp-accent); font-size: 1.1em; }
+    .all-scores-section {
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      flex-direction: column;
+    }
+    .section-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .score-page {
+      color: var(--cp-text-muted);
+      font-size: clamp(1rem, 1vw, 1.4rem);
+    }
+    .all-scores-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.35rem 1rem;
+    }
+    .result-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.75rem;
+      min-width: 0;
+      padding: 0.45rem 0.65rem;
+      border: 1px solid var(--cp-border);
+      border-radius: 0.5rem;
+      background: var(--cp-surface-soft);
+      font-size: clamp(1.05rem, 1.15vw, 1.6rem);
+    }
+    .result-label {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .result-discipline { color: var(--cp-text-muted); }
+    .personal-bests {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+    }
+    .personal-best {
+      padding: 0.6rem 0.8rem;
+      border-radius: 0.625rem;
+      background: var(--cp-accent-soft);
+      color: var(--cp-text);
+      font-size: clamp(1rem, 1.15vw, 1.6rem);
+    }
+    .waiting {
+      display: grid;
+      flex: 1;
+      place-content: center;
+      color: var(--cp-text-muted);
+      font-size: clamp(1.2rem, 1.6vw, 2rem);
+      text-align: center;
+    }
+    .status { position: fixed; right: 2rem; bottom: 1.5rem; color: var(--cp-text-muted); font-size: 1.5rem; }
     .status.stale { color: var(--cp-warning); }
     .upload-qr { position: fixed; left: 2rem; bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem; border: 1px solid var(--cp-border); border-radius: 0.625rem; background: var(--cp-panel-strong); }
-    .upload-qr img { width: 5rem; height: 5rem; }
-    .upload-qr span { max-width: 8rem; color: var(--cp-text-muted); font-size: 1rem; font-weight: 700; }
+    .upload-qr img { width: clamp(7rem, 6vw, 12rem); height: clamp(7rem, 6vw, 12rem); }
+    .upload-qr span { max-width: 14rem; color: var(--cp-text-muted); font-size: clamp(1.1rem, 1vw, 1.5rem); font-weight: 700; }
   </style>
 </head>
 <body>
   <main id="stage" aria-live="polite"></main>
-  <aside class="upload-qr"><img src="/api/upload-qr.png" alt="QR-kode til fotoupload"><span>Tilføj et foto</span></aside>
+  <aside class="upload-qr"><img id="upload-qr" src="/api/upload-qr.png" alt="QR-kode til fotoupload"><span>Tilføj et foto</span></aside>
   <div id="status" class="status">Starter...</div>
   <script>
     const stage = document.getElementById("stage");
     const status = document.getElementById("status");
-    let slides = [];
-    let current = 0;
+    const uploadQr = document.getElementById("upload-qr");
+    const SCORE_PAGE_SIZE = 10;
+    let photos = [];
+    let currentPhoto = 0;
+    let photoPanel = null;
+    let allScores = [];
+    let scorePage = 0;
 
-    function statisticsSlide(snapshot) {
-      if (!snapshot.available || !snapshot.feed) return null;
-      const stats = snapshot.feed.stats;
-      const element = document.createElement("section");
-      element.className = "slide";
-      element.innerHTML = `
-        <div class="eyebrow">I dag i klubben</div>
-        <h1>God træning</h1>
-        <div class="stats">
-          <div class="metric"><strong>${stats.participantCount}</strong><span>deltagere</span></div>
-          <div class="metric"><strong>${stats.sessionCount}</strong><span>resultater</span></div>
-          <div class="metric"><strong>${stats.totalPoints}</strong><span>point i alt</span></div>
-        </div>`;
+    function textElement(tag, text, className) {
+      const element = document.createElement(tag);
+      element.textContent = text;
+      if (className) element.className = className;
       return element;
     }
 
-    function photoSlide(photo) {
-      const element = document.createElement("section");
-      element.className = "slide photo";
+    function renderPhoto() {
+      if (!photoPanel) return;
+      photoPanel.replaceChildren();
+      if (photos.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "photo-empty";
+        empty.append(
+          textElement("div", "ISS Sportsskytter", "eyebrow"),
+          textElement("h1", "Velkommen i klubben")
+        );
+        photoPanel.appendChild(empty);
+        return;
+      }
       const image = document.createElement("img");
-      image.src = photo.url;
+      image.src = photos[currentPhoto].url;
       image.alt = "Klubfoto";
-      element.appendChild(image);
+      photoPanel.appendChild(image);
+    }
+
+    function metric(value, label) {
+      const element = document.createElement("div");
+      element.className = "metric";
+      element.append(textElement("strong", String(value)), textElement("span", label));
       return element;
+    }
+
+    function leaderboard(group) {
+      const element = document.createElement("section");
+      element.className = "leaderboard";
+      element.appendChild(textElement("h3", group.discipline));
+      group.entries.slice(0, 3).forEach((entry, index) => {
+        const row = document.createElement("div");
+        row.className = "score-row";
+        row.append(
+          textElement("span", `${index + 1}.`, "score-rank"),
+          textElement(
+            "span",
+            entry.affiliation ? `${entry.displayName} · ${entry.affiliation}` : entry.displayName,
+            "score-name"
+          ),
+          textElement("strong", String(entry.points), "score-points")
+        );
+        element.appendChild(row);
+      });
+      return element;
+    }
+
+    function allScoresSection() {
+      const pageCount = Math.max(1, Math.ceil(allScores.length / SCORE_PAGE_SIZE));
+      scorePage %= pageCount;
+      const section = document.createElement("section");
+      section.id = "all-scores";
+      section.className = "data-section all-scores-section";
+      const heading = document.createElement("div");
+      heading.className = "section-heading";
+      heading.appendChild(textElement("h2", "Alle dagens resultater"));
+      if (pageCount > 1) {
+        heading.appendChild(textElement("span", `${scorePage + 1} / ${pageCount}`, "score-page"));
+      }
+      section.appendChild(heading);
+
+      const list = document.createElement("div");
+      list.className = "all-scores-list";
+      const start = scorePage * SCORE_PAGE_SIZE;
+      allScores.slice(start, start + SCORE_PAGE_SIZE).forEach(score => {
+        const row = document.createElement("div");
+        row.className = "result-row";
+        const label = document.createElement("span");
+        label.className = "result-label";
+        label.append(
+          document.createTextNode(
+            `${score.displayName}${score.affiliation ? ` · ${score.affiliation}` : ""} · `
+          ),
+          textElement(
+            "span",
+            score.classification
+              ? `${score.discipline} · ${score.classification}`
+              : score.discipline,
+            "result-discipline"
+          )
+        );
+        row.append(label, textElement("strong", String(score.points), "score-points"));
+        list.appendChild(row);
+      });
+      section.appendChild(list);
+      return section;
+    }
+
+    function statisticsPanel(snapshot) {
+      const panel = document.createElement("aside");
+      panel.className = "stats-panel";
+      if (!snapshot.available || !snapshot.feed) {
+        panel.append(
+          textElement("div", "I dag i klubben", "eyebrow"),
+          textElement("h1", "God træning")
+        );
+        panel.appendChild(textElement("div", "Venter på medlemsdata...", "waiting"));
+        return panel;
+      }
+
+      const feed = snapshot.feed;
+      panel.append(
+        textElement(
+          "div",
+          feed.activity ? "Aktivitet i klubben" : "I dag i klubben",
+          "eyebrow"
+        ),
+        textElement("h1", feed.activity?.title || "God træning")
+      );
+      allScores = feed.recentScores;
+      scorePage %= Math.max(1, Math.ceil(allScores.length / SCORE_PAGE_SIZE));
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      metrics.append(
+        metric(feed.stats.participantCount, "deltagere"),
+        metric(feed.stats.sessionCount, "resultater"),
+        metric(feed.stats.totalPoints, "point i alt")
+      );
+      panel.appendChild(metrics);
+
+      if (feed.topScoresByDiscipline.length > 0) {
+        const section = document.createElement("section");
+        section.className = "data-section";
+        section.appendChild(textElement("h2", "Dagens topresultater"));
+        const groups = document.createElement("div");
+        groups.className = "leaderboards";
+        feed.topScoresByDiscipline.slice(0, 2).forEach(group => groups.appendChild(leaderboard(group)));
+        section.appendChild(groups);
+        panel.appendChild(section);
+      }
+
+      if (allScores.length > 0) {
+        panel.appendChild(allScoresSection());
+      }
+
+      if (feed.personalBests.length > 0) {
+        const section = document.createElement("section");
+        section.className = "data-section";
+        section.appendChild(textElement("h2", "Nye personlige rekorder"));
+        const bests = document.createElement("div");
+        bests.className = "personal-bests";
+        feed.personalBests.slice(0, 4).forEach(best => {
+          bests.appendChild(
+            textElement(
+              "div",
+              `${best.displayName}: ${best.points} point`,
+              "personal-best"
+            )
+          );
+        });
+        section.appendChild(bests);
+        panel.appendChild(section);
+      }
+      return panel;
     }
 
     async function refresh() {
@@ -133,17 +439,12 @@
         const response = await fetch("/api/playlist", { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const playlist = await response.json();
-        const nextSlides = [statisticsSlide(playlist.statistics), ...playlist.photos.map(photoSlide)].filter(Boolean);
-        if (nextSlides.length === 0) {
-          const empty = document.createElement("section");
-          empty.className = "slide";
-          empty.innerHTML = '<div class="eyebrow">ISS Sportsskytter</div><h1>Velkommen i klubben</h1>';
-          nextSlides.push(empty);
-        }
-        stage.replaceChildren(...nextSlides);
-        slides = nextSlides;
-        current = 0;
-        slides[0].classList.add("active");
+        photos = playlist.photos;
+        currentPhoto = Math.min(currentPhoto, Math.max(photos.length - 1, 0));
+        photoPanel = document.createElement("section");
+        photoPanel.className = "photo-panel";
+        stage.replaceChildren(photoPanel, statisticsPanel(playlist.statistics));
+        renderPhoto();
         status.textContent = playlist.statistics.stale ? "Viser gemte klubdata" : "Opdateret";
         status.classList.toggle("stale", playlist.statistics.stale);
       } catch (error) {
@@ -152,16 +453,26 @@
       }
     }
 
-    function advance() {
-      if (slides.length < 2) return;
-      slides[current].classList.remove("active");
-      current = (current + 1) % slides.length;
-      slides[current].classList.add("active");
+    function advancePhoto() {
+      if (photos.length < 2) return;
+      currentPhoto = (currentPhoto + 1) % photos.length;
+      renderPhoto();
+    }
+
+    function advanceScores() {
+      const pageCount = Math.ceil(allScores.length / SCORE_PAGE_SIZE);
+      if (pageCount < 2) return;
+      scorePage = (scorePage + 1) % pageCount;
+      document.getElementById("all-scores")?.replaceWith(allScoresSection());
     }
 
     refresh();
-    setInterval(advance, 12000);
+    setInterval(advancePhoto, 12000);
+    setInterval(advanceScores, 12000);
     setInterval(refresh, 60000);
+    setInterval(() => {
+      uploadQr.src = `/api/upload-qr.png?time=${Date.now()}`;
+    }, 60000);
   </script>
 </body>
 </html>

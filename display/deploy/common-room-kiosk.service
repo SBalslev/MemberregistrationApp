@@ -15,6 +15,8 @@ TTYVHangup=yes
 TTYVTDisallocate=yes
 RuntimeDirectory=medlemscheckin-kiosk
 Environment=XDG_RUNTIME_DIR=/run/medlemscheckin-kiosk
+ExecStartPre=+/usr/bin/chvt 7
+ExecStartPre=/bin/sleep 2
 ExecStart=/usr/local/lib/medlemscheckin-display/start-kiosk.sh
 Restart=always
 RestartSec=5

@@ -4,7 +4,7 @@
 **PRD:** [prd.md](prd.md)
 **Created:** 2026-01-19
 **Completed:** 2026-01-20
-**Updated:** 2026-01-28
+**Updated:** 2026-09-28
 **Status:** ✅ COMPLETE
 
 ---
@@ -266,6 +266,16 @@
 - [x] Add UI to edit fee rates per fiscal year in the Kontingent tab
 - [x] Default under-18 members to child fee categories, with Barn+ as a manual override
 - [x] Enforce adult fee category for members 18 and older
+
+### Task 3.6: Inspect and correct member fee entries
+
+**Status:** ✅ Complete
+**Completed:** 2026-09-28 20:52:58 UTC+2
+
+- [x] Resolve fee history using the member's internal ID
+- [x] Show voucher numbers for linked transaction entries
+- [x] Open a linked transaction directly in the existing editor
+- [x] Add a focused regression test for the history and edit flow
 
 ---
 

@@ -1,5 +1,6 @@
 # Normalize line endings
 * text=auto
+*.sh text eol=lf
 
 # Treat common binary types
 *.png binary

@@ -1,0 +1,9 @@
+[Unit]
+Description=Recover Medlemscheckin display and Wi-Fi connectivity
+After=NetworkManager.service common-room-display.service
+Wants=NetworkManager.service common-room-display.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/medlemscheckin-display/common-room-watchdog.sh
+TimeoutStartSec=30

@@ -4,9 +4,12 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.club.medlems.data.dao.CheckInDao
+import com.club.medlems.data.dao.ActivityDao
+import com.club.medlems.data.dao.ActivityGuestDao
 import com.club.medlems.data.dao.EquipmentCheckoutDao
 import com.club.medlems.data.dao.EquipmentItemDao
 import com.club.medlems.data.dao.MemberDao
+import com.club.medlems.data.dao.GuestResultDao
 import com.club.medlems.data.dao.MemberPreferenceDao
 import com.club.medlems.data.dao.NewMemberRegistrationDao
 import com.club.medlems.data.dao.PracticeSessionDao
@@ -14,9 +17,12 @@ import com.club.medlems.data.dao.ScanEventDao
 import com.club.medlems.data.dao.TrainerDisciplineDao
 import com.club.medlems.data.dao.TrainerInfoDao
 import com.club.medlems.data.entity.CheckIn
+import com.club.medlems.data.entity.Activity
+import com.club.medlems.data.entity.ActivityGuest
 import com.club.medlems.data.entity.EquipmentCheckout
 import com.club.medlems.data.entity.EquipmentItem
 import com.club.medlems.data.entity.Member
+import com.club.medlems.data.entity.GuestResult
 import com.club.medlems.data.entity.MemberPreference
 import com.club.medlems.data.entity.NewMemberRegistration
 import com.club.medlems.data.entity.PolicyViolation
@@ -47,11 +53,14 @@ import com.club.medlems.data.sync.SyncProcessedMessage
         PolicyViolation::class,
         SyncOutboxEntry::class,
         SyncOutboxDelivery::class,
-        SyncProcessedMessage::class
+        SyncProcessedMessage::class,
+        Activity::class,
+        ActivityGuest::class,
+        GuestResult::class
     ],
 
 
-    version = 19,
+    version = 21,
     exportSchema = true
 )
 @TypeConverters(AppConverters::class)
@@ -69,4 +78,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun trainerDisciplineDao(): TrainerDisciplineDao
     abstract fun policyViolationDao(): com.club.medlems.data.dao.PolicyViolationDao
     abstract fun syncOutboxDao(): SyncOutboxDao
+    abstract fun activityDao(): ActivityDao
+    abstract fun activityGuestDao(): ActivityGuestDao
+    abstract fun guestResultDao(): GuestResultDao
 }

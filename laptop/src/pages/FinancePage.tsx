@@ -936,10 +936,14 @@ export function FinancePage() {
       <MemberHistoryDialog
         isOpen={selectedMemberId !== null}
         onClose={() => setSelectedMemberId(null)}
-        member={members.find((m) => m.membershipId === selectedMemberId) ?? null}
+        member={members.find((m) => m.internalId === selectedMemberId) ?? null}
         transactions={transactions}
         categories={categories}
         year={selectedYear}
+        onEditTransaction={(transactionId) => {
+          setSelectedMemberId(null);
+          handleEdit(transactionId);
+        }}
       />
 
       {/* Quick Fee Payment Dialog */}

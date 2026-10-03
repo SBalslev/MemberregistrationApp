@@ -101,6 +101,17 @@ function handleSyncPull(): void
                 }
                 break;
 
+            case 'activities':
+            case 'activity_guests':
+            case 'guest_results':
+                $timestampField = $entity === 'guest_results' ? 'sync_cursor_utc' : 'modified_at_utc';
+                $result['entities'][$entity] = pullActivityEntities($entity, $timestampField, $sinceDate, $limit, $excludeDevice);
+                if (count($result['entities'][$entity]) >= $limit) {
+                    $hasMore = true;
+                    $updateCursor($result['entities'][$entity], $timestampField);
+                }
+                break;
+
             case 'equipment_items':
                 $data = pullEquipmentItems($sinceDate, $limit, $excludeDevice);
                 $result['entities']['equipment_items'] = $data['records'];
@@ -362,7 +373,7 @@ function pullPracticeSessions(string $since, int $limit, ?string $excludeDevice 
 {
     [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
     $records = dbQuery(
-        "SELECT id, internal_member_id, created_at_utc, local_date, practice_type, points, krydser, classification, source, device_id, sync_version
+        "SELECT id, internal_member_id, activity_id, created_at_utc, local_date, practice_type, points, krydser, classification, source, device_id, sync_version
          FROM practice_sessions
          WHERE (synced_at_utc > ? OR (synced_at_utc IS NULL AND created_at_utc > ?)){$deviceClause}
          ORDER BY created_at_utc ASC
@@ -374,6 +385,7 @@ function pullPracticeSessions(string $since, int $limit, ?string $excludeDevice 
         return [
             'id' => $row['id'],
             'internal_member_id' => $row['internal_member_id'],
+            'activity_id' => $row['activity_id'],
             'created_at_utc' => formatDatetime($row['created_at_utc']),
             'local_date' => $row['local_date'],
             'practice_type' => fromPracticeTypeEnum($row['practice_type']),
@@ -385,6 +397,47 @@ function pullPracticeSessions(string $since, int $limit, ?string $excludeDevice 
             'sync_version' => (int)$row['sync_version'],
         ];
     }, $records);
+}
+
+function pullActivityEntities(
+    string $table,
+    string $timestampField,
+    string $since,
+    int $limit,
+    ?string $excludeDevice = null
+): array {
+    [$deviceClause, $deviceParams] = deviceExclusionClause($excludeDevice);
+    if ($table === 'guest_results') {
+        $records = dbQuery(
+            "SELECT *, GREATEST(created_at_utc, COALESCE(deleted_at_utc, created_at_utc)) AS sync_cursor_utc
+             FROM guest_results
+             WHERE (created_at_utc > ? OR deleted_at_utc > ?){$deviceClause}
+             ORDER BY sync_cursor_utc ASC LIMIT ?",
+            array_merge([$since, $since], $deviceParams, [$limit])
+        );
+    } else {
+        $records = dbQuery(
+            "SELECT * FROM $table WHERE $timestampField > ?{$deviceClause} ORDER BY $timestampField ASC LIMIT ?",
+            array_merge([$since], $deviceParams, [$limit])
+        );
+    }
+    foreach ($records as &$record) {
+        foreach (['starts_at_utc','ends_at_utc','created_at_utc','modified_at_utc','synced_at_utc','deleted_at_utc','sync_cursor_utc'] as $field) {
+            if (array_key_exists($field, $record) && $record[$field] !== null) {
+                $record[$field] = formatDatetime($record[$field]);
+            }
+        }
+        foreach (['display_enabled','show_on_display'] as $field) {
+            if (array_key_exists($field, $record)) {
+                $record[$field] = (bool)$record[$field];
+            }
+        }
+        $record['sync_version'] = (int)$record['sync_version'];
+        if (isset($record['points'])) $record['points'] = (int)$record['points'];
+        if (isset($record['krydser'])) $record['krydser'] = (int)$record['krydser'];
+    }
+    unset($record);
+    return $records;
 }
 
 /**

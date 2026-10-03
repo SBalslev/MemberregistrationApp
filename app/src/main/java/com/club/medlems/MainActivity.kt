@@ -85,6 +85,7 @@ sealed class NavRoute(val route: String) {
         fun build(membershipId: String) = "editSessions/$membershipId"
     }
     data object Registration: NavRoute("registration")
+    data object Activities: NavRoute("activities")
     
     // Equipment management routes (Trainer Tablet)
     data object EquipmentList: NavRoute("equipment")
@@ -233,6 +234,11 @@ fun AppRoot(
             composable(NavRoute.Registration.route) {
                 com.club.medlems.ui.attendant.RegistrationScreen(onBack = { navController.popBackStack() })
             }
+            composable(NavRoute.Activities.route) {
+                com.club.medlems.ui.activity.ActivityManagementScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
             
             // Equipment management screens (Trainer Tablet)
             composable(NavRoute.EquipmentList.route) {
@@ -360,6 +366,9 @@ fun AppRoot(
                     },
                     onNavigateToCheckouts = {
                         navController.navigate(NavRoute.CurrentCheckouts.route)
+                    },
+                    onNavigateToActivities = {
+                        navController.navigate(NavRoute.Activities.route)
                     },
                     onNavigateToAdmin = {
                         navController.navigate(NavRoute.AttendantMenu.route)

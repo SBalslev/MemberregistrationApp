@@ -134,6 +134,21 @@ export function queuePracticeSession(session: object): string {
   return queueForSync('PracticeSession', id, 'INSERT', session);
 }
 
+export function queueActivity(activity: object, operation: 'INSERT' | 'UPDATE' = 'INSERT'): string {
+  const id = (activity as { id?: string }).id || '';
+  return queueForSync('Activity', id, operation, activity);
+}
+
+export function queueActivityGuest(guest: object, operation: 'INSERT' | 'UPDATE' = 'INSERT'): string {
+  const id = (guest as { id?: string }).id || '';
+  return queueForSync('ActivityGuest', id, operation, guest);
+}
+
+export function queueGuestResult(result: object): string {
+  const id = (result as { id?: string }).id || '';
+  return queueForSync('GuestResult', id, 'INSERT', result);
+}
+
 /**
  * Payload for practice session deletion sync.
  */
@@ -555,6 +570,9 @@ export function collectEntitiesForDevice(deviceId: string): {
   checkIns: object[];
   practiceSessions: object[];
   practiceSessionDeletions: PracticeSessionDeletionPayload[];
+  activities: object[];
+  activityGuests: object[];
+  guestResults: object[];
   equipmentItems: object[];
   equipmentCheckouts: object[];
 } {
@@ -567,6 +585,9 @@ export function collectEntitiesForDevice(deviceId: string): {
     checkIns: [] as object[],
     practiceSessions: [] as object[],
     practiceSessionDeletions: [] as PracticeSessionDeletionPayload[],
+    activities: [] as object[],
+    activityGuests: [] as object[],
+    guestResults: [] as object[],
     equipmentItems: [] as object[],
     equipmentCheckouts: [] as object[],
   };
@@ -596,6 +617,15 @@ export function collectEntitiesForDevice(deviceId: string): {
           } else {
             result.practiceSessions.push(entity);
           }
+          break;
+        case 'Activity':
+          result.activities.push(entity);
+          break;
+        case 'ActivityGuest':
+          result.activityGuests.push(entity);
+          break;
+        case 'GuestResult':
+          result.guestResults.push(entity);
           break;
         case 'EquipmentItem':
           result.equipmentItems.push(entity);

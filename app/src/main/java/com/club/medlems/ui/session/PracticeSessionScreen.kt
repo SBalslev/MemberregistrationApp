@@ -25,6 +25,7 @@ import com.club.medlems.data.entity.SessionSource
 import com.club.medlems.data.dao.PracticeSessionDao
 import com.club.medlems.data.dao.ScanEventDao
 import com.club.medlems.data.dao.MemberDao
+import com.club.medlems.data.dao.ActivityDao
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import androidx.lifecycle.viewModelScope
@@ -76,6 +77,7 @@ class PracticeSessionViewModel@javax.inject.Inject constructor(
     private val scanEventDao: ScanEventDao,
     private val lastStore: LastClassificationStore,
     private val memberDao: MemberDao,
+    private val activityDao: ActivityDao,
     private val syncOutboxManager: SyncOutboxManager,
     private val syncManager: SyncManager,
     private val trustManager: TrustManager
@@ -116,7 +118,8 @@ class PracticeSessionViewModel@javax.inject.Inject constructor(
                 points = pointsVal,
                 krydser = krydserVal,
                 classification = classification,
-                source = SessionSource.kiosk
+                source = SessionSource.kiosk,
+                activityId = activityDao.active()?.id
             )
             practiceSessionDao.insert(session)
             // Queue practice session for sync and trigger reactive sync

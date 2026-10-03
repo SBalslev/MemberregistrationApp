@@ -2,6 +2,9 @@ package com.club.medlems.data.dao
 
 import androidx.room.*
 import com.club.medlems.data.entity.CheckIn
+import com.club.medlems.data.entity.Activity
+import com.club.medlems.data.entity.ActivityGuest
+import com.club.medlems.data.entity.ActivityStatus
 import com.club.medlems.data.entity.ConflictStatus
 import com.club.medlems.data.entity.EquipmentCheckout
 import com.club.medlems.data.entity.EquipmentItem
@@ -10,6 +13,7 @@ import com.club.medlems.data.entity.Member
 import com.club.medlems.data.entity.MemberPreference
 import com.club.medlems.data.entity.MemberStatus
 import com.club.medlems.data.entity.NewMemberRegistration
+import com.club.medlems.data.entity.GuestResult
 import com.club.medlems.data.entity.PolicyViolation
 import com.club.medlems.data.entity.PracticeSession
 import com.club.medlems.data.entity.PracticeType
@@ -163,12 +167,90 @@ interface CheckInDao {
 }
 
 @Dao
+interface ActivityDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(activity: Activity)
+
+    @Query("SELECT * FROM Activity ORDER BY startsAtUtc DESC")
+    fun observeAll(): Flow<List<Activity>>
+
+    @Query("SELECT * FROM Activity ORDER BY startsAtUtc DESC")
+    suspend fun all(): List<Activity>
+
+    @Query("SELECT * FROM Activity WHERE status = 'ACTIVE' ORDER BY startsAtUtc DESC LIMIT 1")
+    suspend fun active(): Activity?
+
+    @Query("SELECT * FROM Activity WHERE status = 'ACTIVE' ORDER BY startsAtUtc DESC LIMIT 1")
+    fun observeActive(): Flow<Activity?>
+
+    @Query("UPDATE Activity SET status = :status, endsAtUtc = :endsAtUtc, updatedAtUtc = :updatedAtUtc WHERE id = :id")
+    suspend fun updateStatus(id: String, status: ActivityStatus, endsAtUtc: Instant?, updatedAtUtc: Instant)
+
+    @Query("SELECT COUNT(*) FROM Activity WHERE id = :id")
+    suspend fun countById(id: String): Int
+}
+
+@Dao
+interface ActivityGuestDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(guest: ActivityGuest)
+
+    @Query("SELECT * FROM ActivityGuest WHERE activityId = :activityId ORDER BY displayName, clubName")
+    fun observeForActivity(activityId: String): Flow<List<ActivityGuest>>
+
+    @Query("SELECT * FROM ActivityGuest WHERE activityId = :activityId ORDER BY displayName, clubName")
+    suspend fun forActivity(activityId: String): List<ActivityGuest>
+
+    @Query("SELECT * FROM ActivityGuest WHERE id = :id")
+    suspend fun get(id: String): ActivityGuest?
+
+    @Query("""
+        SELECT * FROM ActivityGuest
+        WHERE activityId = :activityId
+        AND displayName = :displayName
+        AND COALESCE(clubName, '') = COALESCE(:clubName, '')
+        LIMIT 1
+    """)
+    suspend fun find(activityId: String, displayName: String, clubName: String?): ActivityGuest?
+
+    @Query("SELECT * FROM ActivityGuest")
+    suspend fun all(): List<ActivityGuest>
+
+    @Query("SELECT COUNT(*) FROM ActivityGuest WHERE id = :id")
+    suspend fun countById(id: String): Int
+}
+
+@Dao
+interface GuestResultDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(result: GuestResult)
+
+    @Query("SELECT * FROM GuestResult WHERE activityId = :activityId AND deletedAtUtc IS NULL ORDER BY createdAtUtc DESC")
+    fun observeForActivity(activityId: String): Flow<List<GuestResult>>
+
+    @Query("SELECT * FROM GuestResult WHERE activityId = :activityId AND deletedAtUtc IS NULL ORDER BY createdAtUtc DESC")
+    suspend fun forActivity(activityId: String): List<GuestResult>
+
+    @Query("SELECT * FROM GuestResult")
+    suspend fun all(): List<GuestResult>
+
+    @Query("SELECT * FROM GuestResult WHERE id = :id")
+    suspend fun get(id: String): GuestResult?
+
+    @Query("SELECT COUNT(*) FROM GuestResult WHERE id = :id")
+    suspend fun countById(id: String): Int
+}
+
+@Dao
 interface PracticeSessionDao {
     @Insert
     suspend fun insert(session: PracticeSession)
 
     @Query("SELECT COUNT(*) FROM PracticeSession WHERE id = :id")
     suspend fun countById(id: String): Int
+
+    @Query("SELECT * FROM PracticeSession WHERE activityId = :activityId ORDER BY createdAtUtc DESC")
+    suspend fun sessionsForActivity(activityId: String): List<PracticeSession>
 
     @Query("DELETE FROM PracticeSession WHERE id = :id")
     suspend fun deleteById(id: String)

@@ -13,7 +13,7 @@ import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.j
 // v16: Seed missing default posting categories
 // v17: Added PolicyViolation table
 // v18: Added membership card tracking fields
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 20;
 
 // SQL.js instance (singleton)
 let SQL: SqlJsStatic | null = null;
@@ -708,6 +708,55 @@ async function runMigrations(): Promise<void> {
     setSchemaVersion(18);
   }
 
+  const practiceSessionColumns = db.exec("PRAGMA table_info(PracticeSession)");
+  const existingPracticeSessionColumns = practiceSessionColumns[0]?.values.map(row => row[1] as string) || [];
+  if (!existingPracticeSessionColumns.includes('activityId')) {
+    db.run('ALTER TABLE PracticeSession ADD COLUMN activityId TEXT');
+    db.run('CREATE INDEX IF NOT EXISTS idx_PracticeSession_activityId ON PracticeSession(activityId)');
+    migrationsRun.push('PracticeSession.activityId');
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS Activity (
+      id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, type TEXT NOT NULL,
+      startsAtUtc TEXT NOT NULL, endsAtUtc TEXT, status TEXT NOT NULL,
+      displayEnabled INTEGER NOT NULL DEFAULT 1, createdAtUtc TEXT NOT NULL,
+      updatedAtUtc TEXT NOT NULL, deviceId TEXT, syncVersion INTEGER NOT NULL DEFAULT 0,
+      syncedAtUtc TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_Activity_status ON Activity(status);
+    CREATE INDEX IF NOT EXISTS idx_Activity_startsAtUtc ON Activity(startsAtUtc);
+    CREATE TABLE IF NOT EXISTS ActivityGuest (
+      id TEXT PRIMARY KEY NOT NULL, activityId TEXT NOT NULL, displayName TEXT NOT NULL,
+      clubName TEXT, startNumber TEXT, showOnDisplay INTEGER NOT NULL DEFAULT 1,
+      createdAtUtc TEXT NOT NULL, updatedAtUtc TEXT NOT NULL, deviceId TEXT,
+      syncVersion INTEGER NOT NULL DEFAULT 0, syncedAtUtc TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_ActivityGuest_activityId ON ActivityGuest(activityId);
+    CREATE TABLE IF NOT EXISTS GuestResult (
+      id TEXT PRIMARY KEY NOT NULL, activityId TEXT NOT NULL, guestId TEXT NOT NULL,
+      createdAtUtc TEXT NOT NULL, localDate TEXT NOT NULL, practiceType TEXT NOT NULL,
+      points INTEGER NOT NULL, krydser INTEGER, classification TEXT, deviceId TEXT,
+      syncVersion INTEGER NOT NULL DEFAULT 0, syncedAtUtc TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_GuestResult_activityId ON GuestResult(activityId);
+    CREATE INDEX IF NOT EXISTS idx_GuestResult_guestId ON GuestResult(guestId);
+  `);
+  if (schemaVersion < 19) {
+    setSchemaVersion(19);
+    migrationsRun.push('Schema v19 activity tables');
+  }
+
+  const guestResultColumns = db.exec("PRAGMA table_info(GuestResult)");
+  const existingGuestResultColumns = guestResultColumns[0]?.values.map(row => row[1] as string) || [];
+  if (!existingGuestResultColumns.includes('deletedAtUtc')) {
+    db.run('ALTER TABLE GuestResult ADD COLUMN deletedAtUtc TEXT');
+    db.run('CREATE INDEX IF NOT EXISTS idx_GuestResult_deletedAtUtc ON GuestResult(deletedAtUtc)');
+    migrationsRun.push('GuestResult.deletedAtUtc');
+  }
+  if (schemaVersion < 20) {
+    setSchemaVersion(20);
+  }
+
   if (migrationsRun.length > 0) {
     console.log('Migrations run:', migrationsRun.join(', '));
     await saveToIndexedDB();
@@ -790,9 +839,39 @@ async function createSchema(): Promise<void> {
       createdAtUtc TEXT NOT NULL,
       syncedAtUtc TEXT,
       syncVersion INTEGER NOT NULL DEFAULT 0,
+      activityId TEXT,
       FOREIGN KEY (internalMemberId) REFERENCES Member(internalId)
     );
     CREATE INDEX IF NOT EXISTS idx_PracticeSession_internalMemberId ON PracticeSession(internalMemberId);
+    CREATE INDEX IF NOT EXISTS idx_PracticeSession_activityId ON PracticeSession(activityId);
+
+    CREATE TABLE IF NOT EXISTS Activity (
+      id TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, type TEXT NOT NULL,
+      startsAtUtc TEXT NOT NULL, endsAtUtc TEXT, status TEXT NOT NULL,
+      displayEnabled INTEGER NOT NULL DEFAULT 1, createdAtUtc TEXT NOT NULL,
+      updatedAtUtc TEXT NOT NULL, deviceId TEXT, syncVersion INTEGER NOT NULL DEFAULT 0,
+      syncedAtUtc TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_Activity_status ON Activity(status);
+    CREATE INDEX IF NOT EXISTS idx_Activity_startsAtUtc ON Activity(startsAtUtc);
+
+    CREATE TABLE IF NOT EXISTS ActivityGuest (
+      id TEXT PRIMARY KEY NOT NULL, activityId TEXT NOT NULL, displayName TEXT NOT NULL,
+      clubName TEXT, startNumber TEXT, showOnDisplay INTEGER NOT NULL DEFAULT 1,
+      createdAtUtc TEXT NOT NULL, updatedAtUtc TEXT NOT NULL, deviceId TEXT,
+      syncVersion INTEGER NOT NULL DEFAULT 0, syncedAtUtc TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_ActivityGuest_activityId ON ActivityGuest(activityId);
+
+    CREATE TABLE IF NOT EXISTS GuestResult (
+      id TEXT PRIMARY KEY NOT NULL, activityId TEXT NOT NULL, guestId TEXT NOT NULL,
+      createdAtUtc TEXT NOT NULL, localDate TEXT NOT NULL, practiceType TEXT NOT NULL,
+      points INTEGER NOT NULL, krydser INTEGER, classification TEXT, deviceId TEXT,
+      syncVersion INTEGER NOT NULL DEFAULT 0, syncedAtUtc TEXT, deletedAtUtc TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_GuestResult_activityId ON GuestResult(activityId);
+    CREATE INDEX IF NOT EXISTS idx_GuestResult_guestId ON GuestResult(guestId);
+    CREATE INDEX IF NOT EXISTS idx_GuestResult_deletedAtUtc ON GuestResult(deletedAtUtc);
 
     -- Scan events table
     CREATE TABLE IF NOT EXISTS ScanEvent (

@@ -5,8 +5,11 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.request import Request, urlopen
+
+from .config import AUTO_URL
+from .discovery import discover_member_tablet_feed
 
 LOGGER = logging.getLogger(__name__)
 MAX_FEED_BYTES = 512 * 1024
@@ -60,9 +63,17 @@ class FeedCache:
 
 
 class FeedPoller(threading.Thread):
-    def __init__(self, feed_url: str, interval_seconds: int, cache: FeedCache) -> None:
+    def __init__(
+        self,
+        feed_url: str,
+        interval_seconds: int,
+        cache: FeedCache,
+        feed_locator: Callable[[], str | None] = discover_member_tablet_feed,
+    ) -> None:
         super().__init__(name="display-feed-poller", daemon=True)
         self._feed_url = feed_url
+        self._resolved_feed_url: str | None = None
+        self._feed_locator = feed_locator
         self._interval_seconds = interval_seconds
         self._cache = cache
         self._stopped = threading.Event()
@@ -72,6 +83,8 @@ class FeedPoller(threading.Thread):
             try:
                 self.poll_once()
             except (OSError, ValueError, json.JSONDecodeError):
+                if self._feed_url == AUTO_URL:
+                    self._resolved_feed_url = None
                 LOGGER.warning("Unable to refresh tablet display feed", exc_info=True)
             self._stopped.wait(self._interval_seconds)
 
@@ -79,7 +92,15 @@ class FeedPoller(threading.Thread):
         self._stopped.set()
 
     def poll_once(self) -> None:
-        request = Request(self._feed_url, headers={"Accept": "application/json"})
+        feed_url = self._feed_url
+        if feed_url == AUTO_URL:
+            if self._resolved_feed_url is None:
+                self._resolved_feed_url = self._feed_locator()
+            if self._resolved_feed_url is None:
+                raise OSError("No member tablet display feed discovered")
+            LOGGER.info("Discovered member tablet display feed at %s", self._resolved_feed_url)
+            feed_url = self._resolved_feed_url
+        request = Request(feed_url, headers={"Accept": "application/json"})
         with urlopen(request, timeout=5) as response:
             content_length = response.headers.get("Content-Length")
             if content_length is not None and int(content_length) > MAX_FEED_BYTES:

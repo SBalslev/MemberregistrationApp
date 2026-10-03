@@ -164,6 +164,17 @@ function handleSyncPush(): void
             $result['processed']['practice_sessions'] = processPracticeSessionsPush($practiceSessionsData, $deviceId);
         }
 
+        foreach ([
+            ['activities', 'activities', 'processActivitiesPush'],
+            ['activity_guests', 'activityGuests', 'processActivityGuestsPush'],
+            ['guest_results', 'guestResults', 'processGuestResultsPush'],
+        ] as [$snakeKey, $camelKey, $processor]) {
+            $data = getEntity($entities, $snakeKey, $camelKey);
+            if (!empty($data)) {
+                $result['processed'][$snakeKey] = $processor($data, $deviceId);
+            }
+        }
+
         $equipmentItemsData = getEntity($entities, 'equipment_items', 'equipmentItems');
         if (!empty($equipmentItemsData)) {
             $result['processed']['equipment_items'] = processEquipmentItemsPush($equipmentItemsData, $deviceId);
@@ -550,11 +561,12 @@ function processPracticeSessionsPush(array $sessions, string $deviceId): array
         }
 
         dbExecute(
-            "INSERT INTO practice_sessions (id, internal_member_id, created_at_utc, local_date, practice_type, points, krydser, classification, source, device_id, sync_version, synced_at_utc)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+            "INSERT INTO practice_sessions (id, internal_member_id, activity_id, created_at_utc, local_date, practice_type, points, krydser, classification, source, device_id, sync_version, synced_at_utc)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
             [
                 $id,
                 $session['internal_member_id'],
+                $session['activity_id'] ?? null,
                 toMySqlDateTime($session['created_at_utc'] ?? null) ?? gmdate('Y-m-d H:i:s'),
                 $session['local_date'],
                 toPracticeTypeEnum($session['practice_type'] ?? null),
@@ -567,6 +579,65 @@ function processPracticeSessionsPush(array $sessions, string $deviceId): array
             ]
         );
         $stats['inserted']++;
+    }
+
+    function processActivitiesPush(array $records, string $deviceId): array
+    {
+        return processActivityUpserts($records, $deviceId, 'activities',
+            ['title','type','starts_at_utc','ends_at_utc','status','display_enabled','created_at_utc','modified_at_utc'],
+            ['title','type','starts_at_utc','ends_at_utc','status','display_enabled','created_at_utc','modified_at_utc']);
+    }
+
+    function processActivityGuestsPush(array $records, string $deviceId): array
+    {
+        return processActivityUpserts($records, $deviceId, 'activity_guests',
+            ['activity_id','display_name','club_name','start_number','show_on_display','created_at_utc','modified_at_utc'],
+            ['activity_id','display_name','club_name','start_number','show_on_display','created_at_utc','modified_at_utc']);
+    }
+
+    function processGuestResultsPush(array $records, string $deviceId): array
+    {
+        return processActivityUpserts($records, $deviceId, 'guest_results',
+            ['activity_id','guest_id','created_at_utc','local_date','practice_type','points','krydser','classification','deleted_at_utc'],
+            ['activity_id','guest_id','created_at_utc','local_date','practice_type','points','krydser','classification','deleted_at_utc']);
+    }
+
+    function processActivityUpserts(array $records, string $deviceId, string $table, array $columns, array $keys): array
+    {
+        $stats = ['inserted' => 0, 'updated' => 0, 'deleted' => 0];
+        foreach ($records as $record) {
+            $id = $record['id'] ?? null;
+            if (!$id) continue;
+            if (($record['_action'] ?? 'upsert') === 'delete') {
+                dbExecute("DELETE FROM $table WHERE id = ?", [$id]);
+                $stats['deleted']++;
+                continue;
+            }
+            $existing = dbQueryOne("SELECT sync_version FROM $table WHERE id = ?", [$id]);
+            if ($existing && (int)$existing['sync_version'] > (int)($record['sync_version'] ?? 1)) continue;
+            $values = array_map(function ($key) use ($record) {
+                $value = $record[$key] ?? null;
+                if ($value !== null && in_array($key, ['starts_at_utc','ends_at_utc','created_at_utc','modified_at_utc','deleted_at_utc'], true)) {
+                    return toMySqlDateTime($value);
+                }
+                return $value;
+            }, $keys);
+            $values[] = $deviceId;
+            $values[] = $record['sync_version'] ?? 1;
+            if ($existing) {
+                $set = implode(', ', array_map(fn($column) => "$column = ?", $columns));
+                dbExecute("UPDATE $table SET $set, device_id = ?, sync_version = ?, synced_at_utc = NOW() WHERE id = ?",
+                    array_merge($values, [$id]));
+                $stats['updated']++;
+            } else {
+                $columnSql = implode(',', $columns);
+                $placeholders = implode(',', array_fill(0, count($columns) + 3, '?'));
+                dbExecute("INSERT INTO $table (id,$columnSql,device_id,sync_version,synced_at_utc) VALUES ($placeholders,NOW())",
+                    array_merge([$id], $values));
+                $stats['inserted']++;
+            }
+        }
+        return $stats;
     }
 
     return $stats;

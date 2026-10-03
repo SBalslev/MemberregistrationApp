@@ -1,0 +1,19 @@
+[Unit]
+Description=Disable common-room display screen blanking
+After=common-room-kiosk.service
+Requires=common-room-kiosk.service
+
+[Service]
+Type=oneshot
+User=display
+Group=display
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/display/.Xauthority
+ExecStartPre=/bin/sleep 60
+ExecStart=/usr/bin/xset s off
+ExecStart=/usr/bin/xset s noblank
+ExecStart=/usr/bin/xset -dpms
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

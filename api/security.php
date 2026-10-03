@@ -18,14 +18,19 @@ require_once __DIR__ . '/db.php';
 /**
  * Get real client IP (handles proxies)
  */
-function getClientIp(): string
+function getClientIp(array $trustedProxies = []): string
 {
-    // Check for proxy headers (only trust if behind known proxy)
-    $headers = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
+    $remoteAddress = $_SERVER['REMOTE_ADDR'] ?? '';
+    if (!filter_var($remoteAddress, FILTER_VALIDATE_IP)) {
+        return '0.0.0.0';
+    }
 
-    foreach ($headers as $header) {
+    if (!checkIpAllowlist($remoteAddress, $trustedProxies) || empty($trustedProxies)) {
+        return $remoteAddress;
+    }
+
+    foreach (['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP'] as $header) {
         if (!empty($_SERVER[$header])) {
-            // X-Forwarded-For can contain multiple IPs, take the first
             $ips = explode(',', $_SERVER[$header]);
             $ip = trim($ips[0]);
             if (filter_var($ip, FILTER_VALIDATE_IP)) {
@@ -34,7 +39,7 @@ function getClientIp(): string
         }
     }
 
-    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    return $remoteAddress;
 }
 
 /**

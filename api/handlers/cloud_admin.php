@@ -20,6 +20,9 @@ function getEntityTableMap(): array
         'members' => ['table' => 'members', 'id_column' => 'internal_id'],
         'check_ins' => ['table' => 'check_ins', 'id_column' => 'id'],
         'practice_sessions' => ['table' => 'practice_sessions', 'id_column' => 'id'],
+        'activities' => ['table' => 'activities', 'id_column' => 'id'],
+        'activity_guests' => ['table' => 'activity_guests', 'id_column' => 'id'],
+        'guest_results' => ['table' => 'guest_results', 'id_column' => 'id'],
         'equipment_items' => ['table' => 'equipment_items', 'id_column' => 'id'],
         'equipment_checkouts' => ['table' => 'equipment_checkouts', 'id_column' => 'id'],
         'trainer_info' => ['table' => 'trainer_info', 'id_column' => 'member_id'],
@@ -117,6 +120,30 @@ function getEntityDisplayColumns(): array
                 'display' => trim(($r['first_name'] ?? '') . ' ' . ($r['last_name'] ?? '')) ?: 'Ukendt medlem',
                 'details' => "{$r['practice_type']} - {$r['local_date']}",
                 'created' => $r['created_at_utc'],
+            ],
+            'activities' => [
+                'select' => 'id, title, type, status, starts_at_utc, created_at_utc',
+                'format' => fn($r) => [
+                    'id' => $r['id'], 'display' => $r['title'],
+                    'details' => "{$r['type']} - {$r['status']}", 'created' => $r['created_at_utc'],
+                ],
+            ],
+            'activity_guests' => [
+                'select' => 'g.id, g.display_name, g.club_name, g.created_at_utc, a.title',
+                'join' => 'LEFT JOIN activities a ON g.activity_id = a.id',
+                'format' => fn($r) => [
+                    'id' => $r['id'], 'display' => $r['display_name'],
+                    'details' => ($r['club_name'] ?? '') . " - {$r['title']}", 'created' => $r['created_at_utc'],
+                ],
+            ],
+            'guest_results' => [
+                'select' => 'r.id, r.practice_type, r.points, r.created_at_utc, r.deleted_at_utc, g.display_name',
+                'join' => 'LEFT JOIN activity_guests g ON r.guest_id = g.id',
+                'format' => fn($r) => [
+                    'id' => $r['id'], 'display' => $r['display_name'] ?? 'Ukendt gæst',
+                    'details' => "{$r['practice_type']} - {$r['points']}" . ($r['deleted_at_utc'] ? ' - slettet' : ''),
+                    'created' => $r['created_at_utc'],
+                ],
             ],
         ],
         'pending_fee_payments' => [
@@ -241,7 +268,9 @@ function handleCompareEntityIds(): void
                  ($entityType === 'pending_fee_payments' ? 'p' :
                  ($entityType === 'transaction_lines' ? 'tl' :
                  ($entityType === 'equipment_checkouts' ? 'ec' :
-                 ($entityType === 'scan_events' ? 's' : '')))));
+                 ($entityType === 'scan_events' ? 's' :
+                 ($entityType === 'activity_guests' ? 'g' :
+                 ($entityType === 'guest_results' ? 'r' : '')))))));
 
         $idRef = $alias ? "$alias.$idColumn" : $idColumn;
         $limitedIds = array_slice($onlyInCloudIds, 0, 100);
@@ -344,11 +373,19 @@ function handleDeleteEntity(): void
         errorResponse("Record not found", 404);
     }
 
-    // Delete the record
-    dbExecute(
-        "DELETE FROM $table WHERE $idColumn = ?",
-        [$entityId]
-    );
+    if ($entityType === 'guest_results') {
+        dbExecute(
+            "UPDATE guest_results
+             SET deleted_at_utc = UTC_TIMESTAMP(), sync_version = sync_version + 1, synced_at_utc = UTC_TIMESTAMP()
+             WHERE id = ?",
+            [$entityId]
+        );
+    } else {
+        dbExecute(
+            "DELETE FROM $table WHERE $idColumn = ?",
+            [$entityId]
+        );
+    }
 
     // Log the deletion
     $authPayload = $GLOBALS['authPayload'] ?? null;
@@ -400,10 +437,19 @@ function handleDeleteEntityBatch(): void
 
     // Delete records
     $placeholders = implode(',', array_fill(0, count($ids), '?'));
-    $deleted = dbExecute(
-        "DELETE FROM $table WHERE $idColumn IN ($placeholders)",
-        $ids
-    );
+    if ($entityType === 'guest_results') {
+        $deleted = dbExecute(
+            "UPDATE guest_results
+             SET deleted_at_utc = UTC_TIMESTAMP(), sync_version = sync_version + 1, synced_at_utc = UTC_TIMESTAMP()
+             WHERE id IN ($placeholders)",
+            $ids
+        );
+    } else {
+        $deleted = dbExecute(
+            "DELETE FROM $table WHERE $idColumn IN ($placeholders)",
+            $ids
+        );
+    }
 
     // Log the deletion
     $authPayload = $GLOBALS['authPayload'] ?? null;

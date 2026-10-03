@@ -35,17 +35,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Get client IP
-$clientIp = getClientIp();
+$clientIp = getClientIp($config['security']['trusted_proxies'] ?? []);
+$GLOBALS['clientIp'] = $clientIp;
+$requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+$requestPath = parse_url($requestUri, PHP_URL_PATH);
+$isPublicRelayRequest =
+    str_starts_with($requestPath, '/api/v1/display-relay/')
+    || str_starts_with($requestPath, '/display-relay/');
 
 // 1. IP Allowlist check
-if (!checkIpAllowlist($clientIp, $config['security']['ip_allowlist'] ?? [])) {
+if (!$isPublicRelayRequest && !checkIpAllowlist($clientIp, $config['security']['ip_allowlist'] ?? [])) {
     logSecurityEvent('ip_blocked', $clientIp, 'IP not in allowlist');
     errorResponse('Access denied', 403);
 }
 
 // 2. Rate limiting check
 // Authenticated sync endpoints get a higher rate limit to allow bulk operations
-$requestUri = $_SERVER['REQUEST_URI'] ?? '/';
 $isSyncEndpoint = strpos($requestUri, '/sync/') !== false;
 $rateLimitConfig = $config['security'];
 if ($isSyncEndpoint) {
@@ -87,6 +92,15 @@ $routes = [
     // Photos
     'POST /photos' => 'handlers/photos.php:handlePhotoUpload',
     'GET /photos/{id}' => 'handlers/photos.php:handlePhotoDownload',
+
+    // Common-room display photo relay
+    'GET /display-relay/upload' => 'handlers/display_relay.php:handleDisplayRelayUploadPage',
+    'POST /display-relay/photos' => 'handlers/display_relay.php:handleDisplayRelayPhotoUpload',
+    'POST /display-relay/invitations' => 'handlers/display_relay.php:handleDisplayRelayCreateInvitation',
+    'GET /display-relay/photos/next' => 'handlers/display_relay.php:handleDisplayRelayNextPhoto',
+    'GET /display-relay/photos/{id}' => 'handlers/display_relay.php:handleDisplayRelayPhotoDownload',
+    'POST /display-relay/photos/{id}/ack' => 'handlers/display_relay.php:handleDisplayRelayPhotoAck',
+    'POST /display-relay/photos/{id}/reject' => 'handlers/display_relay.php:handleDisplayRelayPhotoReject',
 
     // MinIdraet search
     'GET /minidraet/search' => 'handlers/minidraet_search.php:handleMinIdraetSearch',
@@ -154,6 +168,13 @@ $publicRoutes = [
     'handlers/auth.php:handleAuthToken',
     'handlers/diagnostic.php:handleDiagnostic',
     'handlers/minidraet_search.php:handleMinIdraetSearch',
+    'handlers/display_relay.php:handleDisplayRelayUploadPage',
+    'handlers/display_relay.php:handleDisplayRelayPhotoUpload',
+    'handlers/display_relay.php:handleDisplayRelayCreateInvitation',
+    'handlers/display_relay.php:handleDisplayRelayNextPhoto',
+    'handlers/display_relay.php:handleDisplayRelayPhotoDownload',
+    'handlers/display_relay.php:handleDisplayRelayPhotoAck',
+    'handlers/display_relay.php:handleDisplayRelayPhotoReject',
 ];
 $isPublicRoute = in_array($matchedRoute, $publicRoutes, true);
 

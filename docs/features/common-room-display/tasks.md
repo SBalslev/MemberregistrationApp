@@ -5,7 +5,7 @@
 **Design:** [design.md](design.md)
 **Status:** Not started
 **Created:** 2026-08-31
-**Last updated:** 2026-08-31 by sbalslev
+**Last updated:** 2026-09-15 by sbalslev
 
 ## Delivery order
 
@@ -108,7 +108,9 @@ unauthenticated client cannot change media or settings.
 - [>] **6.1** Add an idempotent Pi installation and upgrade script.
   The installer was run successfully on Raspberry Pi OS 13. The available test
   device was a Raspberry Pi Zero W, whose ARMv6 CPU lacks the NEON support required
-  by current Chromium releases, so target Raspberry Pi 2 kiosk validation remains.
+  by current Chromium releases. The same installer was subsequently validated on a
+  Raspberry Pi 4 Model B Rev 1.5, where the backend, X server, Chromium kiosk, and
+  Avahi run successfully with zero service restarts.
 - [>] **6.2** Document imaging, Wi-Fi, DHCP reservation, TV setup, credentials,
   backup, and recovery.
   Software installation, addressing, credentials, backup, and recovery are
@@ -121,6 +123,62 @@ unauthenticated client cannot change media or settings.
 - [ ] **6.8** Review upload misuse, readability, timing, and moderation workload.
 - [ ] **6.9** Decide whether approval-first mode or member display preferences are
   needed before general use.
+- [x] **6.10** Add DHCP-safe LAN discovery for the member-tablet feed and Pi upload
+  URL.
+  - **Started:** 2026-09-15 17:23:31 UTC+2
+  - **Completed:** 2026-09-15 17:50:37 UTC+2
+  - **Duration:** 27m 6s
+  - Reused the member tablet's existing mDNS advertisement without pairing the Pi.
+    The Pi upload QR now uses its Avahi `.local` hostname by default.
+- [x] **6.11** Add an internet photo relay with rotating capability URLs.
+  - **Started:** 2026-09-15 18:37:46 UTC+2
+  - **Completed:** 2026-09-15 22:28:00 UTC+2
+  - **Production activated:** 2026-09-15 23:12:11 UTC+2
+  - **Duration:** 3h 50m 14s
+  - Added an HTTPS store-and-forward queue on `iss-skydning.dk`, a mobile upload
+    page, hourly invitation rotation, outbound-only Pi delivery, acknowledgments,
+    poison-image rejection, bounded quotas, and four-hour retention.
+  - Raspberry Pi 4 deployment and the internet relay are active. Production API
+    1.9.0, database schema 1.9.0, invitation rotation, cloud upload, Pi delivery,
+    acknowledgment, and test-photo cleanup were verified end to end.
+- [x] **6.12** Recover and reinstall the reset Raspberry Pi 4.
+  - **Started:** 2026-09-28 19:45:59 UTC+2
+  - **Completed:** 2026-09-28 21:18:54 UTC+2
+  - **Duration:** 1h 32m 55s
+  - Reinstalled the backend, Chromium kiosk, Avahi discovery, and cloud relay
+    credential on the reset Debian 13 image.
+  - Disabled LightDM, activated VT7 before Xorg startup, and added a delayed
+    anti-blanking service to avoid the Raspberry Pi framebuffer initialization
+    race.
+  - Verified a cold boot with Wi-Fi, HDMI, Xorg, Chromium, the backend, Avahi, and
+    anti-blanking active with zero service restarts.
+  - Verified a production cloud upload reached the Pi in 10 seconds and removed
+    the test photo afterward.
+- [x] **6.13** Activate the member-tablet statistics feed in production.
+  - **Started:** 2026-09-28 21:20:24 UTC+2
+  - **Completed:** 2026-09-28 21:48:34 UTC+2
+  - **Duration:** 28m 10s
+  - Identified that `Medlemmer 1` advertised correctly but returned `404` for the
+    display-feed route because it was still running app version 1.3.32.
+  - Built and installed member release 1.3.34 without modifying the separately
+    advertised trainer tablet.
+  - Verified the live feed and Pi cache contain current participation counts,
+    leaderboards, recent scores, and personal bests.
+- [x] **6.14** Add automatic recovery for a frozen or disconnected display.
+  - **Started:** 2026-10-03 08:50:50 UTC+2
+  - **Completed:** 2026-10-03 10:30:00 UTC+2
+  - **Duration:** 1h 39m 10s
+  - Confirmed the membership tablet supplied the current club date while the Pi
+    was absent from the LAN and Chromium continued showing its last rendered
+    state.
+  - Added a one-minute watchdog that probes the full playlist, restarts an
+    unresponsive backend and its dependent kiosk, and reconnects Wi-Fi when the
+    gateway is unreachable.
+  - Enabled persistent journaling so service and network evidence survives a
+    reboot.
+  - Verified production feed polling every 15 seconds, four-hour photo expiry, a
+    forced backend-and-kiosk recovery, and subsequent successful scheduled
+    watchdog runs.
 
 **Exit criteria:** The pilot has no unresolved privacy or reliability blocker, and
 trainers have a tested recovery procedure.

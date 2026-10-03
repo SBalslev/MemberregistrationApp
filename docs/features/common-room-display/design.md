@@ -3,7 +3,7 @@
 **Feature:** Raspberry Pi common-room display
 **Status:** Draft
 **Created:** 2026-08-31
-**Last updated:** 2026-08-31 by sbalslev
+**Last updated:** 2026-10-03 11:11:46 UTC+2 by sbalslev
 
 ## Architecture
 
@@ -52,6 +52,12 @@ Recommended response shape:
 }
 ```
 
+The feed now also supports an optional `activity` object. When present, score
+entries may include `classification` and `affiliation`. These fields are additive,
+so existing schema-version 1 consumers can ignore them. The feed builder selects
+member sessions associated with the active activity and merges visible guest
+results. It uses internal IDs only while grouping and never serializes those IDs.
+
 Use a sealed DTO model so each slide has a defined contract. Avoid maps containing
 arbitrary database values. The endpoint builds names with the existing abbreviated
 name behavior in `CelebrationViewModel`, moved to a shared helper only if both paths
@@ -96,16 +102,27 @@ Keep the interface light:
 
 ### Upload interface
 
-The QR code points to `http://club-display.local/upload` when multicast DNS works.
-The configured local IP address is a fallback. The upload endpoint streams into a
-bounded temporary file, validates the decoded image, generates a random media ID,
-and writes processed output atomically.
+The preferred QR points to a rotating HTTPS capability URL on
+`iss-skydning.dk`. The 256-bit random token is placed in the URL fragment, so it is
+not sent in the initial request or included in normal server logs. Browser
+JavaScript removes the fragment and sends the token in an upload header.
+
+The website stores the upload in a bounded, four-hour queue. The Pi creates a new
+invitation every 55 minutes and polls the queue over outbound HTTPS using a
+separate display credential. It validates and re-encodes each image through the
+existing local image pipeline before acknowledging delivery. Invalid images are
+rejected explicitly so one poison item cannot block the queue.
+
+The Pi's Avahi `.local` upload URL remains an offline fallback. No inbound internet
+port is opened to the Pi.
 
 Initial limits:
 
 - 10 MB request size.
 - 20 megapixels after decoding.
 - Five accepted uploads per client address per hour.
+- 20 accepted uploads per rotating invitation.
+- One-hour invitation lifetime with rotation after 55 minutes.
 - Four-hour lifetime.
 - Configurable total temporary-media quota.
 
@@ -162,10 +179,12 @@ playlist entries that point to incomplete files.
 
 ## Feed availability and discovery
 
-Configure the membership tablet address in the Pi settings for the first release.
-A DHCP reservation is simpler and more predictable than extending the trusted
-device-discovery protocol. Discovery can be added later if static configuration is
-operationally painful.
+By default, discover the membership tablet through its existing
+`_medlemssync._tcp.local.` advertisement and select only advertisements whose
+`deviceType` is `MEMBER_TABLET`. Discovery does not pair the Pi or grant sync
+access. The Pi requests only `/api/display/v1/feed`, validates its allowlisted
+schema, and keeps an explicit URL configuration as a fallback for networks that
+block multicast DNS.
 
 The Pi keeps the last valid feed on disk. Failed requests use exponential backoff
 with a capped interval while local photos continue rotating. A stale indicator is
@@ -191,12 +210,18 @@ absent.
 | Failure | Expected behavior |
 |---------|-------------------|
 | Membership tablet offline | Use cached feed and mark it stale |
-| Pi loses network | Continue local slideshow; uploads unavailable |
+| Pi loses network | Continue local slideshow; watchdog reconnects Wi-Fi |
 | Browser crashes | `systemd` restarts kiosk |
 | Service crashes | `systemd` restarts service; browser retries |
+| Service accepts no playlist requests | Watchdog restarts the backend and kiosk within one minute |
 | Disk approaches quota | Reject uploads; keep display running |
 | Invalid image | Reject without adding a media record |
 | Power loss during upload | Remove orphan temporary files at startup |
+
+The watchdog probes `/api/playlist`, not only the shallow health endpoint, so it
+also detects failures in media expiry or playlist assembly. Backend recovery
+restarts the dependent Chromium kiosk and reapplies its anti-blanking settings.
+Persistent journaling retains service and network evidence across a reboot.
 
 ## Testing strategy
 

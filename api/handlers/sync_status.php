@@ -53,6 +53,10 @@ function handleSyncStatus(): void
         // Activity data
         'check_ins' => (int)(dbQueryOne("SELECT COUNT(*) as cnt FROM check_ins")['cnt'] ?? 0),
         'practice_sessions' => (int)(dbQueryOne("SELECT COUNT(*) as cnt FROM practice_sessions")['cnt'] ?? 0),
+        'activities' => (int)(dbQueryOne("SELECT COUNT(*) as cnt FROM activities")['cnt'] ?? 0),
+        'activity_guests' => (int)(dbQueryOne("SELECT COUNT(*) as cnt FROM activity_guests")['cnt'] ?? 0),
+        'guest_results' => (int)(dbQueryOne("SELECT COUNT(*) as cnt FROM guest_results")['cnt'] ?? 0),
+        'guest_results_deleted' => (int)(dbQueryOne("SELECT COUNT(*) as cnt FROM guest_results WHERE deleted_at_utc IS NOT NULL")['cnt'] ?? 0),
         'scan_events' => (int)(dbQueryOne("SELECT COUNT(*) as cnt FROM scan_events")['cnt'] ?? 0),
         // Equipment data
         'equipment_items' => (int)(dbQueryOne("SELECT COUNT(*) as cnt FROM equipment_items")['cnt'] ?? 0),

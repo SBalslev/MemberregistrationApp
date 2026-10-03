@@ -57,6 +57,9 @@ import {
   type OnlineMember,
   type OnlineCheckIn,
   type OnlinePracticeSession,
+  type OnlineActivity,
+  type OnlineActivityGuest,
+  type OnlineGuestResult,
   type OnlineFinancialTransaction,
   type OnlinePostingCategory,
   type OnlineFiscalYear,
@@ -78,7 +81,7 @@ import {
   RateLimitError,
 } from './onlineApiService';
 import { SYNC_SCHEMA_VERSION } from './syncService';
-import type { Member, CheckIn, PracticeSession, EquipmentItem, EquipmentCheckout, ScanEvent, NewMemberRegistration } from '../types/entities';
+import type { Member, CheckIn, PracticeSession, Activity, ActivityGuest, GuestResult, EquipmentItem, EquipmentCheckout, ScanEvent, NewMemberRegistration } from '../types/entities';
 import type { TrainerInfo, TrainerDiscipline } from './trainerRepository';
 import type { SkvRegistration, SkvWeapon } from './skvRepository';
 import type {
@@ -90,6 +93,7 @@ import type {
   PendingFeePayment,
 } from '../types/finance';
 import type { SqlValue } from 'sql.js';
+import { processPhoto } from '../utils/photoStorage';
 import {
   getPendingForTarget,
   getRequiredOutboxTargets,
@@ -199,6 +203,9 @@ export interface OnlineSyncResult {
     members: number;
     checkIns: number;
     practiceSessions: number;
+    activities?: number;
+    activityGuests?: number;
+    guestResults?: number;
     equipmentItems: number;
     equipmentCheckouts: number;
     trainerInfos: number;
@@ -215,6 +222,9 @@ export interface OnlineSyncResult {
     members: number;
     checkIns: number;
     practiceSessions: number;
+    activities?: number;
+    activityGuests?: number;
+    guestResults?: number;
     equipmentItems: number;
     equipmentCheckouts: number;
     trainerInfos: number;
@@ -327,6 +337,9 @@ class OnlineSyncService {
         members: 0,
         checkIns: 0,
         practiceSessions: 0,
+        activities: 0,
+        activityGuests: 0,
+        guestResults: 0,
         equipmentItems: 0,
         equipmentCheckouts: 0,
         trainerInfos: 0,
@@ -339,6 +352,9 @@ class OnlineSyncService {
         members: 0,
         checkIns: 0,
         practiceSessions: 0,
+        activities: 0,
+        activityGuests: 0,
+        guestResults: 0,
         equipmentItems: 0,
         equipmentCheckouts: 0,
         trainerInfos: 0,
@@ -510,9 +526,23 @@ class OnlineSyncService {
     const deviceId = await this.getDeviceId();
 
     // Collect entities to push
-    const members = this.getModifiedMembers(fullSync);
     const checkIns = this.getModifiedCheckIns(fullSync);
     const practiceSessions = this.getModifiedPracticeSessions(fullSync);
+    const activities = this.getModifiedActivities(fullSync);
+    const activityGuests = this.getModifiedActivityGuests(fullSync);
+    const guestResults = this.getModifiedGuestResults(fullSync);
+    const requiredMemberIds = new Set([
+      ...checkIns.map((checkIn) => checkIn.internalMemberId),
+      ...practiceSessions.map((session) => session.internalMemberId),
+    ]);
+    const members = this.getModifiedMembers(fullSync, requiredMemberIds);
+    const availableMemberIds = new Set(members.map((member) => member.internalId));
+    const missingMemberIds = [...requiredMemberIds].filter((memberId) => !availableMemberIds.has(memberId));
+    if (missingMemberIds.length > 0) {
+      throw new Error(
+        `Kan ikke synkronisere check-ins: ${missingMemberIds.length} lokal(e) medlem(mer) mangler`
+      );
+    }
     const financialTransactions = this.getModifiedFinancialTransactions(fullSync);
     const fiscalYears = this.getModifiedFiscalYears(fullSync);
     const postingCategories = this.getModifiedPostingCategories(fullSync);
@@ -524,7 +554,8 @@ class OnlineSyncService {
     const trainerDisciplines = this.getModifiedTrainerDisciplines(fullSync);
 
     const totalEntities =
-      members.length + checkIns.length + practiceSessions.length + financialTransactions.length +
+      members.length + checkIns.length + practiceSessions.length + activities.length +
+      activityGuests.length + guestResults.length + financialTransactions.length +
       fiscalYears.length + postingCategories.length + transactionLines.length + pendingFeePayments.length +
       equipmentItems.length + equipmentCheckouts.length + trainerInfos.length + trainerDisciplines.length;
 
@@ -691,6 +722,71 @@ class OnlineSyncService {
 
       processedCount += batch.length;
       await delay(INTER_BATCH_DELAY_MS);
+    }
+
+    const activityBatches: Array<{
+      key: 'activities' | 'activityGuests' | 'guestResults';
+      records: Array<OnlineActivity | OnlineActivityGuest | OnlineGuestResult>;
+      processedKey: 'activities' | 'activity_guests' | 'guest_results';
+      entityType: 'Activity' | 'ActivityGuest' | 'GuestResult';
+    }> = [
+      {
+        key: 'activities',
+        records: activities.map(a => ({
+          id: a.id, title: a.title, type: a.type, starts_at_utc: a.startsAtUtc,
+          ends_at_utc: a.endsAtUtc, status: a.status, display_enabled: a.displayEnabled,
+          created_at_utc: a.createdAtUtc, modified_at_utc: a.updatedAtUtc,
+          device_id: a.deviceId || deviceId, sync_version: a.syncVersion
+        })),
+        processedKey: 'activities',
+        entityType: 'Activity'
+      },
+      {
+        key: 'activityGuests',
+        records: activityGuests.map(g => ({
+          id: g.id, activity_id: g.activityId, display_name: g.displayName, club_name: g.clubName,
+          start_number: g.startNumber, show_on_display: g.showOnDisplay, created_at_utc: g.createdAtUtc,
+          modified_at_utc: g.updatedAtUtc, device_id: g.deviceId || deviceId, sync_version: g.syncVersion
+        })),
+        processedKey: 'activity_guests',
+        entityType: 'ActivityGuest'
+      },
+      {
+        key: 'guestResults',
+        records: guestResults.map(r => ({
+          id: r.id, activity_id: r.activityId, guest_id: r.guestId, created_at_utc: r.createdAtUtc,
+          local_date: r.localDate, practice_type: r.practiceType, points: r.points, krydser: r.krydser,
+          classification: r.classification, device_id: r.deviceId || deviceId, sync_version: r.syncVersion,
+          deleted_at_utc: r.deletedAtUtc
+        })),
+        processedKey: 'guest_results',
+        entityType: 'GuestResult'
+      }
+    ];
+    for (const group of activityBatches) {
+      for (let i = 0; i < group.records.length; i += batchSize) {
+        const batch = group.records.slice(i, i + batchSize);
+        const entities: SyncPushPayload['entities'] = {};
+        (entities as Record<string, unknown>)[group.key] = batch;
+        const response = await withRateLimitRetry(() => onlineApiService.push({
+          deviceId, batchId: crypto.randomUUID(), schemaVersion: SYNC_SCHEMA_VERSION, entities
+        }));
+        const count = (response.processed[group.processedKey]?.inserted || 0) +
+          (response.processed[group.processedKey]?.updated || 0);
+        if (group.key === 'activities') pushed.activities = (pushed.activities || 0) + count;
+        if (group.key === 'activityGuests') pushed.activityGuests = (pushed.activityGuests || 0) + count;
+        if (group.key === 'guestResults') pushed.guestResults = (pushed.guestResults || 0) + count;
+        const pushedIds = new Set(batch.map(record => record.id));
+        const requiredTargets = getRequiredOutboxTargets({ includeOnline: true });
+        for (const entry of getPendingForTarget(ONLINE_TARGET_ID)) {
+          if (entry.entityType === group.entityType && pushedIds.has(entry.entityId)) {
+            markDeliveredToDevice(entry.id, ONLINE_TARGET_ID);
+            markCompletedIfAllTargets(entry.id, requiredTargets);
+          }
+        }
+        processedCount += batch.length;
+        await delay(INTER_BATCH_DELAY_MS);
+      }
     }
 
     // Push financial transactions
@@ -1563,6 +1659,9 @@ class OnlineSyncService {
       members: 0,
       checkIns: 0,
       practiceSessions: 0,
+      activities: 0,
+      activityGuests: 0,
+      guestResults: 0,
       equipmentItems: 0,
       equipmentCheckouts: 0,
       trainerInfos: 0,
@@ -1609,6 +1708,7 @@ class OnlineSyncService {
       // Process pulled entities
       // Note: PHP returns snake_case keys, access them with type assertion
       const entities = result.entities as unknown as Record<string, unknown[]>;
+      const photosToDownload: OnlinePhotoMetadata[] = [];
 
       transaction(() => {
         // Process members
@@ -1635,6 +1735,22 @@ class OnlineSyncService {
           for (const session of practiceSessions) {
             this.upsertPracticeSessionFromOnline(session);
             pulled.practiceSessions++;
+          }
+
+          const activities = entities['activities'] as OnlineActivity[] | undefined;
+          for (const activity of activities || []) {
+            this.upsertActivityFromOnline(activity);
+            pulled.activities = (pulled.activities || 0) + 1;
+          }
+          const activityGuests = entities['activity_guests'] as OnlineActivityGuest[] | undefined;
+          for (const guest of activityGuests || []) {
+            this.upsertActivityGuestFromOnline(guest);
+            pulled.activityGuests = (pulled.activityGuests || 0) + 1;
+          }
+          const guestResults = entities['guest_results'] as OnlineGuestResult[] | undefined;
+          for (const guestResult of guestResults || []) {
+            this.upsertGuestResultFromOnline(guestResult);
+            pulled.guestResults = (pulled.guestResults || 0) + 1;
           }
         }
 
@@ -1763,19 +1879,29 @@ class OnlineSyncService {
         }
 
         // Process photos (PHP returns 'photos')
-        // Note: This only processes metadata; actual photo files are not downloaded here.
-        // Photos uploaded from this device will already exist locally.
-        // Photo download from server can be implemented later for disaster recovery.
         const photos = entities['photos'] as OnlinePhotoMetadata[] | undefined;
         if (photos) {
           for (const photo of photos) {
-            void photo;
-            // TODO: If photo doesn't exist locally, download it from server
-            // For now, just count photos received from server
-            pulled.photos++;
+            photosToDownload.push(photo);
           }
         }
       });
+
+      for (const photo of photosToDownload) {
+        if (this.abortController?.signal.aborted) {
+          throw new Error('Sync cancelled');
+        }
+
+        onProgress?.({
+          phase: 'photos',
+          message: `Henter foto ${pulled.photos + 1}...`,
+          current: pulled.photos,
+          total: pulled.photos + photosToDownload.length,
+        });
+
+        await this.downloadMissingPhoto(photo);
+        pulled.photos++;
+      }
 
       // Handle deletes - add to pending list for user confirmation
       // Note: PHP returns snake_case keys
@@ -1830,13 +1956,17 @@ class OnlineSyncService {
 
   // ===== Entity Queries =====
 
-  private getModifiedMembers(fullSync: boolean): Member[] {
+  private getModifiedMembers(fullSync: boolean, requiredMemberIds: ReadonlySet<string> = new Set()): Member[] {
     const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    const requiredIds = [...requiredMemberIds];
+    const requiredMemberClause = requiredIds.length > 0
+      ? ` OR internalId IN (${requiredIds.map(() => '?').join(', ')})`
+      : '';
     return query<Member>(
       `SELECT * FROM Member
-       WHERE updatedAtUtc > ? OR syncedAtUtc IS NULL
+       WHERE updatedAtUtc > ? OR syncedAtUtc IS NULL${requiredMemberClause}
        ORDER BY updatedAtUtc ASC`,
-      [since]
+      [since, ...requiredIds]
     );
   }
 
@@ -1859,6 +1989,28 @@ class OnlineSyncService {
          AND (createdAtUtc > ? OR syncedAtUtc IS NULL)
        ORDER BY createdAtUtc ASC`,
       [since]
+    );
+  }
+
+  private getModifiedActivities(fullSync: boolean): Activity[] {
+    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    return query<Activity>('SELECT * FROM Activity WHERE updatedAtUtc > ? OR syncedAtUtc IS NULL ORDER BY updatedAtUtc', [since])
+      .map(a => ({ ...a, displayEnabled: Boolean(a.displayEnabled) }));
+  }
+
+  private getModifiedActivityGuests(fullSync: boolean): ActivityGuest[] {
+    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    return query<ActivityGuest>('SELECT * FROM ActivityGuest WHERE updatedAtUtc > ? OR syncedAtUtc IS NULL ORDER BY updatedAtUtc', [since])
+      .map(g => ({ ...g, showOnDisplay: Boolean(g.showOnDisplay) }));
+  }
+
+  private getModifiedGuestResults(fullSync: boolean): GuestResult[] {
+    const since = fullSync ? '1970-01-01T00:00:00Z' : this.state.lastPushTime || '1970-01-01T00:00:00Z';
+    return query<GuestResult>(
+      `SELECT * FROM GuestResult
+       WHERE createdAtUtc > ? OR deletedAtUtc > ? OR syncedAtUtc IS NULL
+       ORDER BY COALESCE(deletedAtUtc, createdAtUtc)`,
+      [since, since]
     );
   }
 
@@ -2054,6 +2206,71 @@ class OnlineSyncService {
 
   // ===== Entity Upserts =====
 
+  private async downloadMissingPhoto(photo: OnlinePhotoMetadata): Promise<void> {
+    const photoType = photo.photo_type.toLowerCase();
+    const isIdPhoto = photoType === 'id';
+    const member = query<{
+      photoPath: string | null;
+      photoThumbnail: string | null;
+      idPhotoPath: string | null;
+      idPhotoThumbnail: string | null;
+    }>(
+      `SELECT photoPath, photoThumbnail, idPhotoPath, idPhotoThumbnail
+       FROM Member WHERE internalId = ?`,
+      [photo.internal_member_id]
+    )[0];
+
+    if (!member) {
+      console.warn(
+        `[OnlineSyncService] Ignoring photo ${photo.id}: member ${photo.internal_member_id} does not exist locally`
+      );
+      return;
+    }
+
+    const hasLocalPhoto = isIdPhoto
+      ? !!member.idPhotoPath || !!member.idPhotoThumbnail
+      : !!member.photoPath || !!member.photoThumbnail;
+    if (hasLocalPhoto) {
+      return;
+    }
+
+    const blob = await withRateLimitRetry(
+      () => onlineApiService.downloadPhoto(photo.id),
+      MAX_RATE_LIMIT_RETRIES
+    );
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+
+    const storageId = isIdPhoto
+      ? `${photo.internal_member_id}_id`
+      : photo.internal_member_id;
+    const stored = await processPhoto(storageId, btoa(binary));
+
+    if (isIdPhoto) {
+      execute(
+        `UPDATE Member
+         SET idPhotoPath = ?, idPhotoThumbnail = ?
+         WHERE internalId = ?`,
+        [stored.photoPath, stored.photoThumbnail, photo.internal_member_id]
+      );
+    } else {
+      execute(
+        `UPDATE Member
+         SET photoPath = ?, photoThumbnail = ?
+         WHERE internalId = ?`,
+        [stored.photoPath, stored.photoThumbnail, photo.internal_member_id]
+      );
+    }
+
+    console.log(
+      `[OnlineSyncService] Downloaded ${photoType} photo for member ${photo.internal_member_id}`
+    );
+  }
+
   private upsertMemberFromOnline(online: OnlineMember): void {
     const local = memberFromOnline(online);
     const now = new Date().toISOString();
@@ -2203,8 +2420,8 @@ class OnlineSyncService {
       execute(
         `INSERT INTO PracticeSession (
           id, internalMemberId, membershipId, localDate, practiceType, classification,
-          points, krydser, notes, createdAtUtc, syncedAtUtc, syncVersion
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          points, krydser, notes, createdAtUtc, syncedAtUtc, syncVersion, activityId
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           toSqlValue(local.id),
           toSqlValue(local.internalMemberId),
@@ -2218,9 +2435,50 @@ class OnlineSyncService {
           toSqlValue(local.createdAtUtc),
           now,
           toSqlValue(local.syncVersion),
+          toSqlValue(local.activityId),
         ]
       );
     }
+  }
+
+  private upsertActivityFromOnline(a: OnlineActivity): void {
+    execute(
+      `INSERT INTO Activity (id,title,type,startsAtUtc,endsAtUtc,status,displayEnabled,createdAtUtc,updatedAtUtc,deviceId,syncVersion,syncedAtUtc)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET title=excluded.title,type=excluded.type,startsAtUtc=excluded.startsAtUtc,
+       endsAtUtc=excluded.endsAtUtc,status=excluded.status,displayEnabled=excluded.displayEnabled,
+       updatedAtUtc=excluded.updatedAtUtc,deviceId=excluded.deviceId,syncVersion=excluded.syncVersion,syncedAtUtc=excluded.syncedAtUtc
+       WHERE excluded.syncVersion >= Activity.syncVersion`,
+      [a.id,a.title,a.type,a.starts_at_utc,a.ends_at_utc,a.status,a.display_enabled ? 1 : 0,a.created_at_utc,
+       a.modified_at_utc,a.device_id,a.sync_version,new Date().toISOString()]
+    );
+  }
+
+  private upsertActivityGuestFromOnline(g: OnlineActivityGuest): void {
+    execute(
+      `INSERT INTO ActivityGuest (id,activityId,displayName,clubName,startNumber,showOnDisplay,createdAtUtc,updatedAtUtc,deviceId,syncVersion,syncedAtUtc)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET activityId=excluded.activityId,displayName=excluded.displayName,
+       clubName=excluded.clubName,startNumber=excluded.startNumber,showOnDisplay=excluded.showOnDisplay,
+       updatedAtUtc=excluded.updatedAtUtc,deviceId=excluded.deviceId,syncVersion=excluded.syncVersion,syncedAtUtc=excluded.syncedAtUtc
+       WHERE excluded.syncVersion >= ActivityGuest.syncVersion`,
+      [g.id,g.activity_id,g.display_name,g.club_name,g.start_number,g.show_on_display ? 1 : 0,g.created_at_utc,
+       g.modified_at_utc,g.device_id,g.sync_version,new Date().toISOString()]
+    );
+  }
+
+  private upsertGuestResultFromOnline(r: OnlineGuestResult): void {
+    execute(
+      `INSERT INTO GuestResult (id,activityId,guestId,createdAtUtc,localDate,practiceType,points,krydser,classification,deviceId,syncVersion,syncedAtUtc,deletedAtUtc)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET activityId=excluded.activityId,guestId=excluded.guestId,
+       localDate=excluded.localDate,practiceType=excluded.practiceType,points=excluded.points,
+       krydser=excluded.krydser,classification=excluded.classification,deviceId=excluded.deviceId,
+       syncVersion=excluded.syncVersion,syncedAtUtc=excluded.syncedAtUtc,deletedAtUtc=excluded.deletedAtUtc
+       WHERE excluded.syncVersion >= GuestResult.syncVersion`,
+      [r.id,r.activity_id,r.guest_id,r.created_at_utc,r.local_date,r.practice_type,r.points,r.krydser,
+       r.classification,r.device_id,r.sync_version,new Date().toISOString(),r.deleted_at_utc]
+    );
   }
 
   private upsertFinancialTransactionFromOnline(online: OnlineFinancialTransaction): void {
@@ -3231,6 +3489,10 @@ class OnlineSyncService {
       // Activity data (Local: CheckIn, PracticeSession, ScanEvent)
       check_ins: await getCount('SELECT COUNT(*) as cnt FROM CheckIn'),
       practice_sessions: await getCount('SELECT COUNT(*) as cnt FROM PracticeSession'),
+      activities: await getCount('SELECT COUNT(*) as cnt FROM Activity'),
+      activity_guests: await getCount('SELECT COUNT(*) as cnt FROM ActivityGuest'),
+      guest_results: await getCount('SELECT COUNT(*) as cnt FROM GuestResult'),
+      guest_results_deleted: await getCount('SELECT COUNT(*) as cnt FROM GuestResult WHERE deletedAtUtc IS NOT NULL'),
       scan_events: await getCount('SELECT COUNT(*) as cnt FROM ScanEvent'),
       // Equipment data (Local: EquipmentItem, EquipmentCheckout)
       equipment_items: await getCount('SELECT COUNT(*) as cnt FROM EquipmentItem'),

@@ -356,6 +356,14 @@ entities trigger sync via the outbox's pending count observer.
   - Call `outboxManager.markDelivered()` for each
   - Acceptance: Outbox entries marked delivered on acknowledgment
 
+- [x] **3.4.1** Repair and preserve member photos during synchronization
+  - **Started**: 2026-10-03 10:26:42 UTC+2
+  - **Completed**: 2026-10-03 10:42:00 UTC+2
+  - **Duration**: 15m 18s
+  - Preserve existing profile and ID photo fields when a payload omits photo bytes
+  - Repair missing local photos from equal-version direct tablet sync payloads
+  - Download missing profile and ID photos during full online sync
+
 ---
 
 ### Task 4.0: Sync Status UI (Android) - Partial ✅

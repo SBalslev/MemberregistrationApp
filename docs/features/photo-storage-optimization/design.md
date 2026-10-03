@@ -150,6 +150,11 @@ function getMemberByInternalId(id: string): Member {
 | Leaderboards | `photoPath` (file) | Full quality display |
 | Check-in confirmation | `photoThumbnail` | Fast loading |
 
+If a member has no local photo but synchronization receives photo bytes or
+online photo metadata, the sync process restores the full photo file and
+regenerates its thumbnail. Member merge logic preserves existing profile and
+ID photo fields when a payload omits photo bytes.
+
 ---
 
 ## File Lifecycle

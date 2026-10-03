@@ -24,6 +24,7 @@ from .config import DisplayConfig
 from .feed import FeedCache, FeedPoller
 from .media import delete_permanent_media, discover_permanent_media, resolve_media_path
 from .qr import generate_qr_png
+from .relay import DisplayRelayClient
 from .uploads import (
     ClientUploadLimiter,
     ExpiryWorker,
@@ -51,7 +52,12 @@ class DisplayApplication:
         )
         self.trainer_sessions = TrainerSessionStore()
         self.login_limiter = ClientUploadLimiter(max_uploads=5, window_seconds=300)
-        self.upload_qr_png = generate_qr_png(f"{config.public_base_url}/upload")
+        self.relay: DisplayRelayClient | None = None
+
+    def upload_url(self) -> str:
+        if self.relay is not None:
+            return self.relay.upload_url
+        return f"{self.config.public_base_url}/upload"
 
     def playlist(self) -> dict[str, Any]:
         return {
@@ -72,7 +78,11 @@ def create_handler(application: DisplayApplication) -> type[BaseHTTPRequestHandl
             elif path == "/api/playlist":
                 self._send_json(application.playlist())
             elif path == "/api/upload-qr.png":
-                self._send_bytes(application.upload_qr_png, "image/png", cache_control="public, max-age=3600")
+                self._send_bytes(
+                    generate_qr_png(application.upload_url()),
+                    "image/png",
+                    cache_control="no-store",
+                )
             elif path == "/api/admin/session":
                 session = self._trainer_session()
                 if session is None:
@@ -313,10 +323,23 @@ def main() -> None:
     config = DisplayConfig.load(args.config)
     config.data_directory.mkdir(parents=True, exist_ok=True)
     application = DisplayApplication(config)
+    relay = None
+    if config.relay_base_url:
+        relay = DisplayRelayClient(
+            config.relay_base_url,
+            config.relay_device_token,
+            config.relay_display_id,
+            config.relay_poll_interval_seconds,
+            application.uploads,
+            f"{config.public_base_url}/upload",
+        )
+        application.relay = relay
     poller = FeedPoller(config.tablet_feed_url, config.poll_interval_seconds, application.feed_cache)
     expiry_worker = ExpiryWorker(application.uploads)
     poller.start()
     expiry_worker.start()
+    if relay is not None:
+        relay.start()
     server = ThreadingHTTPServer((config.bind_host, config.bind_port), create_handler(application))
     LOGGER.info("Common-room display listening on http://%s:%s", config.bind_host, config.bind_port)
     try:
@@ -326,8 +349,12 @@ def main() -> None:
     finally:
         poller.stop()
         expiry_worker.stop()
+        if relay is not None:
+            relay.stop()
         poller.join(timeout=2)
         expiry_worker.join(timeout=2)
+        if relay is not None:
+            relay.join(timeout=2)
         server.server_close()
 
 

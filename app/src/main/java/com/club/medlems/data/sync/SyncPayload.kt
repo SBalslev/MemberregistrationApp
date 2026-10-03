@@ -43,6 +43,9 @@ data class SyncEntities(
     val memberDeletions: List<SyncableMemberDeletion> = emptyList(),
     val checkIns: List<SyncableCheckIn> = emptyList(),
     val practiceSessions: List<SyncablePracticeSession> = emptyList(),
+    val activities: List<SyncableActivity> = emptyList(),
+    val activityGuests: List<SyncableActivityGuest> = emptyList(),
+    val guestResults: List<SyncableGuestResult> = emptyList(),
     val practiceSessionDeletions: List<SyncablePracticeSessionDeletion> = emptyList(),
     val policyViolations: List<SyncablePolicyViolation> = emptyList(),
     val scanEvents: List<SyncableScanEvent> = emptyList(),
@@ -56,6 +59,7 @@ data class SyncEntities(
 ) {
     /** Total number of entities in this payload */
     val totalCount: Int get() = members.size + memberDeletions.size + checkIns.size + practiceSessions.size +
+            activities.size + activityGuests.size + guestResults.size +
             practiceSessionDeletions.size + policyViolations.size + scanEvents.size +
             newMemberRegistrations.size + equipmentItems.size + equipmentCheckouts.size +
             devices.size + memberPreferences.size + trainerInfos.size + trainerDisciplines.size

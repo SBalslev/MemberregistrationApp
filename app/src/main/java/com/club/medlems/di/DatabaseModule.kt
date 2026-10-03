@@ -628,13 +628,81 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE PracticeSession ADD COLUMN activityId TEXT")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_PracticeSession_activityId ON PracticeSession(activityId)")
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS Activity (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    startsAtUtc TEXT NOT NULL,
+                    endsAtUtc TEXT,
+                    status TEXT NOT NULL,
+                    displayEnabled INTEGER NOT NULL,
+                    createdAtUtc TEXT NOT NULL,
+                    updatedAtUtc TEXT NOT NULL,
+                    deviceId TEXT,
+                    syncVersion INTEGER NOT NULL,
+                    syncedAtUtc TEXT
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_Activity_status ON Activity(status)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_Activity_startsAtUtc ON Activity(startsAtUtc)")
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS ActivityGuest (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    activityId TEXT NOT NULL,
+                    displayName TEXT NOT NULL,
+                    clubName TEXT,
+                    startNumber TEXT,
+                    showOnDisplay INTEGER NOT NULL,
+                    createdAtUtc TEXT NOT NULL,
+                    updatedAtUtc TEXT NOT NULL,
+                    deviceId TEXT,
+                    syncVersion INTEGER NOT NULL,
+                    syncedAtUtc TEXT
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_ActivityGuest_activityId ON ActivityGuest(activityId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_ActivityGuest_activityId_displayName_clubName ON ActivityGuest(activityId, displayName, clubName)")
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS GuestResult (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    activityId TEXT NOT NULL,
+                    guestId TEXT NOT NULL,
+                    createdAtUtc TEXT NOT NULL,
+                    localDate TEXT NOT NULL,
+                    practiceType TEXT NOT NULL,
+                    points INTEGER NOT NULL,
+                    krydser INTEGER,
+                    classification TEXT,
+                    deviceId TEXT,
+                    syncVersion INTEGER NOT NULL,
+                    syncedAtUtc TEXT
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_GuestResult_activityId ON GuestResult(activityId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_GuestResult_guestId ON GuestResult(guestId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_GuestResult_localDate ON GuestResult(localDate)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_GuestResult_activityId_practiceType ON GuestResult(activityId, practiceType)")
+        }
+    }
+
+    private val MIGRATION_20_21 = object : Migration(20, 21) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE GuestResult ADD COLUMN deletedAtUtc TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext appContext: Context): AppDatabase = Room.databaseBuilder(
         appContext,
         AppDatabase::class.java,
         "medlems-db"
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19).build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21).build()
 
     @Provides
     fun memberDao(db: AppDatabase) = db.memberDao()
@@ -662,6 +730,12 @@ object DatabaseModule {
     fun policyViolationDao(db: AppDatabase) = db.policyViolationDao()
     @Provides
     fun syncOutboxDao(db: AppDatabase) = db.syncOutboxDao()
+    @Provides
+    fun activityDao(db: AppDatabase) = db.activityDao()
+    @Provides
+    fun activityGuestDao(db: AppDatabase) = db.activityGuestDao()
+    @Provides
+    fun guestResultDao(db: AppDatabase) = db.guestResultDao()
 
     @Provides
     @Singleton

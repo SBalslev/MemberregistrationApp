@@ -4,7 +4,7 @@
 **Status:** Planned
 **Priority:** Medium
 **Created:** 2026-08-31
-**Last updated:** 2026-08-31 by sbalslev
+**Last updated:** 2026-10-03 11:11:46 UTC+2 by sbalslev
 
 ## Overview
 
@@ -92,6 +92,13 @@ have not been refreshed within a configurable period.
 - Personal bests achieved today when they can be calculated reliably.
 - Birthdays that occurred today or during the previous seven calendar days.
 
+**FR-2.4a** When a display-enabled activity is active, the feed SHALL show the
+activity title and combine its associated member results with visible guest
+results instead of showing the normal club-date result set.
+
+**FR-2.4b** Activity leaderboards SHALL separate discipline and classification.
+An optional visiting-club name MAY appear beside a guest's approved display name.
+
 **FR-2.5** Birthday content SHALL contain no date of birth, birth year, or age.
 
 **FR-2.6** Member names SHALL default to first name and last initial, for example
@@ -116,8 +123,11 @@ card SHALL remain available until a trainer deletes them.
 
 ### FR-4: Public temporary uploads
 
-**FR-4.1** Any device that can reach the Pi on the local network SHALL be able to
-open the upload page without authentication.
+**FR-4.1** A person who scans the current TV QR code SHALL be able to open the
+internet upload page without a member account or club-network connection.
+
+**FR-4.1a** The QR code SHALL carry an unguessable capability that expires after
+one hour and is limited to one display.
 
 **FR-4.2** The upload page SHALL accept JPEG, PNG, and WebP images.
 
@@ -138,6 +148,12 @@ and create display-sized output before serving them.
 
 - Immediate display, which is the initial default.
 - Trainer approval before display.
+
+**FR-4.10** The Pi SHALL retrieve queued photos through outbound HTTPS only. The
+router SHALL NOT expose a public inbound port to the Pi.
+
+**FR-4.11** Each invitation SHALL accept no more than 20 photos, and each client
+address SHALL receive no more than five accepted uploads per hour.
 
 ### FR-5: Trainer moderation
 
@@ -174,7 +190,10 @@ endpoint publishes a deliberately limited data product; it does not mean that ra
 membership data is available without a token.
 
 - Existing `/api/sync/*` endpoints remain authenticated and unchanged.
-- Public upload routes run on the Pi, not on the membership tablet.
+- Internet upload routes run on `iss-skydning.dk`, not on the membership tablet.
+- The Pi uses an independent display-relay credential and outbound HTTPS.
+- Upload capability tokens are stored only as hashes and are not sent as URL query
+  parameters or request logs.
 - Display-feed models use an allowlist of fields.
 - Public routes use rate limiting and bounded request bodies.
 - Moderation routes use authentication and request forgery protection where

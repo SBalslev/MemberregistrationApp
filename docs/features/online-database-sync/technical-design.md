@@ -2,7 +2,7 @@
 
 **Document Status:** Draft
 **Created:** 2026-01-27
-**Last Updated:** 2026-01-27
+**Last Updated:** 2026-09-28
 **Author:** sbalslev
 
 ---
@@ -16,6 +16,7 @@ This document describes the technical architecture for integrating an online MyS
 2. **Minimal disruption**: Existing repository patterns and sync logic unchanged
 3. **Secure credentials**: Password never in source code; OS keychain for storage
 4. **Schema versioning**: Backwards-compatible evolution with semantic versioning
+5. **Dependency ordering**: Incremental child pushes include and send required parent records first
 
 ---
 

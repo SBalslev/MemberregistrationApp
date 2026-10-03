@@ -1,8 +1,8 @@
 # Financial Transactions (Kassebog) - Product Requirements Document
 
 **Feature:** Club Financial Transaction Recording and Reporting
-**Version:** 1.1
-**Last Updated:** 2026-02-10
+**Version:** 1.2
+**Last Updated:** 2026-09-28
 **Updated By:** sbalslev
 
 ---
@@ -286,6 +286,8 @@ For a given fiscal year, show each member with:
 - Amount paid (sum of FEES lines linked to member)
 - Outstanding balance
 - Payment date(s)
+- Click-through to the member's linked transaction entries
+- Voucher number and direct edit action for correcting duplicate or incorrect entries
 
 #### 3.6.5 Use Cases
 

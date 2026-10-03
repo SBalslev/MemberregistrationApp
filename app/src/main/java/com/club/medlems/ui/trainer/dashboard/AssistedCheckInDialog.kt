@@ -131,6 +131,7 @@ class AssistedCheckInViewModel @Inject constructor(
     private val memberDao: MemberDao,
     private val checkInDao: CheckInDao,
     private val practiceSessionDao: PracticeSessionDao,
+    private val activityDao: com.club.medlems.data.dao.ActivityDao,
     private val policyViolationDao: PolicyViolationDao,
     private val syncOutboxManager: SyncOutboxManager,
     private val syncManager: SyncManager,
@@ -317,6 +318,7 @@ class AssistedCheckInViewModel @Inject constructor(
                     krydser = krydserVal,
                     classification = _state.value.selectedClassification,
                     source = SessionSource.attendant,
+                    activityId = activityDao.active()?.id,
                     deviceId = trustManager.getThisDeviceId(),
                     syncVersion = 0,
                     syncedAtUtc = null

@@ -2,6 +2,9 @@ package com.club.medlems.data.sync
 
 import android.util.Log
 import com.club.medlems.data.entity.CheckIn
+import com.club.medlems.data.entity.Activity
+import com.club.medlems.data.entity.ActivityGuest
+import com.club.medlems.data.entity.GuestResult
 import com.club.medlems.data.entity.EquipmentCheckout
 import com.club.medlems.data.entity.EquipmentItem
 import com.club.medlems.data.entity.Member
@@ -139,6 +142,9 @@ class SyncOutboxManager @Inject constructor(
         val outboxIds = mutableListOf<String>()
         val checkIns = mutableListOf<SyncableCheckIn>()
         val practiceSessions = mutableListOf<SyncablePracticeSession>()
+        val activities = mutableListOf<SyncableActivity>()
+        val activityGuests = mutableListOf<SyncableActivityGuest>()
+        val guestResults = mutableListOf<SyncableGuestResult>()
         val practiceSessionDeletions = mutableListOf<SyncablePracticeSessionDeletion>()
         val policyViolations = mutableListOf<SyncablePolicyViolation>()
         val scanEvents = mutableListOf<SyncableScanEvent>()
@@ -162,6 +168,18 @@ class SyncOutboxManager @Inject constructor(
                         } else {
                             practiceSessions.add(json.decodeFromString<SyncablePracticeSession>(entry.payload))
                         }
+                        outboxIds.add(entry.id)
+                    }
+                    "Activity" -> {
+                        activities.add(json.decodeFromString<SyncableActivity>(entry.payload))
+                        outboxIds.add(entry.id)
+                    }
+                    "ActivityGuest" -> {
+                        activityGuests.add(json.decodeFromString<SyncableActivityGuest>(entry.payload))
+                        outboxIds.add(entry.id)
+                    }
+                    "GuestResult" -> {
+                        guestResults.add(json.decodeFromString<SyncableGuestResult>(entry.payload))
                         outboxIds.add(entry.id)
                     }
                     "PolicyViolation" -> {
@@ -206,6 +224,9 @@ class SyncOutboxManager @Inject constructor(
         val entities = SyncEntities(
             checkIns = checkIns,
             practiceSessions = practiceSessions,
+            activities = activities,
+            activityGuests = activityGuests,
+            guestResults = guestResults,
             practiceSessionDeletions = practiceSessionDeletions,
             policyViolations = policyViolations,
             scanEvents = scanEvents,
@@ -477,6 +498,7 @@ class SyncOutboxManager @Inject constructor(
             krydser = session.krydser,
             classification = session.classification,
             source = session.source,
+            activityId = session.activityId,
             deviceId = deviceId,
             syncVersion = 1,
             createdAtUtc = session.createdAtUtc,
@@ -488,6 +510,73 @@ class SyncOutboxManager @Inject constructor(
             entityId = session.id,
             operation = OutboxOperation.INSERT,
             entity = syncable
+        )
+    }
+
+    suspend fun queueActivity(activity: Activity, deviceId: String) {
+        queueForSync(
+            entityType = "Activity",
+            entityId = activity.id,
+            operation = OutboxOperation.INSERT,
+            entity = SyncableActivity(
+                id = activity.id,
+                title = activity.title,
+                type = activity.type,
+                startsAtUtc = activity.startsAtUtc,
+                endsAtUtc = activity.endsAtUtc,
+                status = activity.status,
+                displayEnabled = activity.displayEnabled,
+                deviceId = activity.deviceId ?: deviceId,
+                syncVersion = activity.syncVersion,
+                createdAtUtc = activity.createdAtUtc,
+                modifiedAtUtc = activity.updatedAtUtc,
+                syncedAtUtc = null
+            )
+        )
+    }
+
+    suspend fun queueActivityGuest(guest: ActivityGuest, deviceId: String) {
+        queueForSync(
+            entityType = "ActivityGuest",
+            entityId = guest.id,
+            operation = OutboxOperation.INSERT,
+            entity = SyncableActivityGuest(
+                id = guest.id,
+                activityId = guest.activityId,
+                displayName = guest.displayName,
+                clubName = guest.clubName,
+                startNumber = guest.startNumber,
+                showOnDisplay = guest.showOnDisplay,
+                deviceId = guest.deviceId ?: deviceId,
+                syncVersion = guest.syncVersion,
+                createdAtUtc = guest.createdAtUtc,
+                modifiedAtUtc = guest.updatedAtUtc,
+                syncedAtUtc = null
+            )
+        )
+    }
+
+    suspend fun queueGuestResult(result: GuestResult, deviceId: String) {
+        queueForSync(
+            entityType = "GuestResult",
+            entityId = result.id,
+            operation = OutboxOperation.INSERT,
+            entity = SyncableGuestResult(
+                id = result.id,
+                activityId = result.activityId,
+                guestId = result.guestId,
+                localDate = result.localDate,
+                practiceType = result.practiceType,
+                points = result.points,
+                krydser = result.krydser,
+                classification = result.classification,
+                deletedAtUtc = result.deletedAtUtc,
+                deviceId = result.deviceId ?: deviceId,
+                syncVersion = result.syncVersion,
+                createdAtUtc = result.createdAtUtc,
+                modifiedAtUtc = result.deletedAtUtc ?: result.createdAtUtc,
+                syncedAtUtc = null
+            )
         )
     }
 
@@ -538,6 +627,7 @@ class SyncOutboxManager @Inject constructor(
             krydser = session.krydser,
             classification = session.classification,
             source = session.source,
+            activityId = session.activityId,
             deviceId = deviceId,
             syncVersion = (session.syncVersion ?: 0) + 1,
             createdAtUtc = session.createdAtUtc,

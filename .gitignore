@@ -27,6 +27,7 @@ Thumbs.db
 *.apk
 *.aab
 *.ap_
+*.ab
 
 # Keystores (never commit private keys)
 *.keystore
@@ -38,6 +39,7 @@ google-services.json
 # Misc
 captures/
 out/
+.tmp-ui/
 
 # Common-room display local state
 display/config.json

@@ -4,7 +4,7 @@
  */
 
 import { useMemo } from 'react';
-import { X, User, Calendar, Tag } from 'lucide-react';
+import { X, User, Calendar, Tag, Pencil } from 'lucide-react';
 import type { TransactionWithLines, PostingCategory } from '../../types';
 import type { Member } from '../../types/entities';
 
@@ -15,10 +15,12 @@ interface MemberHistoryDialogProps {
   transactions: TransactionWithLines[];
   categories: PostingCategory[];
   year?: number;
+  onEditTransaction?: (transactionId: string) => void;
 }
 
 interface TransactionLineWithContext {
   transactionId: string;
+  sequenceNumber: number;
   date: string;
   description: string;
   categoryId: string;
@@ -35,6 +37,7 @@ export function MemberHistoryDialog({
   transactions,
   categories,
   year,
+  onEditTransaction,
 }: MemberHistoryDialogProps) {
   // Get all transaction lines for this member
   const memberLines: TransactionLineWithContext[] = useMemo(() => {
@@ -47,10 +50,11 @@ export function MemberHistoryDialog({
       if (year && !txn.date.startsWith(year.toString())) continue;
 
       for (const line of txn.lines) {
-        if (line.memberId === member.membershipId) {
+        if (line.memberId === member.internalId) {
           const category = categories.find((c) => c.id === line.categoryId);
           lines.push({
             transactionId: txn.id,
+            sequenceNumber: txn.sequenceNumber,
             date: txn.date,
             description: txn.description,
             categoryId: line.categoryId,
@@ -202,9 +206,13 @@ export function MemberHistoryDialog({
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-200">
                           <th className="px-4 py-2 text-left font-medium text-gray-600">Dato</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-600">Bilag</th>
                           <th className="px-4 py-2 text-left font-medium text-gray-600">Beskrivelse</th>
                           <th className="px-4 py-2 text-left font-medium text-gray-600">Kategori</th>
                           <th className="px-4 py-2 text-right font-medium text-gray-600">Beløb</th>
+                          {onEditTransaction && (
+                            <th className="px-4 py-2 text-center font-medium text-gray-600">Handling</th>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
@@ -214,6 +222,7 @@ export function MemberHistoryDialog({
                             className="border-b border-gray-100 last:border-b-0"
                           >
                             <td className="px-4 py-2 text-gray-600">{formatDate(line.date)}</td>
+                            <td className="px-4 py-2 text-gray-600">#{line.sequenceNumber}</td>
                             <td className="px-4 py-2">
                               <div className="text-gray-900">{line.description}</div>
                               {line.lineDescription && (
@@ -226,6 +235,18 @@ export function MemberHistoryDialog({
                             }`}>
                               {line.isIncome ? '+' : '-'}{formatCurrency(line.amount)}
                             </td>
+                            {onEditTransaction && (
+                              <td className="px-4 py-2 text-center">
+                                <button
+                                  onClick={() => onEditTransaction(line.transactionId)}
+                                  className="inline-flex p-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                                  title={`Rediger bilag ${line.sequenceNumber}`}
+                                  aria-label={`Rediger bilag ${line.sequenceNumber}`}
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>

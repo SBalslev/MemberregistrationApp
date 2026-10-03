@@ -38,6 +38,9 @@ return [
         // Examples: '192.168.1.0/24', '203.0.113.50'
         'ip_allowlist' => [],
 
+        // Proxy addresses allowed to supply X-Forwarded-For or X-Real-IP.
+        'trusted_proxies' => [],
+
         // Rate limiting
         'rate_limit_requests' => 60,
         'rate_limit_window_seconds' => 60,
@@ -48,5 +51,11 @@ return [
 
         // Maximum photo size in bytes (16MB)
         'max_photo_size' => 16777216,
+    ],
+    'display_relay' => [
+        // Public API base URL. Generate device token with: openssl rand -hex 32
+        // Hosting must allow at least 12MB requests and 16MB MySQL packets.
+        'public_base_url' => 'https://iss-skydning.dk/api/v1',
+        'device_token' => getenv('DISPLAY_RELAY_DEVICE_TOKEN') ?: 'CHANGE_ME',
     ],
 ];

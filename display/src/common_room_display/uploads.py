@@ -104,11 +104,43 @@ class UploadService:
             raise UploadRejected("Upload rate limit exceeded")
 
         processed = _process_image(body)
+        return self._store_processed(uuid.uuid4().hex, processed, current_time)
+
+    def ingest_relay(
+        self,
+        media_id: str,
+        body: bytes,
+        content_type: str,
+        now: int | None = None,
+    ) -> UploadedMedia:
+        if not _valid_media_id(media_id):
+            raise UploadRejected("Invalid relay media ID")
+        if content_type not in ALLOWED_CONTENT_TYPES:
+            raise UploadRejected("Unsupported image type")
+        with self._connection() as connection:
+            existing = connection.execute(
+                "SELECT expires_at FROM media WHERE id = ?", (media_id,)
+            ).fetchone()
+        if existing is not None:
+            return UploadedMedia(
+                media_id,
+                f"/media/temporary/{media_id}.jpg",
+                int(existing[0]),
+            )
+        current_time = now if now is not None else int(time.time())
+        processed = _process_image(body)
+        return self._store_processed(media_id, processed, current_time)
+
+    def _store_processed(
+        self,
+        media_id: str,
+        processed: bytes,
+        current_time: int,
+    ) -> UploadedMedia:
         self.expire(current_time)
         if self._active_size_bytes() + len(processed) > self._quota_bytes:
             raise UploadQuotaExceeded("Temporary media quota exceeded")
 
-        media_id = uuid.uuid4().hex
         expires_at = current_time + self._lifetime_seconds
         final_path = self._media_directory / f"{media_id}.jpg"
         temporary_path = self._media_directory / f".{media_id}.tmp"

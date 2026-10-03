@@ -1,6 +1,6 @@
 -- =============================================
 -- ISS Skydning Online Database Schema
--- Version: 1.2.0 (must match laptop SYNC_SCHEMA_VERSION)
+-- Version: 1.11.0 (must match laptop SYNC_SCHEMA_VERSION)
 -- Created: 2026-01-27
 -- =============================================
 
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS _schema_metadata (
 
 -- Schema version - must match laptop app SYNC_SCHEMA_VERSION
 INSERT INTO _schema_metadata (major_version, minor_version, patch_version, description)
-VALUES (1, 2, 0, 'Schema 1.2.0 - matches laptop app');
+VALUES (1, 11, 0, 'Schema 1.11.0 - guest result soft deletion');
 
 -- Sync log for audit trail
 CREATE TABLE IF NOT EXISTS _sync_log (
@@ -196,6 +196,7 @@ CREATE TABLE IF NOT EXISTS check_ins (
 CREATE TABLE IF NOT EXISTS practice_sessions (
     id VARCHAR(36) PRIMARY KEY,
     internal_member_id VARCHAR(36) NOT NULL,
+    activity_id VARCHAR(36),
     created_at_utc DATETIME NOT NULL,
     local_date DATE NOT NULL,
     practice_type ENUM('Riffel', 'Pistol', 'LuftRiffel', 'LuftPistol', 'Andet') NOT NULL,
@@ -208,11 +209,67 @@ CREATE TABLE IF NOT EXISTS practice_sessions (
     sync_version BIGINT NOT NULL DEFAULT 1,
     synced_at_utc DATETIME,
     INDEX idx_session_member (internal_member_id),
+    INDEX idx_session_activity (activity_id),
     INDEX idx_session_date (local_date),
     INDEX idx_session_type_date (practice_type, local_date),
     INDEX idx_session_member_type (internal_member_id, practice_type),
     INDEX idx_session_sync (sync_version),
     FOREIGN KEY (internal_member_id) REFERENCES members(internal_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS activities (
+    id VARCHAR(36) PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    type ENUM('OPEN_DAY','COMPETITION','TRAINING','OTHER') NOT NULL,
+    starts_at_utc DATETIME NOT NULL,
+    ends_at_utc DATETIME,
+    status ENUM('DRAFT','ACTIVE','COMPLETED') NOT NULL DEFAULT 'DRAFT',
+    display_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at_utc DATETIME NOT NULL,
+    modified_at_utc DATETIME NOT NULL,
+    device_id VARCHAR(36) NOT NULL,
+    sync_version BIGINT NOT NULL DEFAULT 1,
+    synced_at_utc DATETIME,
+    INDEX idx_activity_status (status),
+    INDEX idx_activity_modified (modified_at_utc)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS activity_guests (
+    id VARCHAR(36) PRIMARY KEY,
+    activity_id VARCHAR(36) NOT NULL,
+    display_name VARCHAR(255) NOT NULL,
+    club_name VARCHAR(255),
+    start_number VARCHAR(50),
+    show_on_display TINYINT(1) NOT NULL DEFAULT 1,
+    created_at_utc DATETIME NOT NULL,
+    modified_at_utc DATETIME NOT NULL,
+    device_id VARCHAR(36) NOT NULL,
+    sync_version BIGINT NOT NULL DEFAULT 1,
+    synced_at_utc DATETIME,
+    INDEX idx_activity_guest_activity (activity_id),
+    INDEX idx_activity_guest_modified (modified_at_utc),
+    FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS guest_results (
+    id VARCHAR(36) PRIMARY KEY,
+    activity_id VARCHAR(36) NOT NULL,
+    guest_id VARCHAR(36) NOT NULL,
+    created_at_utc DATETIME NOT NULL,
+    local_date DATE NOT NULL,
+    practice_type VARCHAR(30) NOT NULL,
+    points INT NOT NULL,
+    krydser INT,
+    classification VARCHAR(50),
+    device_id VARCHAR(36) NOT NULL,
+    sync_version BIGINT NOT NULL DEFAULT 1,
+    synced_at_utc DATETIME,
+    deleted_at_utc DATETIME,
+    INDEX idx_guest_result_activity (activity_id),
+    INDEX idx_guest_result_guest (guest_id),
+    INDEX idx_guest_result_deleted (deleted_at_utc),
+    FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE,
+    FOREIGN KEY (guest_id) REFERENCES activity_guests(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Scan events (audit trail)

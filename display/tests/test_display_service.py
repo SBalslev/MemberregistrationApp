@@ -7,7 +7,8 @@ import threading
 import unittest
 from http.cookiejar import CookieJar
 from pathlib import Path
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
@@ -15,8 +16,9 @@ from PIL import Image
 
 from common_room_display.auth import TrainerSessionStore, hash_pin, verify_pin
 from common_room_display.config import DisplayConfig
-from common_room_display.feed import FeedCache
+from common_room_display.feed import FeedCache, FeedPoller
 from common_room_display.media import delete_permanent_media, discover_permanent_media, resolve_media_path
+from common_room_display.relay import DisplayRelayClient
 from common_room_display.server import DisplayApplication, create_handler
 from common_room_display.uploads import ClientUploadLimiter, ExpiryWorker, UploadRejected, UploadService
 
@@ -40,6 +42,31 @@ class DisplayConfigTest(unittest.TestCase):
 
             self.assertEqual(root / "data", config.data_directory)
             self.assertEqual(root / "data/media/permanent", config.permanent_media_directory)
+
+    def test_load_resolves_auto_public_url_from_hostname(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text("{}", encoding="utf-8")
+
+            with patch(
+                "common_room_display.config.socket.gethostname",
+                return_value="club-display",
+            ):
+                config = DisplayConfig.load(config_path)
+
+            self.assertEqual("http://club-display.local:8090", config.public_base_url)
+            self.assertEqual("auto", config.tablet_feed_url)
+
+    def test_relay_url_and_token_must_be_configured_together(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text(
+                json.dumps({"relayBaseUrl": "https://iss-skydning.dk/api/v1"}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "configured together"):
+                DisplayConfig.load(config_path)
 
 
 class FeedCacheTest(unittest.TestCase):
@@ -69,6 +96,33 @@ class FeedCacheTest(unittest.TestCase):
 
             self.assertFalse(snapshot["available"])
             self.assertTrue(snapshot["stale"])
+
+    def test_poller_uses_discovered_member_tablet_feed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache = FeedCache(Path(directory) / "feed.json", stale_after_seconds=300)
+            feed = {
+                "schemaVersion": 1,
+                "generatedAt": "2026-09-15T15:30:00Z",
+                "clubDate": "2026-09-15",
+                "stats": {},
+            }
+            response = io.BytesIO(json.dumps(feed).encode("utf-8"))
+            response.headers = {}
+            poller = FeedPoller(
+                "auto",
+                interval_seconds=15,
+                cache=cache,
+                feed_locator=lambda: "http://member-tablet:8085/api/display/v1/feed",
+            )
+
+            with patch("common_room_display.feed.urlopen", return_value=response) as open_feed:
+                poller.poll_once()
+
+            self.assertEqual(
+                "http://member-tablet:8085/api/display/v1/feed",
+                open_feed.call_args.args[0].full_url,
+            )
+            self.assertEqual(feed, cache.snapshot()["feed"])
 
 
 class PermanentMediaTest(unittest.TestCase):
@@ -189,6 +243,18 @@ class UploadServiceTest(unittest.TestCase):
             self.assertIsNone(service.resolve_active(uploaded.id, now=1_001))
             self.assertEqual("promoted", service.all_media()[0]["status"])
 
+    def test_relay_ingest_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = UploadService(root / "display.db", root / "temporary", 100, 10_000_000)
+            media_id = "0123456789abcdef0123456789abcdef"
+
+            first = service.ingest_relay(media_id, _jpeg_bytes(), "image/jpeg", now=1_000)
+            second = service.ingest_relay(media_id, _jpeg_bytes(), "image/jpeg", now=1_001)
+
+            self.assertEqual(first, second)
+            self.assertEqual(1, len(service.active_media(now=1_001)))
+
     def test_expiry_worker_runs_cleanup_until_stopped(self) -> None:
         cleanup_ran = threading.Event()
 
@@ -238,7 +304,12 @@ class DisplayHttpTest(unittest.TestCase):
                     self.assertEqual("image/png", response.headers.get_content_type())
                     self.assertTrue(response.read().startswith(b"\x89PNG"))
                 with urlopen(f"{base_url}/") as response:
-                    self.assertIn(b"ISS Sportsskytter", response.read())
+                    kiosk = response.read()
+                    self.assertIn(b"ISS Sportsskytter", kiosk)
+                    self.assertIn(b'grid-template-columns', kiosk)
+                    self.assertIn(b'topScoresByDiscipline', kiosk)
+                    self.assertIn(b'feed.activity?.title', kiosk)
+                    self.assertIn(b'entry.affiliation', kiosk)
                 with urlopen(f"{base_url}/media/permanent/club.jpg") as response:
                     self.assertEqual(b"test-image", response.read())
                 upload_request = Request(
@@ -339,6 +410,201 @@ class DisplayHttpTest(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=2)
+
+
+class DisplayRelayClientTest(unittest.TestCase):
+    def test_rotates_invitation_downloads_photo_and_acknowledges(self) -> None:
+        media_id = "fedcba9876543210fedcba9876543210"
+        image = _jpeg_bytes()
+        acknowledged = threading.Event()
+        invitation_count = [0]
+
+        class RelayHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                if self.headers.get("Authorization") != "Bearer device-secret":
+                    self.send_error(401)
+                    return
+                if self.path == "/display-relay/invitations":
+                    invitation_count[0] += 1
+                    self._json(
+                        {
+                            "upload_url": "https://iss-skydning.dk/api/v1/display-relay/upload#token",
+                            "expires_at": "2030-09-15T19:00:00+00:00",
+                        },
+                        201,
+                    )
+                elif self.path == f"/display-relay/photos/{media_id}/ack":
+                    acknowledged.set()
+                    self._json({"acknowledged": True})
+                else:
+                    self.send_error(404)
+
+            def do_GET(self) -> None:
+                if self.headers.get("Authorization") != "Bearer device-secret":
+                    self.send_error(401)
+                    return
+                if self.path.startswith("/display-relay/photos/next?"):
+                    photo = None if acknowledged.is_set() else {
+                        "id": media_id,
+                        "mime_type": "image/jpeg",
+                        "file_size": len(image),
+                    }
+                    self._json({"photo": photo})
+                elif self.path == f"/display-relay/photos/{media_id}":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(len(image)))
+                    self.end_headers()
+                    self.wfile.write(image)
+                else:
+                    self.send_error(404)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+            def _json(self, body: dict[str, object], status: int = 200) -> None:
+                encoded = json.dumps(body).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            uploads = UploadService(root / "display.db", root / "temporary", 14_400, 10_000_000)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), RelayHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            relay = DisplayRelayClient(
+                f"http://127.0.0.1:{server.server_port}",
+                "device-secret",
+                "club-display",
+                15,
+                uploads,
+                "http://club-display.local:8090/upload",
+            )
+            try:
+                relay.poll_once(now=1_000)
+                relay.poll_once(now=4_299)
+
+                self.assertTrue(acknowledged.is_set())
+                self.assertEqual(1, invitation_count[0])
+                self.assertEqual(
+                    "https://iss-skydning.dk/api/v1/display-relay/upload#token",
+                    relay.upload_url,
+                )
+                self.assertEqual(media_id, uploads.active_media(now=1_001)[0]["id"])
+                relay.poll_once(now=4_300)
+                self.assertEqual(2, invitation_count[0])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_rejects_poison_photo_and_advances_queue(self) -> None:
+        media_id = "abcdef0123456789abcdef0123456789"
+        rejected = threading.Event()
+
+        class InvalidRelayHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                if self.path == "/display-relay/invitations":
+                    self._json({
+                        "upload_url": "https://example.test/upload#token",
+                        "expires_at": "2030-09-15T19:00:00+00:00",
+                    })
+                elif self.path == f"/display-relay/photos/{media_id}/reject":
+                    rejected.set()
+                    self._json({"rejected": True})
+                else:
+                    self.send_error(404)
+
+            def do_GET(self) -> None:
+                if self.path.startswith("/display-relay/photos/next?"):
+                    photo = None if rejected.is_set() else {
+                        "id": media_id,
+                        "mime_type": "image/jpeg",
+                        "file_size": 12,
+                    }
+                    self._json({"photo": photo})
+                elif self.path == f"/display-relay/photos/{media_id}":
+                    body = b"not-an-image"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_error(404)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+            def _json(self, body: dict[str, object]) -> None:
+                encoded = json.dumps(body).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            uploads = UploadService(root / "display.db", root / "temporary", 14_400, 10_000_000)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), InvalidRelayHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            relay = DisplayRelayClient(
+                f"http://127.0.0.1:{server.server_port}",
+                "device-secret",
+                "club-display",
+                15,
+                uploads,
+                "http://club-display.local:8090/upload",
+            )
+            try:
+                relay.poll_once(now=1_000)
+
+                self.assertTrue(rejected.is_set())
+                self.assertEqual([], uploads.active_media(now=1_001))
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+    def test_expired_invitation_falls_back_to_local_upload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            relay = DisplayRelayClient(
+                "https://iss-skydning.dk/api/v1",
+                "device-secret",
+                "club-display",
+                15,
+                UploadService(root / "display.db", root / "temporary", 14_400, 10_000_000),
+                "http://club-display.local:8090/upload",
+            )
+            relay._upload_url = "https://iss-skydning.dk/api/v1/display-relay/upload#expired"
+            relay._invitation_expires_at = 1_000
+
+            relay._use_fallback_if_expired(now=1_001)
+
+            self.assertEqual("http://club-display.local:8090/upload", relay.upload_url)
+
+
+class DeploymentAssetsTest(unittest.TestCase):
+    def test_installer_enables_playlist_and_wifi_watchdog(self) -> None:
+        display_root = Path(__file__).resolve().parents[1]
+        installer = (display_root / "deploy" / "install.sh").read_text(encoding="utf-8")
+        watchdog = (display_root / "deploy" / "common-room-watchdog.sh").read_text(
+            encoding="utf-8"
+        )
+        watchdog_bytes = (display_root / "deploy" / "common-room-watchdog.sh").read_bytes()
+
+        self.assertIn("systemctl enable --now common-room-watchdog.timer", installer)
+        self.assertIn("/api/playlist", watchdog)
+        self.assertIn("systemctl restart common-room-kiosk.service", watchdog)
+        self.assertIn("nmcli device connect", watchdog)
+        self.assertNotIn(b"\r\n", watchdog_bytes)
 
 
 def _jpeg_bytes() -> bytes:
