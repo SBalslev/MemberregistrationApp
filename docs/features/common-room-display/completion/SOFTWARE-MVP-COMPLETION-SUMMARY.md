@@ -188,3 +188,55 @@ Production validation rendered all six current disciplines as a two-column,
 three-row grid at 3840 by 2160. The page and statistics panel had no overflow,
 the daily-results overview remained visible, and all display services and
 anti-blanking settings remained healthy.
+
+## Birthday and personal-best highlights
+
+**Started:** 2026-10-05 19:31:32 UTC+2
+**Completed:** 2026-10-05 19:33:35 UTC+2
+**Duration:** 2m 3s
+**Last updated:** 2026-10-05 19:33:35 UTC+2
+
+The kiosk now uses the birthday and personal-best data already included in the
+member-tablet feed. A compact summary area shows birthday greetings and rotates
+every 12 seconds with personal-best achievements when both are available.
+
+Production validation displayed all four current birthday greetings together
+with six discipline leaderboards and nine daily results at 3840 by 2160. A
+separate two-state render verified the personal-best rotation. Neither state
+overflowed the page or statistics panel, and anti-blanking remained active.
+
+## Result readability update
+
+**Started:** 2026-10-05 19:38:00 UTC+2
+**Completed:** 2026-10-05 19:40:31 UTC+2
+**Duration:** 2m 31s
+**Last updated:** 2026-10-05 19:40:31 UTC+2
+
+Leaderboard entries and daily-result rows now render at 32 pixels on the
+production 3840 by 2160 display. The larger text improves room-distance
+readability without removing disciplines, result rows, or the highlight area.
+
+Live browser validation showed six discipline cards, ten daily results, and four
+birthday greetings with no body or statistics-panel overflow. The highlight ended
+at 2104 pixels, leaving 56 pixels within the viewport. The backend, kiosk,
+anti-blanking service, and watchdog remained active, with screen timeout disabled
+and DPMS off.
+
+## Live club pulse
+
+**Started:** 2026-10-05 20:10:04 UTC+2
+**Completed:** 2026-10-05 20:13:45 UTC+2
+**Duration:** 3m 41s
+**Last updated:** 2026-10-05 20:13:45 UTC+2
+
+The static "God træning" heading now becomes a live club pulse on ordinary
+training nights. Every 12 seconds it rotates through relevant facts already
+available in the display feed: personal records, participant count, total points,
+represented disciplines, the highest result, and an approaching 500-point
+milestone. A lighthearted ISS message completes the rotation. Named activities
+continue to show their configured title without rotation.
+
+Production validation used the current 12 participants, 12 results, 2,371 points,
+and seven disciplines. All six generated headlines fit at 64 pixels without
+horizontal truncation. The body and statistics panel remained exactly within the
+3840 by 2160 viewport, and the highlight area ended at 2104 pixels.

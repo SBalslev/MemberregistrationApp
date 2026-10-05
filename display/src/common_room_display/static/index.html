@@ -123,6 +123,13 @@
       font-size: clamp(3.5rem, 4.5vw, 6.5rem);
       line-height: 0.95;
     }
+    .stats-panel h1.club-pulse {
+      overflow: hidden;
+      font-size: clamp(2.25rem, 2.75vw, 4rem);
+      line-height: 1;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .metrics {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -180,7 +187,7 @@
       align-items: baseline;
       padding: 0.45rem 0;
       border-top: 1px solid var(--cp-border);
-      font-size: clamp(1.1rem, 1.25vw, 1.75rem);
+      font-size: clamp(1.25rem, 1.4vw, 2rem);
     }
     .score-row:first-of-type { border-top: 0; }
     .score-rank { color: var(--cp-text-muted); }
@@ -221,7 +228,7 @@
       border: 1px solid var(--cp-border);
       border-radius: 0.5rem;
       background: var(--cp-surface-soft);
-      font-size: clamp(1.05rem, 1.15vw, 1.6rem);
+      font-size: clamp(1.25rem, 1.4vw, 2rem);
     }
     .result-label {
       overflow: hidden;
@@ -229,12 +236,12 @@
       text-overflow: ellipsis;
     }
     .result-discipline { color: var(--cp-text-muted); }
-    .personal-bests {
+    .highlights-list {
       display: flex;
       flex-wrap: wrap;
       gap: 0.65rem;
     }
-    .personal-best {
+    .highlight-item {
       padding: 0.6rem 0.8rem;
       border-radius: 0.625rem;
       background: var(--cp-accent-soft);
@@ -270,6 +277,10 @@
     let photoPanel = null;
     let allScores = [];
     let scorePage = 0;
+    let highlightPages = [];
+    let highlightPage = 0;
+    let pulseHeadlines = [];
+    let pulseHeadline = 0;
 
     function textElement(tag, text, className) {
       const element = document.createElement(tag);
@@ -302,6 +313,78 @@
       element.className = "metric";
       element.append(textElement("strong", String(value)), textElement("span", label));
       return element;
+    }
+
+    function formatNumber(value) {
+      return new Intl.NumberFormat("da-DK").format(value);
+    }
+
+    function buildClubPulse(feed) {
+      const headlines = [];
+      const participantCount = Number(feed.stats.participantCount) || 0;
+      const totalPoints = Number(feed.stats.totalPoints) || 0;
+      const disciplines = Array.isArray(feed.topScoresByDiscipline)
+        ? feed.topScoresByDiscipline
+        : [];
+      const personalBests = Array.isArray(feed.personalBests) ? feed.personalBests : [];
+      const scores = disciplines.reduce(
+        (entries, group) => entries.concat(Array.isArray(group.entries) ? group.entries : []),
+        []
+      );
+      const highestScore = scores.reduce(
+        (highest, score) => Math.max(highest, Number(score.points) || 0),
+        0
+      );
+
+      if (personalBests.length === 1) {
+        headlines.push(`Ny personlig rekord til ${personalBests[0].displayName}!`);
+      } else if (personalBests.length > 1) {
+        headlines.push(`${personalBests.length} nye personlige rekorder i aften!`);
+      }
+      if (participantCount > 0) {
+        headlines.push(
+          participantCount === 1
+            ? "1 skytte er i gang i aften"
+            : `${participantCount} skytter er i gang i aften`
+        );
+      }
+      if (totalPoints > 0) {
+        headlines.push(`${formatNumber(totalPoints)} point på tavlen indtil videre`);
+      }
+      if (disciplines.length > 0) {
+        headlines.push(
+          disciplines.length === 1
+            ? "1 disciplin er repræsenteret i dag"
+            : `${disciplines.length} discipliner er repræsenteret i dag`
+        );
+      }
+      if (highestScore > 0) {
+        headlines.push(`Aftenens højeste resultat er ${formatNumber(highestScore)} point`);
+      }
+      if (totalPoints > 0) {
+        const nextMilestone = Math.ceil((totalPoints + 1) / 500) * 500;
+        const remaining = nextMilestone - totalPoints;
+        if (remaining <= 250) {
+          headlines.push(
+            `Kun ${formatNumber(remaining)} point til ${formatNumber(nextMilestone)} i aften`
+          );
+        }
+      }
+      if (headlines.length > 0) {
+        headlines.push("Der bliver skudt skarpt i ISS i aften");
+      }
+      return headlines;
+    }
+
+    function clubPulseHeading() {
+      pulseHeadline %= Math.max(1, pulseHeadlines.length);
+      const heading = textElement(
+        "h1",
+        pulseHeadlines[pulseHeadline] || "God træning",
+        "club-pulse"
+      );
+      heading.id = "club-pulse";
+      return heading;
     }
 
     function leaderboard(group) {
@@ -366,6 +449,30 @@
       return section;
     }
 
+    function highlightsSection() {
+      highlightPage %= highlightPages.length;
+      const page = highlightPages[highlightPage];
+      const section = document.createElement("section");
+      section.id = "highlights";
+      section.className = "data-section";
+      const heading = document.createElement("div");
+      heading.className = "section-heading";
+      heading.appendChild(textElement("h2", page.title));
+      if (highlightPages.length > 1) {
+        heading.appendChild(
+          textElement("span", `${highlightPage + 1} / ${highlightPages.length}`, "score-page")
+        );
+      }
+      section.appendChild(heading);
+      const items = document.createElement("div");
+      items.className = "highlights-list";
+      page.items.forEach(item => {
+        items.appendChild(textElement("div", item, "highlight-item"));
+      });
+      section.appendChild(items);
+      return section;
+    }
+
     function statisticsPanel(snapshot) {
       const panel = document.createElement("aside");
       panel.className = "stats-panel";
@@ -379,16 +486,32 @@
       }
 
       const feed = snapshot.feed;
+      pulseHeadlines = feed.activity ? [] : buildClubPulse(feed);
+      pulseHeadline %= Math.max(1, pulseHeadlines.length);
       panel.append(
         textElement(
           "div",
           feed.activity ? "Aktivitet i klubben" : "I dag i klubben",
           "eyebrow"
         ),
-        textElement("h1", feed.activity?.title || "God træning")
+        feed.activity ? textElement("h1", feed.activity?.title) : clubPulseHeading()
       );
       allScores = feed.recentScores;
       scorePage %= Math.max(1, Math.ceil(allScores.length / SCORE_PAGE_SIZE));
+      highlightPages = [];
+      if (feed.birthdays.length > 0) {
+        highlightPages.push({
+          title: "Fødselsdage",
+          items: feed.birthdays.map(birthday => `Tillykke ${birthday.displayName}`)
+        });
+      }
+      if (feed.personalBests.length > 0) {
+        highlightPages.push({
+          title: "Nye personlige rekorder",
+          items: feed.personalBests.map(best => `${best.displayName}: ${best.points} point`)
+        });
+      }
+      highlightPage %= Math.max(1, highlightPages.length);
       const metrics = document.createElement("div");
       metrics.className = "metrics";
       metrics.append(
@@ -413,23 +536,8 @@
         panel.appendChild(allScoresSection());
       }
 
-      if (feed.personalBests.length > 0) {
-        const section = document.createElement("section");
-        section.className = "data-section";
-        section.appendChild(textElement("h2", "Nye personlige rekorder"));
-        const bests = document.createElement("div");
-        bests.className = "personal-bests";
-        feed.personalBests.slice(0, 4).forEach(best => {
-          bests.appendChild(
-            textElement(
-              "div",
-              `${best.displayName}: ${best.points} point`,
-              "personal-best"
-            )
-          );
-        });
-        section.appendChild(bests);
-        panel.appendChild(section);
+      if (highlightPages.length > 0) {
+        panel.appendChild(highlightsSection());
       }
       return panel;
     }
@@ -466,9 +574,23 @@
       document.getElementById("all-scores")?.replaceWith(allScoresSection());
     }
 
+    function advanceHighlights() {
+      if (highlightPages.length < 2) return;
+      highlightPage = (highlightPage + 1) % highlightPages.length;
+      document.getElementById("highlights")?.replaceWith(highlightsSection());
+    }
+
+    function advanceClubPulse() {
+      if (pulseHeadlines.length < 2) return;
+      pulseHeadline = (pulseHeadline + 1) % pulseHeadlines.length;
+      document.getElementById("club-pulse")?.replaceWith(clubPulseHeading());
+    }
+
     refresh();
     setInterval(advancePhoto, 12000);
     setInterval(advanceScores, 12000);
+    setInterval(advanceHighlights, 12000);
+    setInterval(advanceClubPulse, 12000);
     setInterval(refresh, 60000);
     setInterval(() => {
       uploadQr.src = `/api/upload-qr.png?time=${Date.now()}`;

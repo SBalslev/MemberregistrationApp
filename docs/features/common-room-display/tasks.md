@@ -5,7 +5,7 @@
 **Design:** [design.md](design.md)
 **Status:** Not started
 **Created:** 2026-08-31
-**Last updated:** 2026-09-15 by sbalslev
+**Last updated:** 2026-10-05 20:13:45 UTC+2 by sbalslev
 
 ## Delivery order
 
@@ -187,6 +187,34 @@ unauthenticated client cannot change media or settings.
     two-column leaderboard grid.
   - Verified all six live disciplines render in three rows at 3840 by 2160 with
     no body or statistics-panel overflow.
+- [x] **6.16** Add rotating birthday and personal-best highlights.
+  - **Started:** 2026-10-05 19:31:32 UTC+2
+  - **Completed:** 2026-10-05 19:33:35 UTC+2
+  - **Duration:** 2m 3s
+  - Added a compact highlight area that shows birthdays and rotates every 12
+    seconds with personal bests when both are available.
+  - Verified four live birthday greetings with six discipline cards and nine
+    daily results at 3840 by 2160 without overflow.
+- [x] **6.17** Increase result text for room-distance readability.
+  - **Started:** 2026-10-05 19:38:00 UTC+2
+  - **Completed:** 2026-10-05 19:40:31 UTC+2
+  - **Duration:** 2m 31s
+  - Increased leaderboard and daily-result rows to 32 pixels at the production
+    3840 by 2160 resolution.
+  - Verified six discipline cards, ten daily results, and four birthday greetings
+    fit without page or statistics-panel overflow, with the highlight ending 56
+    pixels above the viewport bottom.
+  - Confirmed the backend, kiosk, anti-blanking service, and watchdog remained
+    active, with screen timeout disabled and DPMS off.
+- [x] **6.18** Replace the static training heading with a live club pulse.
+  - **Started:** 2026-10-05 20:10:04 UTC+2
+  - **Completed:** 2026-10-05 20:13:45 UTC+2
+  - **Duration:** 3m 41s
+  - Added a 12-second headline rotation for personal records, participants, total
+    points, disciplines, highest score, milestones, and a club message.
+  - Preserved named activity titles without rotation.
+  - Verified all six production headlines fit at 64 pixels with current live data.
+    The page and statistics panel remained within the 3840 by 2160 viewport.
 
 **Exit criteria:** The pilot has no unresolved privacy or reliability blocker, and
 trainers have a tested recovery procedure.

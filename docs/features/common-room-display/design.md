@@ -3,7 +3,7 @@
 **Feature:** Raspberry Pi common-room display
 **Status:** Draft
 **Created:** 2026-08-31
-**Last updated:** 2026-10-05 19:28:48 UTC+2 by sbalslev
+**Last updated:** 2026-10-05 20:13:45 UTC+2 by sbalslev
 
 ## Architecture
 
@@ -103,6 +103,21 @@ Keep the interface light:
 The statistics panel renders every discipline returned by the tablet. Discipline
 leaderboards wrap into a two-column grid so additional disciplines remain visible
 without replacing the daily-results overview.
+
+Birthdays and personal bests share a compact highlight area below the daily
+results. When both are available, the kiosk rotates between them every 12 seconds;
+when only one is available, it remains visible.
+
+Leaderboard entries and daily-result rows use a responsive font that reaches 32
+pixels at the production 3840 by 2160 resolution. This keeps individual results
+readable across the common room while preserving the full statistics overview.
+
+On ordinary training nights, the main heading rotates every 12 seconds through a
+live club pulse derived from existing feed data. It can celebrate personal
+records, participant count, total points, represented disciplines, the highest
+result, and an approaching 500-point milestone. A lighthearted club message
+completes the rotation. Named activities retain their configured title and do not
+use the club pulse.
 
 ### Upload interface
 

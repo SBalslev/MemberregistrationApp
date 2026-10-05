@@ -311,6 +311,12 @@ class DisplayHttpTest(unittest.TestCase):
                     self.assertNotIn(b'topScoresByDiscipline.slice(0, 2)', kiosk)
                     self.assertIn(b'feed.activity?.title', kiosk)
                     self.assertIn(b'entry.affiliation', kiosk)
+                    self.assertIn(b'feed.birthdays', kiosk)
+                    self.assertIn(b'advanceHighlights', kiosk)
+                    self.assertIn(b'buildClubPulse', kiosk)
+                    self.assertIn(b'advanceClubPulse', kiosk)
+                    self.assertIn(b'feed.activity ? [] : buildClubPulse(feed)', kiosk)
+                    self.assertIn(b'font-size: clamp(1.25rem, 1.4vw, 2rem);', kiosk)
                 with urlopen(f"{base_url}/media/permanent/club.jpg") as response:
                     self.assertEqual(b"test-image", response.read())
                 upload_request = Request(
