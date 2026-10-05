@@ -179,6 +179,14 @@ unauthenticated client cannot change media or settings.
   - Verified production feed polling every 15 seconds, four-hour photo expiry, a
     forced backend-and-kiosk recovery, and subsequent successful scheduled
     watchdog runs.
+- [x] **6.15** Show every discipline leaderboard on the TV.
+  - **Started:** 2026-10-05 19:26:06 UTC+2
+  - **Completed:** 2026-10-05 19:28:48 UTC+2
+  - **Duration:** 2m 42s
+  - Removed the two-discipline renderer cap and retained the existing wrapping
+    two-column leaderboard grid.
+  - Verified all six live disciplines render in three rows at 3840 by 2160 with
+    no body or statistics-panel overflow.
 
 **Exit criteria:** The pilot has no unresolved privacy or reliability blocker, and
 trainers have a tested recovery procedure.

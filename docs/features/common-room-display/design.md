@@ -3,7 +3,7 @@
 **Feature:** Raspberry Pi common-room display
 **Status:** Draft
 **Created:** 2026-08-31
-**Last updated:** 2026-10-03 11:11:46 UTC+2 by sbalslev
+**Last updated:** 2026-10-05 19:28:48 UTC+2 by sbalslev
 
 ## Architecture
 
@@ -99,6 +99,10 @@ Keep the interface light:
 - One active and one preloaded slide.
 - Simple opacity transitions.
 - No large client framework in the first release.
+
+The statistics panel renders every discipline returned by the tablet. Discipline
+leaderboards wrap into a two-column grid so additional disciplines remain visible
+without replacing the daily-results overview.
 
 ### Upload interface
 

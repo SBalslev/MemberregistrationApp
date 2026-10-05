@@ -172,3 +172,19 @@ preserved its configuration, database, and media. Backend, kiosk, and anti-blank
 services restarted cleanly with zero restart failures. External validation
 confirmed a healthy backend, a fresh membership feed, and the new activity and
 visiting-club rendering code.
+
+## All-discipline leaderboard update
+
+**Started:** 2026-10-05 19:26:06 UTC+2
+**Completed:** 2026-10-05 19:28:48 UTC+2
+**Duration:** 2m 42s
+**Last updated:** 2026-10-05 19:28:48 UTC+2
+
+The kiosk previously limited the high-score section to the first two disciplines,
+even though its CSS already supported wrapping cards. The renderer now includes
+every discipline returned by the member tablet.
+
+Production validation rendered all six current disciplines as a two-column,
+three-row grid at 3840 by 2160. The page and statistics panel had no overflow,
+the daily-results overview remained visible, and all display services and
+anti-blanking settings remained healthy.

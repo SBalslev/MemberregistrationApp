@@ -308,6 +308,7 @@ class DisplayHttpTest(unittest.TestCase):
                     self.assertIn(b"ISS Sportsskytter", kiosk)
                     self.assertIn(b'grid-template-columns', kiosk)
                     self.assertIn(b'topScoresByDiscipline', kiosk)
+                    self.assertNotIn(b'topScoresByDiscipline.slice(0, 2)', kiosk)
                     self.assertIn(b'feed.activity?.title', kiosk)
                     self.assertIn(b'entry.affiliation', kiosk)
                 with urlopen(f"{base_url}/media/permanent/club.jpg") as response:

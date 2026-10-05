@@ -404,7 +404,7 @@
         section.appendChild(textElement("h2", "Dagens topresultater"));
         const groups = document.createElement("div");
         groups.className = "leaderboards";
-        feed.topScoresByDiscipline.slice(0, 2).forEach(group => groups.appendChild(leaderboard(group)));
+        feed.topScoresByDiscipline.forEach(group => groups.appendChild(leaderboard(group)));
         section.appendChild(groups);
         panel.appendChild(section);
       }
