@@ -3,7 +3,7 @@
 **Feature:** Raspberry Pi common-room display
 **Status:** Draft
 **Created:** 2026-08-31
-**Last updated:** 2026-10-12 19:13:46 UTC+2 by sbalslev
+**Last updated:** 2026-10-12 20:39:50 UTC+2 by sbalslev
 
 ## Architecture
 
@@ -176,6 +176,11 @@ member portal login and role. The page reuses the portal's idle and absolute
 session timeouts, same-site HTTP-only cookie, login lockout, CSRF token, audit
 events, and optimistic record versions. No second portal or authentication flow
 is introduced.
+
+The portal source is versioned in the repository's top-level `portal/`
+directory. Production creates `portal/config.php` from `config.php.example`;
+the live configuration is ignored by Git and is never deployed from source
+control.
 
 The portal manages one configured display in the first release. It supports
 drafts, scheduled or active publication, unpublishing, archiving, normal or

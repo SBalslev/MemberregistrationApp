@@ -48,6 +48,9 @@ display/**/__pycache__/
 display/**/*.pyc
 display/src/*.egg-info/
 
+# Web portal local configuration
+portal/config.php
+
 # Temporary/accidental wrapper directory
 wrapper_tmp/
 temp.wrapper.*

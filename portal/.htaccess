@@ -1,0 +1,93 @@
+# Portal – Apache hardening
+# All security headers and PHP config for /portal/ go here.
+# This file must NOT be publicly accessible itself.
+
+# ---------------------------------------------------------------------------
+# 1. Ensure HTTPS only (supplement server-level HSTS)
+# ---------------------------------------------------------------------------
+<IfModule mod_headers.c>
+  Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+
+  # Content-Security-Policy: no unsafe-inline, no external hosts.
+  # 'nonce-…' is not practical in Apache headers (needs PHP). Instead we use
+  # hash-based or disallow inline scripts entirely and serve JS from /portal/assets/.
+  Header always set Content-Security-Policy "\
+    default-src 'self'; \
+    script-src 'self'; \
+    style-src 'self' 'unsafe-inline'; \
+    img-src 'self' data:; \
+    font-src 'self'; \
+    form-action 'self'; \
+    frame-ancestors 'none'; \
+    base-uri 'self'; \
+    object-src 'none'; \
+    upgrade-insecure-requests"
+
+  # Remove PHP version leak
+  Header always unset X-Powered-By
+
+  # Cache control – handled per-page in auth_guard.php too, belt & braces
+  Header always set Cache-Control "no-store, private"
+  Header always set Pragma "no-cache"
+
+  # Prevent MIME sniffing on downloads
+  Header always set X-Download-Options "noopen"
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 2. PHP configuration overrides
+# ---------------------------------------------------------------------------
+<IfModule mod_php.c>
+  php_flag  display_errors      Off
+  php_flag  log_errors           On
+  php_flag  expose_php           Off
+  php_value session.cookie_httponly 1
+  php_value session.cookie_secure   1
+  php_value session.use_only_cookies 1
+  php_value session.cookie_samesite Strict
+</IfModule>
+<IfModule mod_php8.c>
+  php_flag  display_errors      Off
+  php_flag  log_errors           On
+  php_flag  expose_php           Off
+  php_value session.cookie_httponly 1
+  php_value session.cookie_secure   1
+  php_value session.use_only_cookies 1
+  php_value session.cookie_samesite Strict
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 3. Block direct access to sensitive includes and config
+# ---------------------------------------------------------------------------
+<FilesMatch "^(config\.php|db\.php|auth_guard\.php|layout\.php)$">
+  Order Allow,Deny
+  Deny from all
+</FilesMatch>
+
+# Block access to .example files
+<FilesMatch "\.example$">
+  Order Allow,Deny
+  Deny from all
+</FilesMatch>
+
+# ---------------------------------------------------------------------------
+# 4. Disable directory listing
+# ---------------------------------------------------------------------------
+Options -Indexes
+
+# ---------------------------------------------------------------------------
+# 5. Prevent access to version control artifacts
+# ---------------------------------------------------------------------------
+<FilesMatch "\.(git|svn|env|htpasswd|sql|bak|log)$">
+  Order Allow,Deny
+  Deny from all
+</FilesMatch>
+
+# ---------------------------------------------------------------------------
+# 6. Charset
+# ---------------------------------------------------------------------------
+AddDefaultCharset UTF-8

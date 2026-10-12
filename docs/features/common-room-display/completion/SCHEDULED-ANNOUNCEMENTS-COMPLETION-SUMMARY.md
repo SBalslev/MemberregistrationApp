@@ -4,6 +4,7 @@
 **Completed by:** sbalslev
 **Duration:** 30m 25s
 **Related task:** 6.19
+**Last updated:** 2026-10-12 20:39:50 UTC+2 by sbalslev
 
 ## What was implemented
 
@@ -47,15 +48,16 @@ therefore stops displaying at its end time even when the cloud is unavailable.
 - `display/src/common_room_display/announcements.py`
 - `display/src/common_room_display/server.py`
 - `display/src/common_room_display/static/index.html`
-- `C:/c/sbalslev/iss-skydning.dk/portal/announcements.php`
-- `C:/c/sbalslev/iss-skydning.dk/portal/includes/layout.php`
-- `C:/c/sbalslev/iss-skydning.dk/portal/includes/db.php`
-- `C:/c/sbalslev/iss-skydning.dk/portal/assets/portal.css`
-- `C:/c/sbalslev/iss-skydning.dk/portal/assets/portal.js`
+- `portal/announcements.php`
+- `portal/includes/layout.php`
+- `portal/includes/db.php`
+- `portal/assets/portal.css`
+- `portal/assets/portal.js`
 
-The website deployment folder is adjacent to this repository and is not itself a
-Git working tree. Its portal files must be included in the website deployment
-together with this repository's API migration and endpoint changes.
+The complete portal source is versioned in the repository's top-level `portal/`
+directory. The production `portal/config.php` remains deployment-specific and is
+excluded through `.gitignore`; deployments use `portal/config.php.example` as
+the template.
 
 ## Validation
 

@@ -5,7 +5,7 @@
 **Design:** [design.md](design.md)
 **Status:** Not started
 **Created:** 2026-08-31
-**Last updated:** 2026-10-12 19:36:22 UTC+2 by sbalslev
+**Last updated:** 2026-10-12 20:39:50 UTC+2 by sbalslev
 
 ## Delivery order
 
@@ -226,6 +226,8 @@ unauthenticated client cannot change media or settings.
     re-encoded images.
   - Added authenticated cloud delivery, atomic Pi caching, local schedule expiry,
     offline behavior, and full-screen announcement rotation.
+  - Copied the existing portal source into the repository's top-level `portal/`
+    directory while excluding and ignoring the live `config.php`.
   - Verified 27 display tests, Python compilation, PHP syntax, JavaScript syntax,
     and the portal database write allowlist.
 

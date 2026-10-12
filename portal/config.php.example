@@ -1,0 +1,88 @@
+<?php
+/**
+ * Portal Configuration Template
+ *
+ * SETUP INSTRUCTIONS:
+ * 1. Copy this file to config.php in the same directory
+ * 2. Set db.user and db.pass to the same credentials as your api/config.php
+ * 3. Generate a strong session secret:
+ *    php -r "echo bin2hex(random_bytes(32));"
+ * 4. Set smtp.password to the no-reply@iss-skydning.dk mailbox password
+ * 5. Set file permissions: chmod 600 config.php
+ *
+ * DO NOT COMMIT config.php TO VERSION CONTROL
+ *
+ * NOTE: The portal uses the same MySQL user as the sync API.
+ * Read-only and portal-write-only behaviour is enforced in portal/includes/db.php.
+ * No separate MySQL users need to be created.
+ */
+
+return [
+
+    // ---------------------------------------------------------------
+    // DATABASE — single connection, same credentials as the sync API
+    // ---------------------------------------------------------------
+    'db' => [
+        'host'    => 'localhost',
+        'name'    => 'CHANGE_ME',
+        'charset' => 'utf8mb4',
+        'user'    => 'CHANGE_ME',
+        'pass'    => getenv('DB_PASSWORD') ?: 'CHANGE_ME',
+    ],
+
+    // ---------------------------------------------------------------
+    // SESSION
+    // ---------------------------------------------------------------
+    'session' => [
+        // Generate with: php -r "echo bin2hex(random_bytes(32));"
+        'secret' => getenv('PORTAL_SESSION_SECRET') ?: 'CHANGE_ME_MIN_64_HEX_CHARS',
+
+        'idle_timeout'     => 1800,  // 30 minutes
+        'absolute_timeout' => 28800, // 8 hours
+        'status_ttl'       => 300,   // re-check is_active every 5 minutes
+    ],
+
+    // ---------------------------------------------------------------
+    // COMMON-ROOM DISPLAY
+    // ---------------------------------------------------------------
+    'display' => [
+        'id' => 'club-display',
+    ],
+
+    // ---------------------------------------------------------------
+    // SECURITY
+    // ---------------------------------------------------------------
+    'security' => [
+        'max_login_attempts'       => 5,
+        'lockout_duration_minutes' => 15,
+        'max_reset_requests_hour'  => 3,
+        'password_min_length'      => 10,
+        'password_max_length'      => 72,  // BCrypt truncates silently at 72 bytes
+        'minor_age_threshold'      => 15,  // GDPR Art. 8 — Denmark digital consent age
+        'rate_limit_requests'      => 10,
+        'rate_limit_window_seconds' => 60,
+    ],
+
+    // ---------------------------------------------------------------
+    // EMAIL
+    // ---------------------------------------------------------------
+    'email' => [
+        'from'         => 'no-reply@iss-skydning.dk',
+        'from_name'    => 'ISS Sportsskytter',
+        'reply_to'     => 'bestyrelsen@iss-skydning.dk',
+        'reset_expiry' => 3600, // token valid for 1 hour
+    ],
+
+    // ---------------------------------------------------------------
+    // SMTP (one.com outbound relay — required for password reset email)
+    // Credentials: the no-reply mailbox password from one.com webmail
+    // ---------------------------------------------------------------
+    'smtp' => [
+        'host'     => 'send.one.com',
+        'port'     => 587,               // STARTTLS
+        'username' => 'no-reply@iss-skydning.dk',
+        'password' => 'SMTP_PASSWORD_HERE',
+        'from'     => 'no-reply@iss-skydning.dk',
+        'timeout'  => 15,
+    ],
+];
