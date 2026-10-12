@@ -4,7 +4,7 @@
 **Status:** Planned
 **Priority:** Medium
 **Created:** 2026-08-31
-**Last updated:** 2026-10-03 11:11:46 UTC+2 by sbalslev
+**Last updated:** 2026-10-12 19:13:46 UTC+2 by sbalslev
 
 ## Overview
 
@@ -24,6 +24,7 @@ join the existing key exchange and pairing system.
 4. Let trainers delete, retain, and manage photos.
 5. Continue showing cached content when the membership tablet is unavailable.
 6. Run reliably on Raspberry Pi 2 hardware with minimal maintenance.
+7. Let trainers schedule time-bounded messages from the club website.
 
 ## Non-goals
 
@@ -58,6 +59,12 @@ photos permanent so that the display remains appropriate and useful.
 
 As a trainer, I want the display to restart after a power failure without manual
 login or setup.
+
+### US-6: Schedule a club message
+
+As a trainer, I want to publish a title, message, optional image, and display
+period from the website so that important information appears automatically on
+the common-room TV.
 
 ## Functional requirements
 
@@ -183,6 +190,40 @@ membership tablet is offline.
 **FR-6.5** The Pi SHALL use a stable local address through DHCP reservation where
 available.
 
+### FR-7: Scheduled announcements
+
+**FR-7.1** The existing trainer and administrator web portal SHALL create, edit,
+publish, unpublish, and archive display announcements.
+
+**FR-7.2** An announcement SHALL contain a title, message, inclusive start time,
+exclusive end time, priority, and display duration. An image is optional.
+
+**FR-7.3** Published announcements SHALL require an end time after the start time.
+
+**FR-7.4** The first release SHALL support `normal` and `important` priorities.
+Important announcements SHALL receive additional rotation weight without
+permanently replacing other display content.
+
+**FR-7.5** The portal SHALL show a TV-shaped preview and SHALL accept JPEG, PNG,
+and WebP images up to 10 MB and 20 megapixels.
+
+**FR-7.6** The cloud service SHALL resize and re-encode images as JPEG before
+storage. The Pi SHALL independently decode and re-encode downloaded images.
+
+**FR-7.7** The Pi SHALL poll announcements over outbound HTTPS with its separate
+display credential and SHALL atomically cache the last valid response and images.
+
+**FR-7.8** Cached announcements SHALL display while the internet is unavailable,
+but SHALL stop locally when their end time passes.
+
+**FR-7.9** Announcement slides SHALL use a dedicated full-screen layout. The
+existing photo and statistics display SHALL remain unchanged when no announcement
+is active.
+
+**FR-7.10** Portal state changes SHALL reuse the existing role checks, expiring
+authenticated session, CSRF protection, and audit log. They SHALL NOT introduce a
+second portal login or reuse the device API password.
+
 ## Security and privacy requirements
 
 The local network is not treated as trusted. Unauthenticated means that the
@@ -192,6 +233,9 @@ membership data is available without a token.
 - Existing `/api/sync/*` endpoints remain authenticated and unchanged.
 - Internet upload routes run on `iss-skydning.dk`, not on the membership tablet.
 - The Pi uses an independent display-relay credential and outbound HTTPS.
+- Announcement management reuses the existing trainer/admin portal roles,
+  expiring session, request-forgery protection, and audit events.
+- The Pi receives only published display DTOs, not portal sessions or member data.
 - Upload capability tokens are stored only as hashes and are not sent as URL query
   parameters or request logs.
 - Display-feed models use an allowlist of fields.
@@ -213,6 +257,8 @@ explicit display-consent field is a follow-up if policy requires it.
 - A temporary photo disappears after its expiry time.
 - A trainer can delete a displayed photo and have it disappear within 15 seconds.
 - The display remains usable for at least 24 hours while the tablet is offline.
+- A scheduled announcement appears after the Pi's next poll and disappears no
+  later than its local end time, including while the Pi is offline.
 
 ## Open product decisions
 

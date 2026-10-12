@@ -14,5 +14,6 @@
   "relayBaseUrl": "",
   "relayDeviceToken": "",
   "relayDisplayId": "club-display",
-  "relayPollIntervalSeconds": 15
+  "relayPollIntervalSeconds": 15,
+  "announcementPollIntervalSeconds": 60
 }

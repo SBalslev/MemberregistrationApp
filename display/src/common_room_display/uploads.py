@@ -314,5 +314,9 @@ def _process_image(body: bytes) -> bytes:
         raise UploadRejected("Invalid or oversized image") from error
 
 
+def process_display_image(body: bytes) -> bytes:
+    return _process_image(body)
+
+
 def _valid_media_id(media_id: str) -> bool:
     return len(media_id) == 32 and all(character in "0123456789abcdef" for character in media_id)

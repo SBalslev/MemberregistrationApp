@@ -2,7 +2,8 @@
 
 The `display` component runs the Raspberry Pi common-room TV, polls the member
 tablet's public statistics feed, rotates local photos, accepts temporary photo
-uploads, and provides trainer moderation.
+uploads, provides trainer moderation, and displays scheduled announcements from
+the existing trainer/admin web portal.
 
 ## Local development
 
@@ -72,6 +73,19 @@ For internet photo uploads, configure the relay after deploying the API migratio
 "relayPollIntervalSeconds": 15
 ```
 
+The same relay credential delivers scheduled announcements. Apply
+`api/schema/V1_13_0__add_display_announcements.sql`, deploy the display-content
+API routes, and set the announcement poll interval if the default of 60 seconds
+is not suitable:
+
+```json
+"announcementPollIntervalSeconds": 60
+```
+
+Trainers and administrators manage announcements from the existing member portal
+at `/portal/announcements.php`. The portal host needs PHP GD with JPEG, PNG, and
+WebP support for safe image re-encoding.
+
 Generate the shared device token with `openssl rand -hex 32`. The Pi creates a new
 unguessable upload invitation every 55 minutes. Phones upload to the website, and
 the Pi downloads queued photos over outbound HTTPS. Do not expose port `8090` to
@@ -133,6 +147,10 @@ Back up these paths:
 
 Temporary uploads do not need backup. If the database is lost, permanent files
 remain discoverable, while temporary upload history is reset.
+
+Announcement metadata remains in MySQL. The Pi caches active and near-future
+announcements under `data/cache/` and processed announcement images under
+`data/media/announcements/`. These files can be recreated from the cloud.
 
 ## Network notes
 

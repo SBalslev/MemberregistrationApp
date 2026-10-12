@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+from .announcements import AnnouncementCache, AnnouncementPoller
 from .auth import (
     SESSION_LIFETIME_SECONDS,
     TrainerSession,
@@ -50,6 +51,10 @@ class DisplayApplication:
             lifetime_seconds=config.temporary_lifetime_seconds,
             quota_bytes=config.temporary_quota_bytes,
         )
+        self.announcements = AnnouncementCache(
+            config.data_directory / "cache" / "display-announcements.json",
+            config.data_directory / "media" / "announcements",
+        )
         self.trainer_sessions = TrainerSessionStore()
         self.login_limiter = ClientUploadLimiter(max_uploads=5, window_seconds=300)
         self.relay: DisplayRelayClient | None = None
@@ -66,6 +71,7 @@ class DisplayApplication:
                 self.uploads.active_media()
                 + discover_permanent_media(self.config.permanent_media_directory)
             ),
+            "announcements": self.announcements.snapshot(),
         }
 
 
@@ -112,6 +118,13 @@ def create_handler(application: DisplayApplication) -> type[BaseHTTPRequestHandl
                 requested_name = unquote(path.removeprefix("/media/temporary/"))
                 media_id = requested_name.removesuffix(".jpg")
                 media_path = application.uploads.resolve_active(media_id)
+                if media_path is None:
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                else:
+                    self._send_file(media_path, "image/jpeg")
+            elif path.startswith("/media/announcements/"):
+                requested_name = unquote(path.removeprefix("/media/announcements/"))
+                media_path = application.announcements.resolve_media(requested_name)
                 if media_path is None:
                     self.send_error(HTTPStatus.NOT_FOUND)
                 else:
@@ -324,6 +337,7 @@ def main() -> None:
     config.data_directory.mkdir(parents=True, exist_ok=True)
     application = DisplayApplication(config)
     relay = None
+    announcement_poller = None
     if config.relay_base_url:
         relay = DisplayRelayClient(
             config.relay_base_url,
@@ -334,12 +348,21 @@ def main() -> None:
             f"{config.public_base_url}/upload",
         )
         application.relay = relay
+        announcement_poller = AnnouncementPoller(
+            config.relay_base_url,
+            config.relay_device_token,
+            config.relay_display_id,
+            config.announcement_poll_interval_seconds,
+            application.announcements,
+        )
     poller = FeedPoller(config.tablet_feed_url, config.poll_interval_seconds, application.feed_cache)
     expiry_worker = ExpiryWorker(application.uploads)
     poller.start()
     expiry_worker.start()
     if relay is not None:
         relay.start()
+    if announcement_poller is not None:
+        announcement_poller.start()
     server = ThreadingHTTPServer((config.bind_host, config.bind_port), create_handler(application))
     LOGGER.info("Common-room display listening on http://%s:%s", config.bind_host, config.bind_port)
     try:
@@ -351,10 +374,14 @@ def main() -> None:
         expiry_worker.stop()
         if relay is not None:
             relay.stop()
+        if announcement_poller is not None:
+            announcement_poller.stop()
         poller.join(timeout=2)
         expiry_worker.join(timeout=2)
         if relay is not None:
             relay.join(timeout=2)
+        if announcement_poller is not None:
+            announcement_poller.join(timeout=2)
         server.server_close()
 
 

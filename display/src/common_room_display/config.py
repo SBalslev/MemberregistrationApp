@@ -27,6 +27,7 @@ class DisplayConfig:
     relay_device_token: str = ""
     relay_display_id: str = ""
     relay_poll_interval_seconds: int = 15
+    announcement_poll_interval_seconds: int = 60
 
     @classmethod
     def load(cls, path: Path) -> "DisplayConfig":
@@ -86,6 +87,12 @@ class DisplayConfig:
             5,
             300,
         )
+        announcement_poll_interval = _bounded_int(
+            raw.get("announcementPollIntervalSeconds", 60),
+            "announcementPollIntervalSeconds",
+            15,
+            3600,
+        )
 
         return cls(
             bind_host=str(raw.get("bindHost", "0.0.0.0")),
@@ -104,6 +111,7 @@ class DisplayConfig:
             relay_device_token=relay_device_token,
             relay_display_id=relay_display_id,
             relay_poll_interval_seconds=relay_poll_interval,
+            announcement_poll_interval_seconds=announcement_poll_interval,
         )
 
 

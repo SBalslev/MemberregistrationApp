@@ -14,6 +14,7 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 from PIL import Image
 
+from common_room_display.announcements import AnnouncementCache, AnnouncementPoller
 from common_room_display.auth import TrainerSessionStore, hash_pin, verify_pin
 from common_room_display.config import DisplayConfig
 from common_room_display.feed import FeedCache, FeedPoller
@@ -123,6 +124,122 @@ class FeedCacheTest(unittest.TestCase):
                 open_feed.call_args.args[0].full_url,
             )
             self.assertEqual(feed, cache.snapshot()["feed"])
+
+
+class AnnouncementCacheTest(unittest.TestCase):
+    def test_cache_filters_schedule_and_survives_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache_path = root / "announcements.json"
+            media_directory = root / "media"
+            payload = {
+                "schemaVersion": 1,
+                "displayId": "club-display",
+                "serverTime": "2026-10-12T17:00:00Z",
+                "announcements": [
+                    _announcement(
+                        "11111111-1111-4111-8111-111111111111",
+                        "Aktiv besked",
+                        "2026-10-12T16:00:00Z",
+                        "2026-10-12T18:00:00Z",
+                    ),
+                    _announcement(
+                        "22222222-2222-4222-8222-222222222222",
+                        "Planlagt besked",
+                        "2026-10-12T18:00:00Z",
+                        "2026-10-12T19:00:00Z",
+                    ),
+                ],
+            }
+            cache = AnnouncementCache(cache_path, media_directory)
+            cache.update(payload)
+
+            now = 1_791_824_400
+            self.assertEqual(["Aktiv besked"], [item["title"] for item in cache.snapshot(now=now)])
+
+            restarted = AnnouncementCache(cache_path, media_directory)
+            self.assertEqual(["Aktiv besked"], [item["title"] for item in restarted.snapshot(now=now)])
+            self.assertEqual([], restarted.snapshot(now=1_791_831_601))
+
+    def test_active_image_is_reencoded_and_resolved(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = AnnouncementCache(root / "announcements.json", root / "media")
+            announcement = _announcement(
+                "33333333-3333-4333-8333-333333333333",
+                "Besked med billede",
+                "2026-10-12T16:00:00Z",
+                "2026-10-12T18:00:00Z",
+            )
+            announcement["imagePath"] = (
+                "/display-content/club-display/announcements/"
+                "33333333-3333-4333-8333-333333333333/image"
+            )
+            cache.store_image(announcement["id"], announcement["version"], _jpeg_bytes())
+            cache.update(
+                {
+                    "schemaVersion": 1,
+                    "displayId": "club-display",
+                    "serverTime": "2026-10-12T17:00:00Z",
+                    "announcements": [announcement],
+                }
+            )
+
+            item = cache.snapshot(now=1_791_824_400)[0]
+            filename = item["imageUrl"].removeprefix("/media/announcements/")
+
+            self.assertIsNotNone(cache.resolve_media(filename))
+            self.assertIsNone(cache.resolve_media("../outside.jpg"))
+
+
+class AnnouncementPollerTest(unittest.TestCase):
+    def test_poller_downloads_and_caches_valid_announcement(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = AnnouncementCache(root / "announcements.json", root / "media")
+            announcement = _announcement(
+                "44444444-4444-4444-8444-444444444444",
+                "Klubaften",
+                "2026-10-12T16:00:00Z",
+                "2026-10-12T18:00:00Z",
+            )
+            announcement["imagePath"] = (
+                "/display-content/club-display/announcements/"
+                "44444444-4444-4444-8444-444444444444/image"
+            )
+            payload = {
+                "schemaVersion": 1,
+                "displayId": "club-display",
+                "serverTime": "2026-10-12T17:00:00Z",
+                "announcements": [announcement],
+            }
+            feed_response = io.BytesIO(json.dumps(payload).encode("utf-8"))
+            feed_response.headers = {}
+            image_response = io.BytesIO(_jpeg_bytes())
+            image_response.headers = {}
+            poller = AnnouncementPoller(
+                "https://iss-skydning.dk/api/v1",
+                "device-token",
+                "club-display",
+                60,
+                cache,
+            )
+
+            with patch(
+                "common_room_display.announcements.urlopen",
+                side_effect=[feed_response, image_response],
+            ) as open_url:
+                poller.poll_once()
+
+            self.assertEqual(2, open_url.call_count)
+            self.assertEqual(
+                "https://iss-skydning.dk/api/v1/display-content/club-display/announcements",
+                open_url.call_args_list[0].args[0].full_url,
+            )
+            self.assertEqual(["Klubaften"], [item["title"] for item in cache.snapshot(now=1_791_824_400)])
+            self.assertIsNotNone(cache.resolve_media(
+                "44444444-4444-4444-8444-444444444444-1.jpg"
+            ))
 
 
 class PermanentMediaTest(unittest.TestCase):
@@ -300,6 +417,7 @@ class DisplayHttpTest(unittest.TestCase):
                     playlist = json.load(response)
                     self.assertFalse(playlist["statistics"]["available"])
                     self.assertEqual("/media/permanent/club.jpg", playlist["photos"][0]["url"])
+                    self.assertEqual([], playlist["announcements"])
                 with urlopen(f"{base_url}/api/upload-qr.png") as response:
                     self.assertEqual("image/png", response.headers.get_content_type())
                     self.assertTrue(response.read().startswith(b"\x89PNG"))
@@ -316,6 +434,9 @@ class DisplayHttpTest(unittest.TestCase):
                     self.assertIn(b'buildClubPulse', kiosk)
                     self.assertIn(b'advanceClubPulse', kiosk)
                     self.assertIn(b'feed.activity ? [] : buildClubPulse(feed)', kiosk)
+                    self.assertIn(b"renderAnnouncement", kiosk)
+                    self.assertIn(b"displayDurationSeconds", kiosk)
+                    self.assertIn(b"announcementRotation", kiosk)
                     self.assertIn(b'font-size: clamp(1.25rem, 1.4vw, 2rem);', kiosk)
                 with urlopen(f"{base_url}/media/permanent/club.jpg") as response:
                     self.assertEqual(b"test-image", response.read())
@@ -618,6 +739,25 @@ def _jpeg_bytes() -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (32, 24), "blue").save(output, format="JPEG")
     return output.getvalue()
+
+
+def _announcement(
+    announcement_id: str,
+    title: str,
+    starts_at: str,
+    ends_at: str,
+) -> dict[str, object]:
+    return {
+        "id": announcement_id,
+        "title": title,
+        "body": "Information til klubbens medlemmer.",
+        "priority": "normal",
+        "startsAt": starts_at,
+        "endsAt": ends_at,
+        "displayDurationSeconds": 15,
+        "version": 1,
+        "imagePath": None,
+    }
 
 
 if __name__ == "__main__":

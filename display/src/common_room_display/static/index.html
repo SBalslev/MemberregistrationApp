@@ -66,6 +66,7 @@
       --cp-highlight: rgba(253, 142, 161, 0.12);
     }
     * { box-sizing: border-box; }
+    .hidden { display: none !important; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
     body {
       background: var(--cp-bg);
@@ -261,6 +262,69 @@
     .upload-qr { position: fixed; left: 2rem; bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem; border: 1px solid var(--cp-border); border-radius: 0.625rem; background: var(--cp-panel-strong); }
     .upload-qr img { width: clamp(7rem, 6vw, 12rem); height: clamp(7rem, 6vw, 12rem); }
     .upload-qr span { max-width: 14rem; color: var(--cp-text-muted); font-size: clamp(1.1rem, 1vw, 1.5rem); font-weight: 700; }
+    #stage.announcement-stage { display: block; }
+    .announcement-slide {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(32rem, 0.9fr);
+      width: 100%;
+      height: 100%;
+      background: var(--cp-bg-elevated);
+    }
+    .announcement-slide.no-image {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      place-items: center;
+    }
+    .announcement-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .announcement-copy {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      justify-content: center;
+      padding: clamp(3rem, 6vw, 8rem);
+      background: var(--cp-surface);
+    }
+    .announcement-slide.no-image .announcement-copy {
+      width: min(82vw, 90rem);
+      border: 1px solid var(--cp-border);
+      border-radius: 16px;
+      box-shadow: var(--cp-shadow);
+    }
+    .announcement-kicker {
+      margin-bottom: 1rem;
+      color: var(--cp-accent);
+      font-size: clamp(1.5rem, 2.1vw, 3rem);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .announcement-title {
+      margin: 0 0 0.5em;
+      font-size: clamp(4rem, 6.5vw, 9rem);
+      line-height: 0.98;
+      overflow-wrap: anywhere;
+    }
+    .announcement-body {
+      margin: 0;
+      font-size: clamp(2rem, 2.7vw, 4rem);
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    .announcement-priority {
+      align-self: flex-start;
+      margin-top: 2rem;
+      padding: 0.55rem 0.85rem;
+      border-radius: 0.625rem;
+      background: var(--cp-accent-soft);
+      color: var(--cp-accent);
+      font-size: clamp(1.2rem, 1.4vw, 2rem);
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -281,6 +345,12 @@
     let highlightPage = 0;
     let pulseHeadlines = [];
     let pulseHeadline = 0;
+    let announcements = [];
+    let announcementRotation = [];
+    let currentAnnouncement = 0;
+    let currentStatistics = null;
+    let showingAnnouncement = false;
+    let primaryTimer = null;
 
     function textElement(tag, text, className) {
       const element = document.createElement(tag);
@@ -542,23 +612,102 @@
       return panel;
     }
 
+    function renderComposite(snapshot) {
+      stage.className = "";
+      uploadQr.parentElement.classList.remove("hidden");
+      photoPanel = document.createElement("section");
+      photoPanel.className = "photo-panel";
+      stage.replaceChildren(photoPanel, statisticsPanel(snapshot));
+      renderPhoto();
+    }
+
+    function renderAnnouncement(announcement) {
+      stage.className = "announcement-stage";
+      uploadQr.parentElement.classList.add("hidden");
+      const slide = document.createElement("article");
+      slide.className = `announcement-slide${announcement.imageUrl ? "" : " no-image"}`;
+      if (announcement.imageUrl) {
+        const image = document.createElement("img");
+        image.className = "announcement-image";
+        image.src = announcement.imageUrl;
+        image.alt = "";
+        slide.appendChild(image);
+      }
+      const copy = document.createElement("div");
+      copy.className = "announcement-copy";
+      copy.append(
+        textElement(
+          "div",
+          announcement.priority === "important"
+            ? "Vigtig besked fra ISS-Sportsskytter"
+            : "Besked fra ISS-Sportsskytter",
+          "announcement-kicker"
+        ),
+        textElement("h1", announcement.title, "announcement-title"),
+        textElement("p", announcement.body, "announcement-body")
+      );
+      if (announcement.priority === "important") {
+        copy.appendChild(textElement("div", "Vigtig", "announcement-priority"));
+      }
+      slide.appendChild(copy);
+      stage.replaceChildren(slide);
+      status.textContent = "Klubbesked";
+      status.classList.remove("stale");
+    }
+
+    function buildAnnouncementRotation(items) {
+      return items.concat(items.filter(item => item.priority === "important"));
+    }
+
     async function refresh() {
       try {
         const response = await fetch("/api/playlist", { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const playlist = await response.json();
         photos = playlist.photos;
+        announcements = Array.isArray(playlist.announcements) ? playlist.announcements : [];
+        announcementRotation = buildAnnouncementRotation(announcements);
+        currentAnnouncement %= Math.max(1, announcementRotation.length);
         currentPhoto = Math.min(currentPhoto, Math.max(photos.length - 1, 0));
-        photoPanel = document.createElement("section");
-        photoPanel.className = "photo-panel";
-        stage.replaceChildren(photoPanel, statisticsPanel(playlist.statistics));
-        renderPhoto();
-        status.textContent = playlist.statistics.stale ? "Viser gemte klubdata" : "Opdateret";
-        status.classList.toggle("stale", playlist.statistics.stale);
+        currentStatistics = playlist.statistics;
+        if (showingAnnouncement && announcementRotation.length === 0) {
+          showingAnnouncement = false;
+          schedulePrimary(12000);
+        }
+        if (!showingAnnouncement) {
+          renderComposite(currentStatistics);
+          status.textContent = currentStatistics.stale ? "Viser gemte klubdata" : "Opdateret";
+          status.classList.toggle("stale", currentStatistics.stale);
+        }
       } catch (error) {
         status.textContent = "Displaytjenesten kan ikke kontaktes";
         status.classList.add("stale");
       }
+    }
+
+    function schedulePrimary(delay) {
+      clearTimeout(primaryTimer);
+      primaryTimer = setTimeout(advancePrimaryContent, delay);
+    }
+
+    function advancePrimaryContent() {
+      if (showingAnnouncement) {
+        showingAnnouncement = false;
+        renderComposite(currentStatistics);
+        status.textContent = currentStatistics?.stale ? "Viser gemte klubdata" : "Opdateret";
+        status.classList.toggle("stale", Boolean(currentStatistics?.stale));
+        schedulePrimary(12000);
+        return;
+      }
+      if (announcementRotation.length === 0) {
+        schedulePrimary(12000);
+        return;
+      }
+      const announcement = announcementRotation[currentAnnouncement];
+      currentAnnouncement = (currentAnnouncement + 1) % announcementRotation.length;
+      showingAnnouncement = true;
+      renderAnnouncement(announcement);
+      schedulePrimary(announcement.displayDurationSeconds * 1000);
     }
 
     function advancePhoto() {
@@ -586,7 +735,7 @@
       document.getElementById("club-pulse")?.replaceWith(clubPulseHeading());
     }
 
-    refresh();
+    refresh().finally(() => schedulePrimary(12000));
     setInterval(advancePhoto, 12000);
     setInterval(advanceScores, 12000);
     setInterval(advanceHighlights, 12000);

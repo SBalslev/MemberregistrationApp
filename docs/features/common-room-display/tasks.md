@@ -5,7 +5,7 @@
 **Design:** [design.md](design.md)
 **Status:** Not started
 **Created:** 2026-08-31
-**Last updated:** 2026-10-05 20:13:45 UTC+2 by sbalslev
+**Last updated:** 2026-10-12 19:36:22 UTC+2 by sbalslev
 
 ## Delivery order
 
@@ -215,6 +215,19 @@ unauthenticated client cannot change media or settings.
   - Preserved named activity titles without rotation.
   - Verified all six production headlines fit at 64 pixels with current live data.
     The page and statistics panel remained within the 3840 by 2160 viewport.
+- [x] **6.19** Add scheduled messages through the existing web portal.
+  - **Started:** 2026-10-12 19:05:57 UTC+2
+  - **Completed:** 2026-10-12 19:36:22 UTC+2
+  - **Duration:** 30m 25s
+  - Added a trainer/admin navigation item and announcement editor to the existing
+    member portal instead of introducing a second web application or login.
+  - Added drafts, publication windows, normal and important priority, configurable
+    display duration, optimistic update checks, audit events, and optional
+    re-encoded images.
+  - Added authenticated cloud delivery, atomic Pi caching, local schedule expiry,
+    offline behavior, and full-screen announcement rotation.
+  - Verified 27 display tests, Python compilation, PHP syntax, JavaScript syntax,
+    and the portal database write allowlist.
 
 **Exit criteria:** The pilot has no unresolved privacy or reliability blocker, and
 trainers have a tested recovery procedure.

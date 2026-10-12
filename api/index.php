@@ -41,7 +41,9 @@ $requestUri = $_SERVER['REQUEST_URI'] ?? '/';
 $requestPath = parse_url($requestUri, PHP_URL_PATH);
 $isPublicRelayRequest =
     str_starts_with($requestPath, '/api/v1/display-relay/')
-    || str_starts_with($requestPath, '/display-relay/');
+    || str_starts_with($requestPath, '/display-relay/')
+    || str_starts_with($requestPath, '/api/v1/display-content/')
+    || str_starts_with($requestPath, '/display-content/');
 
 // 1. IP Allowlist check
 if (!$isPublicRelayRequest && !checkIpAllowlist($clientIp, $config['security']['ip_allowlist'] ?? [])) {
@@ -101,6 +103,10 @@ $routes = [
     'GET /display-relay/photos/{id}' => 'handlers/display_relay.php:handleDisplayRelayPhotoDownload',
     'POST /display-relay/photos/{id}/ack' => 'handlers/display_relay.php:handleDisplayRelayPhotoAck',
     'POST /display-relay/photos/{id}/reject' => 'handlers/display_relay.php:handleDisplayRelayPhotoReject',
+
+    // Outbound-only display announcement delivery
+    'GET /display-content/{displayId}/announcements' => 'handlers/display_content.php:handleDisplayAnnouncements',
+    'GET /display-content/{displayId}/announcements/{id}/image' => 'handlers/display_content.php:handleDisplayAnnouncementImage',
 
     // MinIdraet search
     'GET /minidraet/search' => 'handlers/minidraet_search.php:handleMinIdraetSearch',
@@ -175,6 +181,8 @@ $publicRoutes = [
     'handlers/display_relay.php:handleDisplayRelayPhotoDownload',
     'handlers/display_relay.php:handleDisplayRelayPhotoAck',
     'handlers/display_relay.php:handleDisplayRelayPhotoReject',
+    'handlers/display_content.php:handleDisplayAnnouncements',
+    'handlers/display_content.php:handleDisplayAnnouncementImage',
 ];
 $isPublicRoute = in_array($matchedRoute, $publicRoutes, true);
 

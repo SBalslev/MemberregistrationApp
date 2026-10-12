@@ -3,7 +3,7 @@
 **Feature:** Raspberry Pi common-room display
 **Status:** Draft
 **Created:** 2026-08-31
-**Last updated:** 2026-10-05 20:13:45 UTC+2 by sbalslev
+**Last updated:** 2026-10-12 19:13:46 UTC+2 by sbalslev
 
 ## Architecture
 
@@ -14,6 +14,8 @@ flowchart LR
     PHONE[Phone on local network] -->|Temporary photo upload| PI
     SD[Permanent media directory] --> PI
     TRAINER[Trainer phone or tablet] -->|Authenticated moderation| PI
+    PORTAL[Trainer web portal] -->|Authenticated announcement management| CLOUD[Cloud API]
+    PI -->|Outbound HTTPS announcement poll| CLOUD
     MT -. Authenticated sync .-> TRUSTED[Trainer tablet and laptop]
 ```
 
@@ -166,6 +168,38 @@ Moderation actions are:
 Deletion first removes the item from the active playlist, then removes the file.
 This makes a trainer deletion visible immediately even if file cleanup must retry.
 
+### Scheduled announcement portal
+
+The existing club portal serves announcement management at
+`/portal/announcements.php`. Trainers and administrators use their existing
+member portal login and role. The page reuses the portal's idle and absolute
+session timeouts, same-site HTTP-only cookie, login lockout, CSRF token, audit
+events, and optimistic record versions. No second portal or authentication flow
+is introduced.
+
+The portal manages one configured display in the first release. It supports
+drafts, scheduled or active publication, unpublishing, archiving, normal or
+important priority, an 8-to-60-second duration, and an optional image. Every
+published item has an inclusive UTC start and exclusive UTC end. The browser
+shows dates in local time.
+
+Announcement images are bounded to 10 MB and 20 megapixels. The API decodes,
+resizes, and re-encodes them as JPEG before storing them in MySQL. The Pi applies
+its existing Pillow-based display image pipeline again before placing an image in
+its local cache.
+
+The Pi polls
+`GET /api/v1/display-content/{displayId}/announcements` with the existing display
+credential. The response contains only published display DTOs ending in the
+future and starting within 30 days. Feed and image changes are written
+atomically. Invalid responses leave the previous cache untouched.
+
+The local playlist filters cached records against the Pi clock on every request.
+An expired item therefore disappears without a successful cloud request. Normal
+announcements appear once per announcement cycle. Important announcements appear
+twice. Each announcement temporarily replaces the composite photo and statistics
+view with a dedicated full-screen slide, then returns to the existing view.
+
 ## Storage model
 
 ```text
@@ -175,6 +209,7 @@ display/
     cache/display-feed.json
     media/temporary/
     media/permanent/
+    media/announcements/
     media/thumbnails/
 ```
 
@@ -218,6 +253,8 @@ shown without replacing the content with an error screen.
 | Pi upload page | Local network, no account | Create bounded temporary media |
 | Pi display page | Local Pi and local network | Read active playlist |
 | Pi trainer page | Authenticated trainer | Moderate media and settings |
+| Cloud trainer portal | Password session and CSRF token | Manage scheduled announcements |
+| Cloud display-content API | Display device token | Read published announcement DTOs and images |
 
 The display route should have its own request logging and rate limiter. Do not add
 an authentication bypass to the sync route. Contract tests should serialize a feed
@@ -236,6 +273,8 @@ absent.
 | Disk approaches quota | Reject uploads; keep display running |
 | Invalid image | Reject without adding a media record |
 | Power loss during upload | Remove orphan temporary files at startup |
+| Announcement API unavailable | Keep the last valid cache and enforce end times locally |
+| Invalid announcement payload | Reject the complete refresh and retain the previous cache |
 
 The watchdog probes `/api/playlist`, not only the shallow health endpoint, so it
 also detects failures in media expiry or playlist assembly. Backend recovery
@@ -263,3 +302,6 @@ Persistent journaling retains service and network evidence across a reboot.
 4. Expire public uploads after four hours by default.
 5. Show birthdays from today and the previous seven days.
 6. Abbreviate names by default and never expose birth dates or ages.
+7. Manage scheduled announcements in the cloud without adding the Pi to the
+   trusted member-sync mesh.
+8. Require finite publication windows and enforce expiry on both the cloud and Pi.

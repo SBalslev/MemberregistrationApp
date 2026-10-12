@@ -56,6 +56,18 @@ Apply later migrations in version order. The common-room photo relay requires:
 mysql -u username -p database_name < schema/V1_9_0__add_display_photo_relay.sql
 ```
 
+Existing databases must apply the equipment enum compatibility fix:
+
+```bash
+mysql -u username -p database_name < schema/V1_12_0__canonicalize_equipment_enums.sql
+```
+
+Scheduled common-room announcements require:
+
+```bash
+mysql -u username -p database_name < schema/V1_13_0__add_display_announcements.sql
+```
+
 The hosting configuration must allow 12 MB HTTPS request bodies and MySQL packets
 of at least 16 MB for the relay's 10 MB photo limit.
 
@@ -99,6 +111,8 @@ curl -X POST https://iss-skydning.dk/api/v1/auth/token \
 | GET | /v1/display-relay/photos/{id} | Display token | Download a queued photo |
 | POST | /v1/display-relay/photos/{id}/ack | Display token | Confirm local delivery |
 | POST | /v1/display-relay/photos/{id}/reject | Display token | Reject an invalid photo |
+| GET | /v1/display-content/{displayId}/announcements | Display token | Read scheduled announcements |
+| GET | /v1/display-content/{displayId}/announcements/{id}/image | Display token | Download an announcement image |
 
 ## Security Features
 
@@ -112,6 +126,11 @@ curl -X POST https://iss-skydning.dk/api/v1/auth/token \
 - Bounded display-photo size, dimensions, invitation quota, client quota, and
   retention
 - Outbound-only Raspberry Pi delivery with a separate device credential
+- Existing trainer/admin portal role checks, session protection, CSRF protection,
+  audit logging, and optimistic update checks for announcement management
+- Server-side portal image validation, resizing, JPEG re-encoding, and metadata
+  removal. The portal host requires the PHP GD extension with JPEG, PNG, and WebP
+  support.
 
 ## Troubleshooting
 
