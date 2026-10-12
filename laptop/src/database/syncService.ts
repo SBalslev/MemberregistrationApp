@@ -20,7 +20,7 @@ import { hasPendingMemberDeletion, isMessageProcessed, recordProcessedMessage, q
 
 // ===== Sync Schema Version =====
 // Must match Android SyncSchemaVersion (same major = compatible)
-export const SYNC_SCHEMA_VERSION = '1.11.0';
+export const SYNC_SCHEMA_VERSION = '1.12.0';
 export const SYNC_SCHEMA_MAJOR = 1;
 
 /**

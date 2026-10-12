@@ -14,7 +14,7 @@ const API_BUILD_DATE = '2026-08-31';
 
 // Expected file versions - update these when releasing new versions
 const EXPECTED_FILE_VERSIONS = [
-    'handlers/sync_push.php' => '1.5.0',
+    'handlers/sync_push.php' => '1.7.0',
     'handlers/sync_pull.php' => '1.5.0',
     'handlers/auth.php' => '1.1.0',
     'handlers/minidraet_search.php' => '1.0.0',

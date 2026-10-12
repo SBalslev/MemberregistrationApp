@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 // File version - increment when making changes
-const SYNC_PUSH_VERSION = '1.5.0';  // 1.5.0: Added id_photo_path, id_photo_thumbnail for adult ID verification
+const SYNC_PUSH_VERSION = '1.7.0';  // 1.7.0: Return JSON details for all sync runtime failures
 
 // ===== Helper Functions =====
 
@@ -67,6 +67,56 @@ function toPracticeTypeEnum(?string $practiceType): string
     ];
 
     return $map[$practiceType] ?? 'Andet';
+}
+
+function toEquipmentTypeEnum($type): string
+{
+    $map = [
+        'TrainingMaterial' => 'TRAINING_MATERIAL',
+        'Pistol' => 'PISTOL',
+        'LuftPistol' => 'AIR_PISTOL',
+        'LuftRiffel' => 'AIR_RIFLE',
+        'Riffel' => 'RIFLE',
+        'Langdistance' => 'LONG_DISTANCE',
+        'Andet' => 'OTHER',
+        'TRAINING_MATERIAL' => 'TRAINING_MATERIAL',
+        'PISTOL' => 'PISTOL',
+        'AIR_PISTOL' => 'AIR_PISTOL',
+        'AIR_RIFLE' => 'AIR_RIFLE',
+        'RIFLE' => 'RIFLE',
+        'LONG_DISTANCE' => 'LONG_DISTANCE',
+        'OTHER' => 'OTHER',
+    ];
+
+    if (!is_string($type) || !isset($map[$type])) {
+        throw new InvalidArgumentException(
+            'Unsupported equipment type: ' . json_encode($type, JSON_UNESCAPED_UNICODE)
+        );
+    }
+
+    return $map[$type];
+}
+
+function toEquipmentStatusEnum($status): string
+{
+    $map = [
+        'Available' => 'AVAILABLE',
+        'CheckedOut' => 'CHECKED_OUT',
+        'Maintenance' => 'MAINTENANCE',
+        'Retired' => 'RETIRED',
+        'AVAILABLE' => 'AVAILABLE',
+        'CHECKED_OUT' => 'CHECKED_OUT',
+        'MAINTENANCE' => 'MAINTENANCE',
+        'RETIRED' => 'RETIRED',
+    ];
+
+    if (!is_string($status) || !isset($map[$status])) {
+        throw new InvalidArgumentException(
+            'Unsupported equipment status: ' . json_encode($status, JSON_UNESCAPED_UNICODE)
+        );
+    }
+
+    return $map[$status];
 }
 
 /**
@@ -144,21 +194,25 @@ function handleSyncPush(): void
         'conflicts' => [],
         'batch_id' => $batchId,
     ];
+    $processingEntity = 'initialization';
 
     dbBeginTransaction();
 
     try {
         // Process each entity type (support both camelCase and snake_case keys)
+        $processingEntity = 'members';
         $membersData = getEntity($entities, 'members', 'members');
         if (!empty($membersData)) {
             $result['processed']['members'] = processMembersPush($membersData, $deviceId);
         }
 
+        $processingEntity = 'check_ins';
         $checkInsData = getEntity($entities, 'check_ins', 'checkIns');
         if (!empty($checkInsData)) {
             $result['processed']['check_ins'] = processCheckInsPush($checkInsData, $deviceId);
         }
 
+        $processingEntity = 'practice_sessions';
         $practiceSessionsData = getEntity($entities, 'practice_sessions', 'practiceSessions');
         if (!empty($practiceSessionsData)) {
             $result['processed']['practice_sessions'] = processPracticeSessionsPush($practiceSessionsData, $deviceId);
@@ -169,12 +223,14 @@ function handleSyncPush(): void
             ['activity_guests', 'activityGuests', 'processActivityGuestsPush'],
             ['guest_results', 'guestResults', 'processGuestResultsPush'],
         ] as [$snakeKey, $camelKey, $processor]) {
+            $processingEntity = $snakeKey;
             $data = getEntity($entities, $snakeKey, $camelKey);
             if (!empty($data)) {
                 $result['processed'][$snakeKey] = $processor($data, $deviceId);
             }
         }
 
+        $processingEntity = 'equipment_items';
         $equipmentItemsData = getEntity($entities, 'equipment_items', 'equipmentItems');
         if (!empty($equipmentItemsData)) {
             $result['processed']['equipment_items'] = processEquipmentItemsPush($equipmentItemsData, $deviceId);
@@ -254,10 +310,11 @@ function handleSyncPush(): void
         $result['server_time'] = gmdate('Y-m-d\TH:i:s\Z');
         jsonResponse($result);
 
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         dbRollback();
-        error_log('Sync push failed: ' . $e->getMessage());
-        errorResponse('Sync failed: ' . $e->getMessage(), 500);
+        $message = "Sync failed for {$processingEntity}: {$e->getMessage()}";
+        error_log($message);
+        errorResponse($message, 500, ['entity' => $processingEntity]);
     }
 }
 
@@ -581,65 +638,65 @@ function processPracticeSessionsPush(array $sessions, string $deviceId): array
         $stats['inserted']++;
     }
 
-    function processActivitiesPush(array $records, string $deviceId): array
-    {
-        return processActivityUpserts($records, $deviceId, 'activities',
-            ['title','type','starts_at_utc','ends_at_utc','status','display_enabled','created_at_utc','modified_at_utc'],
-            ['title','type','starts_at_utc','ends_at_utc','status','display_enabled','created_at_utc','modified_at_utc']);
-    }
+    return $stats;
+}
 
-    function processActivityGuestsPush(array $records, string $deviceId): array
-    {
-        return processActivityUpserts($records, $deviceId, 'activity_guests',
-            ['activity_id','display_name','club_name','start_number','show_on_display','created_at_utc','modified_at_utc'],
-            ['activity_id','display_name','club_name','start_number','show_on_display','created_at_utc','modified_at_utc']);
-    }
+function processActivitiesPush(array $records, string $deviceId): array
+{
+    return processActivityUpserts($records, $deviceId, 'activities',
+        ['title','type','starts_at_utc','ends_at_utc','status','display_enabled','created_at_utc','modified_at_utc'],
+        ['title','type','starts_at_utc','ends_at_utc','status','display_enabled','created_at_utc','modified_at_utc']);
+}
 
-    function processGuestResultsPush(array $records, string $deviceId): array
-    {
-        return processActivityUpserts($records, $deviceId, 'guest_results',
-            ['activity_id','guest_id','created_at_utc','local_date','practice_type','points','krydser','classification','deleted_at_utc'],
-            ['activity_id','guest_id','created_at_utc','local_date','practice_type','points','krydser','classification','deleted_at_utc']);
-    }
+function processActivityGuestsPush(array $records, string $deviceId): array
+{
+    return processActivityUpserts($records, $deviceId, 'activity_guests',
+        ['activity_id','display_name','club_name','start_number','show_on_display','created_at_utc','modified_at_utc'],
+        ['activity_id','display_name','club_name','start_number','show_on_display','created_at_utc','modified_at_utc']);
+}
 
-    function processActivityUpserts(array $records, string $deviceId, string $table, array $columns, array $keys): array
-    {
-        $stats = ['inserted' => 0, 'updated' => 0, 'deleted' => 0];
-        foreach ($records as $record) {
-            $id = $record['id'] ?? null;
-            if (!$id) continue;
-            if (($record['_action'] ?? 'upsert') === 'delete') {
-                dbExecute("DELETE FROM $table WHERE id = ?", [$id]);
-                $stats['deleted']++;
-                continue;
-            }
-            $existing = dbQueryOne("SELECT sync_version FROM $table WHERE id = ?", [$id]);
-            if ($existing && (int)$existing['sync_version'] > (int)($record['sync_version'] ?? 1)) continue;
-            $values = array_map(function ($key) use ($record) {
-                $value = $record[$key] ?? null;
-                if ($value !== null && in_array($key, ['starts_at_utc','ends_at_utc','created_at_utc','modified_at_utc','deleted_at_utc'], true)) {
-                    return toMySqlDateTime($value);
-                }
-                return $value;
-            }, $keys);
-            $values[] = $deviceId;
-            $values[] = $record['sync_version'] ?? 1;
-            if ($existing) {
-                $set = implode(', ', array_map(fn($column) => "$column = ?", $columns));
-                dbExecute("UPDATE $table SET $set, device_id = ?, sync_version = ?, synced_at_utc = NOW() WHERE id = ?",
-                    array_merge($values, [$id]));
-                $stats['updated']++;
-            } else {
-                $columnSql = implode(',', $columns);
-                $placeholders = implode(',', array_fill(0, count($columns) + 3, '?'));
-                dbExecute("INSERT INTO $table (id,$columnSql,device_id,sync_version,synced_at_utc) VALUES ($placeholders,NOW())",
-                    array_merge([$id], $values));
-                $stats['inserted']++;
-            }
+function processGuestResultsPush(array $records, string $deviceId): array
+{
+    return processActivityUpserts($records, $deviceId, 'guest_results',
+        ['activity_id','guest_id','created_at_utc','local_date','practice_type','points','krydser','classification','deleted_at_utc'],
+        ['activity_id','guest_id','created_at_utc','local_date','practice_type','points','krydser','classification','deleted_at_utc']);
+}
+
+function processActivityUpserts(array $records, string $deviceId, string $table, array $columns, array $keys): array
+{
+    $stats = ['inserted' => 0, 'updated' => 0, 'deleted' => 0];
+    foreach ($records as $record) {
+        $id = $record['id'] ?? null;
+        if (!$id) continue;
+        if (($record['_action'] ?? 'upsert') === 'delete') {
+            dbExecute("DELETE FROM $table WHERE id = ?", [$id]);
+            $stats['deleted']++;
+            continue;
         }
-        return $stats;
+        $existing = dbQueryOne("SELECT sync_version FROM $table WHERE id = ?", [$id]);
+        if ($existing && (int)$existing['sync_version'] > (int)($record['sync_version'] ?? 1)) continue;
+        $values = array_map(function ($key) use ($record) {
+            $value = $record[$key] ?? null;
+            if ($value !== null && in_array($key, ['starts_at_utc','ends_at_utc','created_at_utc','modified_at_utc','deleted_at_utc'], true)) {
+                return toMySqlDateTime($value);
+            }
+            return $value;
+        }, $keys);
+        $values[] = $deviceId;
+        $values[] = $record['sync_version'] ?? 1;
+        if ($existing) {
+            $set = implode(', ', array_map(fn($column) => "$column = ?", $columns));
+            dbExecute("UPDATE $table SET $set, device_id = ?, sync_version = ?, synced_at_utc = NOW() WHERE id = ?",
+                array_merge($values, [$id]));
+            $stats['updated']++;
+        } else {
+            $columnSql = implode(',', $columns);
+            $placeholders = implode(',', array_fill(0, count($columns) + 3, '?'));
+            dbExecute("INSERT INTO $table (id,$columnSql,device_id,sync_version,synced_at_utc) VALUES ($placeholders,NOW())",
+                array_merge([$id], $values));
+            $stats['inserted']++;
+        }
     }
-
     return $stats;
 }
 
@@ -678,9 +735,9 @@ function processEquipmentItemsPush(array $items, string $deviceId): array
                 "UPDATE equipment_items SET serial_number = ?, type = ?, description = ?, status = ?, discipline = ?, device_id = ?, sync_version = ?, modified_at_utc = ?, synced_at_utc = NOW() WHERE id = ?",
                 [
                     $item['serial_number'],
-                    $item['equipment_type'] ?? $item['type'] ?? 'TrainingMaterial',
+                    toEquipmentTypeEnum($item['equipment_type'] ?? $item['type'] ?? 'TRAINING_MATERIAL'),
                     $item['description'] ?? null,
-                    $item['status'] ?? 'Available',
+                    toEquipmentStatusEnum($item['status'] ?? 'AVAILABLE'),
                     $item['discipline'] ?? null,
                     $deviceId,
                     $item['sync_version'] ?? 1,
@@ -695,9 +752,9 @@ function processEquipmentItemsPush(array $items, string $deviceId): array
                 [
                     $id,
                     $item['serial_number'],
-                    $item['equipment_type'] ?? $item['type'] ?? 'TrainingMaterial',
+                    toEquipmentTypeEnum($item['equipment_type'] ?? $item['type'] ?? 'TRAINING_MATERIAL'),
                     $item['description'] ?? null,
-                    $item['status'] ?? 'Available',
+                    toEquipmentStatusEnum($item['status'] ?? 'AVAILABLE'),
                     $item['discipline'] ?? null,
                     $deviceId,
                     $item['sync_version'] ?? 1,

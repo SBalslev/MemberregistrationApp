@@ -1,6 +1,6 @@
 # Online database sync tasks
 
-**Last updated:** 2026-09-28 by sbalslev
+**Last updated:** 2026-10-12 by sbalslev
 
 ## Sync reliability fixes
 
@@ -34,3 +34,10 @@
   - **Duration**: 7m 15s
   - Incremental sync now includes members referenced by pending check-ins and practice sessions before pushing child records.
   - Missing local parent records produce an actionable sync error before contacting the cloud database.
+
+- [x] **ODBS-6** Align online equipment enum values
+  - **Started**: 2026-10-12 19:01:22 UTC+2
+  - **Completed**: 2026-10-12 19:05:59 UTC+2
+  - **Duration**: 4m 37s
+  - MySQL equipment type and status enums now use the uppercase values sent by laptop and tablet sync clients.
+  - Existing title-case values are translated without data loss by migration `V1_12_0__canonicalize_equipment_enums.sql`.

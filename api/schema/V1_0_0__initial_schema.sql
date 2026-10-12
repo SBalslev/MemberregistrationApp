@@ -1,6 +1,6 @@
 -- =============================================
 -- ISS Skydning Online Database Schema
--- Version: 1.11.0 (must match laptop SYNC_SCHEMA_VERSION)
+-- Version: 1.12.0 (must match laptop SYNC_SCHEMA_VERSION)
 -- Created: 2026-01-27
 -- =============================================
 
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS _schema_metadata (
 
 -- Schema version - must match laptop app SYNC_SCHEMA_VERSION
 INSERT INTO _schema_metadata (major_version, minor_version, patch_version, description)
-VALUES (1, 11, 0, 'Schema 1.11.0 - guest result soft deletion');
+VALUES (1, 12, 0, 'Schema 1.12.0 - canonical equipment enum values');
 
 -- Sync log for audit trail
 CREATE TABLE IF NOT EXISTS _sync_log (
@@ -299,9 +299,9 @@ CREATE TABLE IF NOT EXISTS scan_events (
 CREATE TABLE IF NOT EXISTS equipment_items (
     id VARCHAR(36) PRIMARY KEY,
     serial_number VARCHAR(50) NOT NULL UNIQUE,
-    type ENUM('TrainingMaterial', 'PISTOL', 'AIR_PISTOL', 'AIR_RIFLE', 'RIFLE', 'LONG_DISTANCE', 'OTHER') NOT NULL DEFAULT 'TrainingMaterial',
+    type ENUM('TRAINING_MATERIAL', 'PISTOL', 'AIR_PISTOL', 'AIR_RIFLE', 'RIFLE', 'LONG_DISTANCE', 'OTHER') NOT NULL DEFAULT 'TRAINING_MATERIAL',
     description VARCHAR(200),
-    status ENUM('Available', 'CheckedOut', 'Maintenance', 'Retired') NOT NULL DEFAULT 'Available',
+    status ENUM('AVAILABLE', 'CHECKED_OUT', 'MAINTENANCE', 'RETIRED') NOT NULL DEFAULT 'AVAILABLE',
     discipline VARCHAR(50),
     -- Sync metadata
     device_id VARCHAR(36) NOT NULL,

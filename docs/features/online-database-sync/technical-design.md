@@ -17,6 +17,7 @@ This document describes the technical architecture for integrating an online MyS
 3. **Secure credentials**: Password never in source code; OS keychain for storage
 4. **Schema versioning**: Backwards-compatible evolution with semantic versioning
 5. **Dependency ordering**: Incremental child pushes include and send required parent records first
+6. **Canonical enum values**: Online equipment enums use the uppercase sync values defined by laptop and tablet models
 
 ---
 

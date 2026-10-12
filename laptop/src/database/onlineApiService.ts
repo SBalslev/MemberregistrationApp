@@ -2035,13 +2035,50 @@ export function equipmentItemToOnline(
   item: EquipmentItem,
   action: 'upsert' | 'delete' = 'upsert'
 ): OnlineEquipmentItem {
+  const typeMap: Record<string, EquipmentItem['type']> = {
+    TrainingMaterial: 'TRAINING_MATERIAL',
+    Pistol: 'PISTOL',
+    LuftPistol: 'AIR_PISTOL',
+    LuftRiffel: 'AIR_RIFLE',
+    Riffel: 'RIFLE',
+    Langdistance: 'LONG_DISTANCE',
+    Andet: 'OTHER',
+    TRAINING_MATERIAL: 'TRAINING_MATERIAL',
+    PISTOL: 'PISTOL',
+    AIR_PISTOL: 'AIR_PISTOL',
+    AIR_RIFLE: 'AIR_RIFLE',
+    RIFLE: 'RIFLE',
+    LONG_DISTANCE: 'LONG_DISTANCE',
+    OTHER: 'OTHER',
+  };
+  const statusMap: Record<string, EquipmentItem['status']> = {
+    Available: 'AVAILABLE',
+    CheckedOut: 'CHECKED_OUT',
+    Maintenance: 'MAINTENANCE',
+    Retired: 'RETIRED',
+    AVAILABLE: 'AVAILABLE',
+    CHECKED_OUT: 'CHECKED_OUT',
+    MAINTENANCE: 'MAINTENANCE',
+    RETIRED: 'RETIRED',
+  };
+  const rawType = item.type || item.equipmentType || 'TRAINING_MATERIAL';
+  const normalizedType = typeMap[rawType];
+  const normalizedStatus = statusMap[item.status];
+
+  if (!normalizedType) {
+    throw new Error(`Unsupported equipment type: ${rawType}`);
+  }
+  if (!normalizedStatus) {
+    throw new Error(`Unsupported equipment status: ${item.status}`);
+  }
+
   return {
     id: item.id,
     serial_number: item.serialNumber,
     name: item.name,
     description: item.description,
-    equipment_type: item.type || item.equipmentType || 'TRAINING_MATERIAL',
-    status: item.status,
+    equipment_type: normalizedType,
+    status: normalizedStatus,
     discipline: item.notes || null, // Using notes field for discipline
     device_id: item.deviceId || item.createdByDeviceId || 'laptop-master',
     created_at_utc: item.createdAtUtc,

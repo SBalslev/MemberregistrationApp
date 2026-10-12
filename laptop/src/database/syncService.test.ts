@@ -57,7 +57,7 @@ describe('Activity sync payloads', () => {
     vi.clearAllMocks();
 
     const result = await processSyncPayload({
-      schemaVersion: '1.11.0',
+      schemaVersion: '1.12.0',
       deviceId: 'tablet-activity',
       deviceType: 'TRAINER_TABLET',
       timestamp: '2026-10-03T09:00:00Z',

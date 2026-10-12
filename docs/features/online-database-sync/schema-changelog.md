@@ -4,6 +4,30 @@ This document tracks all schema changes to the online database and the correspon
 
 ## Version History
 
+### Version 1.12.0 (2026-10-12)
+
+**Summary:** Aligned online equipment enum values with the laptop and tablet sync contract.
+
+**Changes:**
+
+1. **Equipment items table:**
+   - Changed `type` values from legacy `TrainingMaterial` to canonical `TRAINING_MATERIAL`.
+   - Changed `status` values from title case to `AVAILABLE`, `CHECKED_OUT`, `MAINTENANCE`, and `RETIRED`.
+   - Preserved existing data by temporarily widening both columns to `VARCHAR`, translating stored values, and restoring enum constraints.
+
+2. **Sync protocol:**
+   - Bumped `SYNC_SCHEMA_VERSION` to 1.12.0.
+   - Fresh schema installations now use the same equipment values as the TypeScript and Android models.
+
+**Migration File:** `api/schema/V1_12_0__canonicalize_equipment_enums.sql`
+
+**Impact:**
+
+- Fixes `SQLSTATE[01000]: Warning: 1265 Data truncated for column 'status'` when pushing equipment.
+- Prevents the equivalent truncation error for `TRAINING_MATERIAL` in the `type` column.
+
+---
+
 ### Version 1.5.0 (2026-01-28)
 
 **Summary:** Added ID photo support for adult verification during trial member registration.
