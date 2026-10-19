@@ -4,7 +4,7 @@
 **Completed by:** sbalslev
 **Duration:** 30m 25s
 **Related task:** 6.19
-**Last updated:** 2026-10-12 20:39:50 UTC+2 by sbalslev
+**Last updated:** 2026-10-19 19:09:59 UTC+2 by sbalslev
 
 ## What was implemented
 
@@ -82,10 +82,35 @@ the template.
 7. Create a short scheduled test message in the existing portal and verify it
    appears and expires on the TV.
 
+## Overview timing follow-up
+
+Task 6.20 increased the composite overview interval from 12 to 60 seconds before
+each announcement. Announcement durations and priority weighting are unchanged.
+The internal photo, score-page, highlight, and headline rotations remain 12 seconds.
+
+- **Started:** 2026-10-19 18:54:37 UTC+2
+- **Completed:** 2026-10-19 19:00:58 UTC+2
+- **Duration:** 6m 21s
+- `node --test display\tests\kiosk_rotation.test.cjs`: passed, four timing tests.
+- `python -m unittest discover -s display\tests -v`: 25 passed, two failed because
+  existing announcement-image fixtures expired on October 12. Both passed with
+  the fixture clock patched for validation only; no unrelated test changes made.
+- `python -m unittest test_display_service.DisplayHttpTest -v` with
+  `PYTHONPATH` pointing to `display\tests`: passed, two HTTP integration tests.
+- **Production deployed:** 2026-10-19 19:09:59 UTC+2
+- Backed up the installed page and atomically replaced it without changing
+  configuration, photos, or the database. Restarted the kiosk and anti-blanking
+  service; the backend did not need a restart.
+- Verified the HTTP page matches the tested local file exactly, all four display
+  services are active, Chromium is running, the kiosk has zero service restarts,
+  and the playlist contains fresh statistics and one announcement.
+- Physical TV observation was not performed.
+
 ## Known limitations
 
 - The first release targets `club-display`.
 - Priorities are normal and important. Emergency takeover is not included.
 - Recurring schedules, templates, analytics, and multi-display targeting are not
   included.
-- Production deployment and TV verification were not performed in this task.
+- Physical TV verification was not performed. The overview timing follow-up was
+  deployed and remotely verified on 2026-10-19.

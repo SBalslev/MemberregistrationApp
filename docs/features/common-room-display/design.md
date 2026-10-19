@@ -3,7 +3,7 @@
 **Feature:** Raspberry Pi common-room display
 **Status:** Draft
 **Created:** 2026-08-31
-**Last updated:** 2026-10-12 20:39:50 UTC+2 by sbalslev
+**Last updated:** 2026-10-19 19:00:58 UTC+2 by sbalslev
 
 ## Architecture
 
@@ -204,6 +204,10 @@ An expired item therefore disappears without a successful cloud request. Normal
 announcements appear once per announcement cycle. Important announcements appear
 twice. Each announcement temporarily replaces the composite photo and statistics
 view with a dedicated full-screen slide, then returns to the existing view.
+The composite overview remains visible for 60 seconds at startup and between
+announcements so viewers have time to read scores. Announcement durations remain
+independent, and photos, score pages, highlights, and club-pulse headlines retain
+their existing 12-second rotation.
 
 ## Storage model
 

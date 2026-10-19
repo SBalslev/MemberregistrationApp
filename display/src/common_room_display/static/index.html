@@ -336,6 +336,7 @@
     const status = document.getElementById("status");
     const uploadQr = document.getElementById("upload-qr");
     const SCORE_PAGE_SIZE = 10;
+    const OVERVIEW_DURATION_MS = 60000;
     let photos = [];
     let currentPhoto = 0;
     let photoPanel = null;
@@ -672,7 +673,7 @@
         currentStatistics = playlist.statistics;
         if (showingAnnouncement && announcementRotation.length === 0) {
           showingAnnouncement = false;
-          schedulePrimary(12000);
+          schedulePrimary(OVERVIEW_DURATION_MS);
         }
         if (!showingAnnouncement) {
           renderComposite(currentStatistics);
@@ -696,11 +697,11 @@
         renderComposite(currentStatistics);
         status.textContent = currentStatistics?.stale ? "Viser gemte klubdata" : "Opdateret";
         status.classList.toggle("stale", Boolean(currentStatistics?.stale));
-        schedulePrimary(12000);
+        schedulePrimary(OVERVIEW_DURATION_MS);
         return;
       }
       if (announcementRotation.length === 0) {
-        schedulePrimary(12000);
+        schedulePrimary(OVERVIEW_DURATION_MS);
         return;
       }
       const announcement = announcementRotation[currentAnnouncement];
@@ -735,7 +736,7 @@
       document.getElementById("club-pulse")?.replaceWith(clubPulseHeading());
     }
 
-    refresh().finally(() => schedulePrimary(12000));
+    refresh().finally(() => schedulePrimary(OVERVIEW_DURATION_MS));
     setInterval(advancePhoto, 12000);
     setInterval(advanceScores, 12000);
     setInterval(advanceHighlights, 12000);

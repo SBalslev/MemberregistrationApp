@@ -25,7 +25,18 @@ Run tests with:
 
 ```powershell
 python -m unittest discover -s display\tests -v
+node --test display\tests\kiosk_rotation.test.cjs
 ```
+
+The kiosk timing tests use Node.js's built-in test runner; Node.js is not required
+on the Raspberry Pi.
+
+## Display timing
+
+The photo and scores overview stays visible for 60 seconds before each full-screen
+announcement. After the announcement's configured duration, the overview returns
+for another 60 seconds. Photos, score pages, highlights, and club-pulse headlines
+continue rotating every 12 seconds within the overview.
 
 ## Raspberry Pi installation
 

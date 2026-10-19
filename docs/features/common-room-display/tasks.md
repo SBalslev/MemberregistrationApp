@@ -5,7 +5,7 @@
 **Design:** [design.md](design.md)
 **Status:** Not started
 **Created:** 2026-08-31
-**Last updated:** 2026-10-12 20:39:50 UTC+2 by sbalslev
+**Last updated:** 2026-10-19 19:09:59 UTC+2 by sbalslev
 
 ## Delivery order
 
@@ -230,6 +230,26 @@ unauthenticated client cannot change media or settings.
     directory while excluding and ignoring the live `config.php`.
   - Verified 27 display tests, Python compilation, PHP syntax, JavaScript syntax,
     and the portal database write allowlist.
+
+- [x] **6.20** Give the scores overview more time between announcements.
+  - **Started:** 2026-10-19 18:54:37 UTC+2
+  - **Completed:** 2026-10-19 19:00:58 UTC+2
+  - **Duration:** 6m 21s
+  - Increased the overview interval from 12 to 60 seconds at startup, after each
+    announcement, and when announcements disappear during a playlist refresh.
+  - Preserved announcement durations, priority weighting, and the 12-second
+    photo, score-page, highlight, and club-pulse rotation.
+  - Four JavaScript timing tests and two HTTP integration tests passed.
+    The full Python suite passed 25 of 27 tests; two existing image tests use
+    expired October 12 fixtures and passed when run with their fixture clock.
+  - **Production deployed:** 2026-10-19 19:09:59 UTC+2
+  - Backed up and atomically replaced only the installed kiosk page on the Pi.
+    Restarted the kiosk and anti-blanking service without changing configuration,
+    photos, or the database.
+  - Verified the served page matches the local implementation exactly, Chromium
+    is running with zero service restarts, all four display services are active,
+    and the playlist contains fresh statistics and one announcement.
+    Physical TV observation was not performed.
 
 **Exit criteria:** The pilot has no unresolved privacy or reliability blocker, and
 trainers have a tested recovery procedure.
