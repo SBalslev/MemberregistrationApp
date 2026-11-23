@@ -3,7 +3,7 @@
 **Feature:** Raspberry Pi common-room display
 **Status:** Draft
 **Created:** 2026-08-31
-**Last updated:** 2026-10-19 19:00:58 UTC+2 by sbalslev
+**Last updated:** 2026-11-23 20:20:51 UTC+1 by sbalslev
 
 ## Architecture
 
@@ -122,6 +122,25 @@ completes the rotation. Named activities retain their configured title and do no
 use the club pulse.
 
 ### Upload interface
+
+Both the internet page and the Pi fallback provide separate gallery and camera
+buttons. Only the camera input uses `capture="environment"`; the gallery uses
+`accept="image/*"` without capture so phones can offer their photo library.
+Browser-decodable JPEG, PNG, and WebP files receive a local object-URL preview.
+Unsupported formats, empty files, and decoded images above 20 megapixels are
+rejected explicitly. The relay also checks its 10 MiB limit before decoding.
+HEIC/HEIF conversion is not added; the page explains how to export as JPEG.
+
+Sending is disabled until the preview loads. The page locks selection during
+upload, releases previews on replacement/removal/success, retains a photo after
+failure, and aborts a stalled request after 60 seconds. Expired relay invitations
+disable further uploads and instruct the visitor to scan the current QR code.
+Localized error messages handle non-JSON error responses such as HTTP 413.
+
+The lightweight standalone pages remain independently deployable with no new
+dependencies. Their corresponding browser behavior is covered by one shared
+parameterized Node.js test suite. The relay CSP permits `blob:` image previews
+while preserving same-origin connections, no-referrer policy, and no-store caching.
 
 The preferred QR points to a rotating HTTPS capability URL on
 `iss-skydning.dk`. The 256-bit random token is placed in the URL fragment, so it is

@@ -67,58 +67,170 @@
     }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: var(--cp-bg); color: var(--cp-text); font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif; }
-    main { width: min(34rem, 100%); margin: 0 auto; padding: 3rem 1.25rem; }
-    h1 { margin: 0 0 0.5rem; font-size: 2.4rem; letter-spacing: 0; }
+    main { width: min(34rem, 100%); margin: 0 auto; padding: 2rem 1rem max(2rem, env(safe-area-inset-bottom)); }
+    h1 { margin: 0 0 0.5rem; font-size: clamp(1.75rem, 7vw, 2.4rem); letter-spacing: 0; }
     p { color: var(--cp-text-muted); line-height: 1.5; }
-    form { margin-top: 2rem; padding: 1.5rem; border: 1px solid var(--cp-border); border-radius: 16px; background: var(--cp-surface); }
-    label { display: block; margin-bottom: 0.5rem; font-weight: 700; }
-    input { width: 100%; padding: 1rem; border: 1px solid var(--cp-border-strong); border-radius: 0.625rem; background: var(--cp-surface-soft); color: var(--cp-text); }
-    button { width: 100%; margin-top: 1rem; padding: 1rem; border: 0; border-radius: 0.625rem; background: var(--cp-accent); color: var(--cp-accent-fg); font: inherit; font-weight: 700; }
-    button:disabled { opacity: 0.55; }
-    #message { min-height: 1.5rem; margin-top: 1rem; }
+    form { margin-top: 1.5rem; padding: 1.25rem; border: 1px solid var(--cp-border); border-radius: 16px; background: var(--cp-surface); }
+    h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+    .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    button { min-height: 48px; padding: 0.875rem; border: 1px solid var(--cp-accent); border-radius: 0.625rem; background: var(--cp-accent); color: var(--cp-accent-fg); font: inherit; font-weight: 700; cursor: pointer; }
+    button.secondary { border-color: var(--cp-border-strong); background: var(--cp-surface-soft); color: var(--cp-text); }
+    button:not(:disabled):hover { background: var(--cp-accent-hover); color: var(--cp-accent-fg); }
+    button:focus-visible { outline: 3px solid var(--cp-link); outline-offset: 3px; }
+    button:disabled { opacity: 0.55; cursor: default; }
+    .hint { font-size: 0.875rem; }
+    #preview { display: block; width: 100%; max-height: 22rem; margin-top: 1rem; object-fit: contain; border-radius: 0.625rem; background: var(--cp-surface-soft); }
+    #details { overflow-wrap: anywhere; }
+    #remove { width: 100%; }
+    #submit { width: 100%; margin-top: 1rem; }
+    #message { min-height: 1.5rem; margin: 1rem 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+    [hidden] { display: none !important; }
     .success { color: var(--cp-success); }
     .error { color: var(--cp-danger); }
+    @media (max-width: 350px) { .choices { grid-template-columns: 1fr; } form { padding: 1rem; } }
   </style>
 </head>
 <body>
   <main>
     <h1>Tilføj et foto</h1>
-    <p>Fotoet vises på skærmen i cirka fire timer. Vælg kun et foto, som alle på billedet er indforstået med at dele i klubben.</p>
+    <p>Del et øjeblik fra klubben. Fotoet vises på klubskærmen i op til fire timer.</p>
     <form id="upload-form">
-      <label for="photo">Vælg foto</label>
-      <input id="photo" type="file" accept="image/jpeg,image/png,image/webp" required>
-      <button id="submit" type="submit">Send til skærmen</button>
-      <div id="message" role="status"></div>
+      <h2>1. Vælg dit foto</h2>
+      <div class="choices">
+        <button id="gallery" class="secondary" type="button">Vælg fra galleri</button>
+        <button id="take-photo" class="secondary" type="button">Tag et foto</button>
+      </div>
+      <input id="photo" type="file" accept="image/*" hidden aria-label="Vælg fra galleri">
+      <input id="camera" type="file" accept="image/*" capture="environment" hidden aria-label="Tag et foto">
+      <p class="hint">JPEG, PNG eller WebP, højst 20 megapixel. HEIC/HEIF skal først gemmes som JPEG.</p>
+      <img id="preview" alt="Forhåndsvisning af dit valgte foto" hidden>
+      <p id="details" class="hint" hidden></p>
+      <button id="remove" class="secondary" type="button" hidden>Fjern foto</button>
+      <p class="hint">Del kun et foto, som alle på billedet er indforstået med at vise i klubben.</p>
+      <button id="submit" type="submit" disabled>2. Send til skærmen</button>
+      <p id="message" role="status" aria-live="polite" aria-atomic="true"></p>
     </form>
   </main>
   <script>
     const form = document.getElementById("upload-form");
     const photo = document.getElementById("photo");
+    const camera = document.getElementById("camera");
+    const gallery = document.getElementById("gallery");
+    const takePhoto = document.getElementById("take-photo");
+    const preview = document.getElementById("preview");
+    const details = document.getElementById("details");
+    const remove = document.getElementById("remove");
     const submit = document.getElementById("submit");
     const message = document.getElementById("message");
+    let selectedFile = null;
+    let previewUrl = null;
+    let ready = false;
+    let busy = false;
+    function showMessage(text, kind = "") {
+      message.className = kind;
+      message.textContent = text;
+    }
+    function updateControls() {
+      gallery.disabled = takePhoto.disabled = remove.disabled = busy;
+      submit.disabled = busy || !ready;
+      form.setAttribute("aria-busy", String(busy));
+    }
+    function clearPhoto() {
+      selectedFile = null;
+      ready = false;
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = null;
+      preview.removeAttribute("src");
+      preview.hidden = details.hidden = remove.hidden = true;
+      photo.value = camera.value = "";
+      updateControls();
+    }
+    function selectPhoto(input) {
+      const file = input.files[0];
+      if (!file || busy) return;
+      clearPhoto();
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+        showMessage("Vælg et JPEG-, PNG- eller WebP-foto. Gem HEIC/HEIF som JPEG først.", "error");
+        return;
+      }
+      if (!file.size) {
+        showMessage("Fotoet er tomt. Vælg et andet foto.", "error");
+        return;
+      }
+      selectedFile = file;
+      previewUrl = URL.createObjectURL(file);
+      preview.src = previewUrl;
+      preview.hidden = details.hidden = remove.hidden = false;
+      const size = file.size < 1048576
+        ? `${Math.ceil(file.size / 1024)} KB`
+        : `${(file.size / 1048576).toLocaleString("da-DK", { maximumFractionDigits: 1 })} MB`;
+      details.textContent = `${file.name} · ${size}`;
+      showMessage("Tjek fotoet, og send det til skærmen.");
+      updateControls();
+    }
+    gallery.addEventListener("click", () => photo.click());
+    takePhoto.addEventListener("click", () => camera.click());
+    photo.addEventListener("change", () => selectPhoto(photo));
+    camera.addEventListener("change", () => selectPhoto(camera));
+    preview.addEventListener("load", () => {
+      if (!selectedFile) return;
+      if (preview.naturalWidth * preview.naturalHeight > 20000000) {
+        clearPhoto();
+        showMessage("Fotoet er for stort. Vælg et foto på højst 20 megapixel.", "error");
+        return;
+      }
+      ready = true;
+      updateControls();
+    });
+    preview.addEventListener("error", () => {
+      if (!selectedFile) return;
+      clearPhoto();
+      showMessage("Fotoet kunne ikke åbnes. Vælg et andet JPEG-, PNG- eller WebP-foto.", "error");
+    });
+    remove.addEventListener("click", () => {
+      clearPhoto();
+      showMessage("Fotoet er fjernet. Vælg et nyt foto.");
+      gallery.focus();
+    });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const file = photo.files[0];
-      if (!file) return;
-      submit.disabled = true;
-      message.className = "";
-      message.textContent = "Sender foto...";
+      if (busy || submit.disabled) return;
+      const file = selectedFile;
+      if (!file) {
+        showMessage("Vælg først et foto.", "error");
+        return;
+      }
+      busy = true;
+      updateControls();
+      showMessage("Sender foto. Vent et øjeblik...");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
       try {
         const response = await fetch("/api/uploads", {
           method: "POST",
           headers: { "Content-Type": file.type },
-          body: file
+          body: file,
+          signal: controller.signal
         });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || "Fotoet kunne ikke sendes");
-        message.className = "success";
-        message.textContent = "Fotoet er sendt til skærmen.";
-        form.reset();
+        if (!response.ok) {
+          if (response.status === 413) throw new Error("Fotoet er for stort. Vælg en mindre fil.");
+          if (response.status === 429) throw new Error("Der er sendt for mange fotos. Prøv igen senere.");
+          if (response.status === 507) throw new Error("Skærmens fotolager er fuldt. Kontakt en træner, eller prøv igen senere.");
+          throw new Error("Fotoet kunne ikke sendes. Prøv igen, eller vælg et andet foto.");
+        }
+        await response.json();
+        clearPhoto();
+        showMessage("Tak! Fotoet er sendt til skærmen. Du kan nu vælge et nyt foto.", "success");
       } catch (error) {
-        message.className = "error";
-        message.textContent = error.message;
+        showMessage(error.name === "AbortError"
+          ? "Det tog for lang tid at sende fotoet. Tjek forbindelsen, og prøv igen."
+          : error instanceof TypeError
+            ? "Ingen forbindelse til skærmen. Tjek klub-Wi-Fi, og prøv igen."
+            : error.message, "error");
       } finally {
-        submit.disabled = false;
+        clearTimeout(timeout);
+        busy = false;
+        updateControls();
       }
     });
   </script>

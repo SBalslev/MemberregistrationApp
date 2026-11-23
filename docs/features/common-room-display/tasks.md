@@ -5,7 +5,7 @@
 **Design:** [design.md](design.md)
 **Status:** Not started
 **Created:** 2026-08-31
-**Last updated:** 2026-10-19 19:09:59 UTC+2 by sbalslev
+**Last updated:** 2026-11-23 20:56:02 UTC+1 by sbalslev
 
 ## Delivery order
 
@@ -81,6 +81,25 @@ restart, and works for 24 hours without the membership tablet.
 - [>] **4.9** Test malformed, oversized, duplicate, and metadata-bearing images.
   Malformed and metadata-bearing files are covered. Explicit oversized and duplicate
   cases remain.
+- [x] **4.10** Refresh phone uploads and restore gallery selection on the internet page.
+  - **Started:** 2026-11-23 20:14:34 UTC+1
+  - **Completed:** 2026-11-23 20:20:51 UTC+1
+  - **Duration:** 6m 17s
+  - Separated gallery and rear-camera inputs on both the internet QR page and Pi
+    fallback, with preview, replacement/removal, touch controls, and dark mode.
+  - Added format/pixel validation, relay size validation, explicit QR expiry and
+    network errors, duplicate-submit protection, and retry without losing the photo.
+  - Passed 22 upload-controller tests, seven kiosk regressions, 13 Python
+    upload/relay/HTTP tests, PHP syntax, and mobile browser checks at 320, 390,
+    and 430 pixels. Browser fixtures verified both themes and actual blob previews
+    under the relay CSP without changing production data.
+  - **Pi deployed:** 2026-11-23 20:56:02 UTC+1
+  - Backed up and atomically replaced only the installed local upload page.
+    Verified the served bytes match the tested source, all four display services
+    remain active, and the backend retained PID 1340 with zero restarts.
+    Browser preview checks passed at 390 pixels without uploading production media.
+  - Internet QR page deployment and physical Android/iOS picker checks remain.
+  - See [completion summary](completion/MOBILE-PHOTO-UPLOAD-COMPLETION-SUMMARY.md).
 
 **Exit criteria:** A valid phone upload joins the slideshow, invalid content is
 rejected, metadata is removed, and temporary media expires automatically.

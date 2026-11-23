@@ -26,10 +26,33 @@ Run tests with:
 ```powershell
 python -m unittest discover -s display\tests -v
 node --test display\tests\kiosk_rotation.test.cjs
+node --test display\tests\photo_upload.test.cjs
 ```
 
 The kiosk timing tests use Node.js's built-in test runner; Node.js is not required
 on the Raspberry Pi.
+
+## Phone photo uploads
+
+Both the internet QR page and the Pi's local `/upload` page offer **Vælg fra
+galleri** and **Tag et foto** separately. The gallery input does not request camera
+capture; the camera input requests the rear camera where supported. The operating
+system controls the native picker, so desktop browsers may show a file picker for
+both choices.
+
+The selected photo is previewed before sending and can be replaced or removed.
+Failed requests retain the photo for retry. The pages support light and dark
+themes, touch-sized controls, and screen-reader status messages.
+
+JPEG, PNG, and WebP are supported, with a 20-megapixel limit. HEIC/HEIF must be
+exported as JPEG first. The internet relay accepts files up to 10 MiB; the local
+service uses its configured `maxUploadBytes` limit. Existing server-side
+validation, metadata removal, and temporary-photo expiry remain unchanged.
+
+The two pages are deployed independently: deploy
+`api/handlers/display_relay.php` to update the internet QR page, and
+`display/src/common_room_display/static/upload.html` to update the Pi fallback.
+Updating only the Pi does not change the internet upload page.
 
 ## Display timing
 
