@@ -68,6 +68,17 @@ Scheduled common-room announcements require:
 mysql -u username -p database_name < schema/V1_13_0__add_display_announcements.sql
 ```
 
+Optional image panning requires the next migration before deploying the updated
+announcement portal and display-content handler:
+
+```bash
+mysql -u username -p database_name < schema/V1_14_0__add_announcement_image_display_mode.sql
+```
+
+Existing announcements default to `fit`. The display feed adds `imageDisplayMode`
+(`fit` or `pan`) without changing schema version 1. The portal host also needs
+PHP GD and EXIF to correct camera JPEG orientation before re-encoding images.
+
 The hosting configuration must allow 12 MB HTTPS request bodies and MySQL packets
 of at least 16 MB for the relay's 10 MB photo limit.
 

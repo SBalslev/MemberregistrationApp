@@ -94,9 +94,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $writer,
                     'INSERT INTO display_announcements
                      (id, display_id, title, body, priority, status, starts_at, ends_at,
-                      display_duration_seconds, image_mime, image_size, image_data,
+                      display_duration_seconds, image_mime, image_size, image_data, image_display_mode,
                       created_by, updated_by, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())',
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())',
                     [
                         $id,
                         $displayId,
@@ -110,6 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $image === null ? null : 'image/jpeg',
                         $image === null ? null : strlen($image),
                         $image,
+                        $record['image_display_mode'],
                         $actor,
                         $actor,
                     ]
@@ -134,6 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $record['starts_at'],
                     $record['ends_at'],
                     $record['duration'],
+                    $record['image_display_mode'],
                 ];
                 if ($image !== null) {
                     $imageSql = ', image_mime = ?, image_size = ?, image_data = ?';
@@ -144,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $writer,
                     'UPDATE display_announcements
                      SET title = ?, body = ?, priority = ?, status = ?, starts_at = ?,
-                         ends_at = ?, display_duration_seconds = ?' . $imageSql . ',
+                         ends_at = ?, display_duration_seconds = ?, image_display_mode = ?' . $imageSql . ',
                          updated_by = ?, version = version + 1, updated_at = UTC_TIMESTAMP()
                      WHERE id = ? AND display_id = ? AND version = ?
                        AND status <> \'archived\'',
@@ -176,7 +178,7 @@ try {
     $announcements = portalQuery(
         $db,
         'SELECT id, title, body, priority, status, starts_at, ends_at,
-                display_duration_seconds, image_mime, image_size, version,
+                display_duration_seconds, image_mime, image_size, image_display_mode, version,
                 created_by, updated_by, created_at, updated_at
          FROM display_announcements
          WHERE display_id = ? AND status <> \'archived\'
@@ -212,6 +214,7 @@ $defaults = [
         ->modify('+7 days')->format('Y-m-d\TH:i'),
     'display_duration_seconds' => 15,
     'image_mime' => null,
+    'image_display_mode' => 'fit',
     'version' => 1,
 ];
 $form = $selected ? announcementFormValues($selected) : $defaults;
@@ -225,6 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $errors) {
         'starts_at' => (string)($_POST['starts_at'] ?? ''),
         'ends_at' => (string)($_POST['ends_at'] ?? ''),
         'display_duration_seconds' => (int)($_POST['display_duration_seconds'] ?? 15),
+        'image_display_mode' => (string)($_POST['image_display_mode'] ?? 'fit'),
         'version' => (int)($_POST['version'] ?? 1),
     ]);
 }
@@ -337,8 +341,20 @@ include __DIR__ . '/includes/layout.php';
                  accept="image/jpeg,image/png,image/webp">
           <div class="text-small text-muted">JPEG, PNG eller WebP. Højst 10 MB og 20 megapixels.</div>
         </div>
+        <div class="portal-form-group">
+          <label class="portal-label" for="announcement-image-mode">Billedvisning</label>
+          <select class="portal-input" id="announcement-image-mode" name="image_display_mode">
+            <option value="fit" <?= $form['image_display_mode'] === 'fit' ? 'selected' : '' ?>>Vis hele billedet</option>
+            <option value="pan" <?= $form['image_display_mode'] === 'pan' ? 'selected' : '' ?>>Panorér langsomt over billedet</option>
+          </select>
+          <div class="text-small text-muted">
+            Panorering viser billedet fra top til bund eller fra venstre til højre, med en pause i hver ende.
+            Vælg gerne 30-60 sekunder til lange billeder. Almindelige billeder vises bedst uden bevægelse.
+          </div>
+        </div>
 
-        <div class="announcement-preview <?= $form['image_mime'] ? '' : 'no-image' ?>" id="announcement-preview">
+        <div class="announcement-preview <?= $form['image_mime'] ? '' : 'no-image' ?><?= $form['image_display_mode'] === 'pan' ? ' pan-image' : '' ?>"
+             id="announcement-preview" style="--announcement-duration: <?= (int)$form['display_duration_seconds'] ?>s">
           <img id="announcement-preview-image"
                class="<?= $form['image_mime'] ? '' : 'hidden' ?>"
                src="<?= $form['image_mime'] ? '?image=' . e($form['id']) . '&v=' . (int)$form['version'] : '' ?>"
@@ -422,6 +438,10 @@ function validateAnnouncementForm(array $input): array
     if (!in_array($priority, ['normal', 'important'], true)) {
         throw new InvalidArgumentException('Ugyldig prioritet.');
     }
+    $imageDisplayMode = (string)($input['image_display_mode'] ?? 'fit');
+    if (!in_array($imageDisplayMode, ['fit', 'pan'], true)) {
+        throw new InvalidArgumentException('Ugyldig billedvisning.');
+    }
     $status = (string)($input['publish_state'] ?? 'draft');
     if (!in_array($status, ['draft', 'published'], true)) {
         throw new InvalidArgumentException('Ugyldig status.');
@@ -467,6 +487,7 @@ function validateAnnouncementForm(array $input): array
         'starts_at' => $startsAt->setTimezone($utc)->format('Y-m-d H:i:s'),
         'ends_at' => $endsAt->setTimezone($utc)->format('Y-m-d H:i:s'),
         'duration' => $duration,
+        'image_display_mode' => $imageDisplayMode,
     ];
 }
 
@@ -508,6 +529,16 @@ function processAnnouncementImage(string $body): string
     if ($source === false) {
         throw new InvalidArgumentException('Billedet kunne ikke læses.');
     }
+    try {
+        if ($details['mime'] === 'image/jpeg') {
+            $source = orientAnnouncementImage($source, $body);
+        }
+        $width = imagesx($source);
+        $height = imagesy($source);
+    } catch (Throwable $error) {
+        imagedestroy($source);
+        throw $error;
+    }
     $scale = min(1, ANNOUNCEMENT_MAX_IMAGE_WIDTH / $width, ANNOUNCEMENT_MAX_IMAGE_HEIGHT / $height);
     $targetWidth = max(1, (int)round($width * $scale));
     $targetHeight = max(1, (int)round($height * $scale));
@@ -537,6 +568,49 @@ function processAnnouncementImage(string $body): string
     return $processed;
 }
 
+function orientAnnouncementImage(GdImage $source, string $body): GdImage
+{
+    if (!function_exists('exif_read_data')) {
+        throw new RuntimeException('Serveren mangler EXIF-understøttelse til billedorientering.');
+    }
+    $stream = fopen('php://memory', 'w+b');
+    if ($stream === false) {
+        throw new RuntimeException('Billedets orientering kunne ikke læses.');
+    }
+    try {
+        if (fwrite($stream, $body) !== strlen($body) || !rewind($stream)) {
+            throw new RuntimeException('Billedets orientering kunne ikke læses.');
+        }
+        $metadata = @exif_read_data($stream, 'IFD0', true);
+    } finally {
+        fclose($stream);
+    }
+    $orientation = (int)($metadata['IFD0']['Orientation'] ?? 1);
+    $flip = match ($orientation) {
+        2, 5, 7 => IMG_FLIP_HORIZONTAL,
+        4 => IMG_FLIP_VERTICAL,
+        default => null,
+    };
+    if ($flip !== null && !imageflip($source, $flip)) {
+        throw new RuntimeException('Billedets orientering kunne ikke korrigeres.');
+    }
+    $angle = match ($orientation) {
+        3 => 180,
+        5, 8 => 90,
+        6, 7 => -90,
+        default => 0,
+    };
+    if ($angle === 0) {
+        return $source;
+    }
+    $rotated = imagerotate($source, $angle, 0);
+    if ($rotated === false) {
+        throw new RuntimeException('Billedets orientering kunne ikke korrigeres.');
+    }
+    imagedestroy($source);
+    return $rotated;
+}
+
 function announcementLength(string $value): int
 {
     return function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : strlen($value);
@@ -564,6 +638,7 @@ function announcementFormValues(array $record): array
         'ends_at' => announcementLocalDate($record['ends_at'], 'Y-m-d\TH:i'),
         'display_duration_seconds' => (int)$record['display_duration_seconds'],
         'image_mime' => $record['image_mime'],
+        'image_display_mode' => $record['image_display_mode'],
         'version' => (int)$record['version'],
     ];
 }

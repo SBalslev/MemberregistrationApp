@@ -27,10 +27,12 @@ Run tests with:
 python -m unittest discover -s display\tests -v
 node --test display\tests\kiosk_rotation.test.cjs
 node --test display\tests\photo_upload.test.cjs
+node --test portal\tests\announcement_editor.test.cjs
+php portal\tests\announcement_image.test.php
 ```
 
 The kiosk rendering and timing tests use Node.js's built-in test runner; Node.js is not required
-on the Raspberry Pi.
+on the Raspberry Pi. The portal image tests require PHP GD and EXIF.
 
 ## Phone photo uploads
 
@@ -74,6 +76,30 @@ The photo and scores overview stays visible for 60 seconds before each full-scre
 announcement. After the announcement's configured duration, the overview returns
 for another 60 seconds. Photos, score pages, highlights, and club-pulse headlines
 continue rotating every 12 seconds within the overview.
+
+## Announcement images
+
+**Vis hele billedet** is the default: the TV and portal preview preserve the
+image's proportions and show it without cropping. Empty space around a portrait
+or panorama is intentional.
+
+For a tall poster or wide panorama, select **Panorér langsomt over billedet** in
+Skærmbeskeder. The image fills its panel and moves from top to bottom or left to
+right along the overflowing dimension. One pass uses the message's display time,
+with the first and last 10 percent reserved for pauses. Use 30-60 seconds for
+long images. The preview also pans and restarts when the image, mode, or duration
+changes. Reduced-motion preferences restore the static whole-image view.
+
+Camera JPEG orientation, including mirrored orientations, is applied before
+resizing and stripping metadata. Images uploaded before this fix may need to be
+uploaded again: discarded orientation metadata cannot be recovered.
+
+Deployment requires the
+[1.14.0 migration](../api/schema/V1_14_0__add_announcement_image_display_mode.sql)
+before updating the portal and display-content handler. The portal host needs GD
+and EXIF; missing EXIF support produces an explicit upload error. Update the Pi's
+announcement service and kiosk page as well. Older cached feeds without
+`imageDisplayMode` continue using the static whole-image view.
 
 ## Raspberry Pi installation
 

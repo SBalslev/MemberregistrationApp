@@ -28,6 +28,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Back navigation now preserves the final screen and ignores repeated or delayed
+  callbacks from screens that have already closed, preventing an empty UI.
 - Activity creation and lifecycle changes now persist increasing sync versions.
 - Android, laptop, and cloud synchronization no longer let stale activity records
   reopen completed activities; explicitly newer restarts remain supported.

@@ -3,7 +3,7 @@
 **Started:** 2026-10-03 10:55:26 UTC+2
 **Completed:** 2026-10-03 11:30:45 UTC+2
 **Duration:** 35m 19s
-**Last updated:** 2026-11-23 21:13:52 UTC+1 by sbalslev
+**Last updated:** 2026-11-23 23:30:51 UTC+1 by sbalslev
 
 ## What was implemented
 
@@ -196,6 +196,61 @@ were removed after verification. The old APK and verified data backups are
 retained outside the repository for recovery.
 
 Member-tablet installation and API/laptop deployment are still pending.
+
+## Post-deployment blank-screen investigation
+
+**Started:** 2026-11-23 21:15:23 UTC+1
+**Source and build verified:** 2026-11-23 23:30:51 UTC+1
+**Last updated:** 2026-11-23 23:30:51 UTC+1 by sbalslev
+**Status:** Source fix verified; installation and device verification are blocked.
+
+The trainer subsequently displayed only an empty background. Screen capture and
+the UI hierarchy confirmed this while the tablet was awake, the trainer activity
+was foregrounded, and its process was still running. No trainer fatal, SQLite, or
+Room errors were present.
+
+Restarting only the application restored trainer login. Three minutes of idle
+observation retained the visible login screen. The user clarified that the issue
+occurs sometimes after working on a screen and clicking Back, not while idle.
+Back from a fresh login returned to the launcher normally, so that test did not
+reproduce the reported working-screen failure.
+
+The installed 1.3.39 working-screen callbacks used unguarded `popBackStack()`
+calls. The source repair now captures the originating entry and accepts Back
+only while that entry is current and a previous destination exists. Hardware
+Back, toolbar Back, and checkout-completion callbacks share this guard across
+working screens. Repeated or delayed callbacks cannot pop a replacement screen
+or remove the final destination.
+
+Validation command, run from a clean worktree with an isolated Gradle cache:
+
+```powershell
+.\gradlew.bat :app:testTrainerReleaseUnitTest `
+  --tests 'com.club.medlems.BackNavigationTest' `
+  --tests 'com.club.medlems.network.display.DisplayFeedBuilderTest' `
+  --tests 'com.club.medlems.data.sync.SyncRepositoryActivityTest' `
+  --tests 'com.club.medlems.ui.activity.ActivityManagementViewModelTest' `
+  :app:testMemberReleaseUnitTest --tests 'com.club.medlems.BackNavigationTest' `
+  :app:assembleTrainerRelease --console=plain --no-daemon
+```
+
+The final run passed all 25 selected tests: 20 trainer tests and five member
+Back-navigation tests. Both variants compiled, release vital lint passed, and
+trainer release assembly succeeded. The initial run exposed two nested Mockito
+stubbing errors in the new fixtures; those were corrected before the passing run.
+Regression cases cover ordinary Back, the last destination, rapid repeated Back,
+completion from a replaced screen, and no active destination.
+
+The prepared trainer APK is release 1.3.40 / 10340, supports API 23, and passed
+signature verification with the installed trainer's signing certificate. It
+contains only the prior deployed display/activity fixes plus navigation repair,
+not the other independently committed Android changes.
+
+No app data was cleared and the navigation patch has not been installed. USB
+ADB reports no device, wireless discovery is empty, and Windows has no present
+Android/ADB tablet interface. The exact working-screen sequence still needs
+on-device verification after reconnection. A fresh app-data backup must precede
+the in-place update so work performed since the earlier deployment is retained.
 
 ## Known limitations
 

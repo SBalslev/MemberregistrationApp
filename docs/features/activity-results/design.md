@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 **Created:** 2026-10-03 10:55:26 UTC+2
-**Last updated:** 2026-11-23 21:13:52 UTC+1 by sbalslev
+**Last updated:** 2026-11-23 23:30:51 UTC+1 by sbalslev
 
 ## Data model
 
@@ -94,6 +94,18 @@ activity, guest, member, or synchronization entities.
 - Tablet unavailable: the Raspberry Pi continues showing its last valid cached
   feed and marks it stale.
 - Sync unavailable: local activity entry continues through the existing outbox.
+
+## Back navigation
+
+Working-screen Back callbacks capture the originating navigation entry. A callback
+is accepted only while that entry is still current and a previous destination
+exists. Repeated taps or delayed checkout-completion callbacks from a departing
+screen cannot pop its replacement or remove the final destination.
+
+Hardware Back and toolbar Back use the same guarded action. Screen-specific
+dialog handlers retain their normal priority, and trainer authentication/logout
+and the member kiosk's explicit return-to-ready flows are unchanged. Ignored root
+and stale callbacks are recorded with standard Android debug logging.
 
 ## Deployment verification
 

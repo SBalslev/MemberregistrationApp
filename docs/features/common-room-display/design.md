@@ -3,7 +3,7 @@
 **Feature:** Raspberry Pi common-room display
 **Status:** Draft
 **Created:** 2026-08-31
-**Last updated:** 2026-11-23 21:07:45 UTC+1 by sbalslev
+**Last updated:** 2026-11-23 21:45:59 UTC+1 by sbalslev
 
 ## Architecture
 
@@ -231,6 +231,37 @@ Announcement images are bounded to 10 MB and 20 megapixels. The API decodes,
 resizes, and re-encodes them as JPEG before storing them in MySQL. The Pi applies
 its existing Pillow-based display image pipeline again before placing an image in
 its local cache.
+
+The portal applies all eight JPEG EXIF orientations before calculating resized
+dimensions and removing metadata. PHP GD and EXIF are required. Missing EXIF
+support produces a visible upload error rather than silently saving a sideways
+photo. Previously stored images cannot recover discarded orientation metadata.
+
+The `image_display_mode` column defaults to `fit`; the schema-version 1 delivery
+DTO adds optional `imageDisplayMode`. Both the portal and Pi validate `fit` and
+`pan`, and old cached feeds without the field retain the static whole-image view.
+The default kiosk and preview use `object-fit: contain`, with zero minimum grid
+item dimensions so oversized source images cannot enlarge or overflow the panel.
+
+Opt-in `pan` uses `object-fit: cover` and animates `object-position` from the
+top-left to the bottom-right. Only the overflowing dimension visibly moves,
+so the image proportions select horizontal or vertical movement automatically.
+One pass occupies the configured announcement duration, with 10 percent pauses
+at each end. The kiosk begins after image load and subtracts load time so it
+still reaches the far end before the slide changes. Each repeated announcement
+starts a fresh pass. Reduced-motion preferences restore `contain` without motion.
+The portal preview uses the same timing and restarts on image, mode, or duration
+changes. Its editor/archive initializers now run at page startup rather than
+being incorrectly scoped inside a password-reset submit handler.
+
+Apply migration 1.14.0 before deploying the updated portal and content handler,
+then update the Pi announcement service and kiosk. No member-sync DTO changes
+are needed because display announcements remain outside the trusted sync mesh.
+
+The Pi announcement service and kiosk were deployed and remotely verified on
+2026-11-23 at 21:45:59 UTC+1. Installed-module checks, exact served-file hashes,
+fresh playlist data, service health, and blanking protection passed. The web feed
+supplied the new mode field. Physical TV observation remains outstanding.
 
 The Pi polls
 `GET /api/v1/display-content/{displayId}/announcements` with the existing display

@@ -10,13 +10,46 @@ const kiosk = fs.readFileSync(
 );
 const script = [...kiosk.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
+test("announcement images fit without cropping in the kiosk and portal preview", () => {
+  const portalCss = fs.readFileSync(
+    path.join(__dirname, "..", "..", "portal", "assets", "portal.css"),
+    "utf8"
+  );
+  for (const [source, selector] of [
+    [kiosk, /\.announcement-image\s*\{([^}]+)\}/],
+    [portalCss, /\.announcement-preview img\s*\{([^}]+)\}/],
+  ]) {
+    const styles = source.match(selector)[1];
+    assert.match(styles, /object-fit:\s*contain\s*;/);
+    assert.match(styles, /min-width:\s*0\s*;/);
+    assert.match(styles, /min-height:\s*0\s*;/);
+  }
+});
+
+test("panning pauses at both ends and reduced motion restores the whole image", () => {
+  const portalCss = fs.readFileSync(
+    path.join(__dirname, "..", "..", "portal", "assets", "portal.css"),
+    "utf8"
+  );
+  for (const source of [kiosk, portalCss]) {
+    assert.match(source, /0%, 10%\s*\{\s*object-position:\s*0% 0%;\s*\}/);
+    assert.match(source, /90%, 100%\s*\{\s*object-position:\s*100% 100%;\s*\}/);
+    assert.match(source, /animation:\s*announcement-image-pan var\(--announcement-duration\) linear forwards;/);
+    assert.match(source, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?object-fit: contain;[\s\S]*?animation: none;/);
+  }
+});
+
 function createElement() {
   return {
     children: [],
     textContent: "",
+    listeners: {},
+    style: { properties: {}, setProperty(name, value) { this.properties[name] = value; } },
     classList: { add() {}, remove() {}, toggle() {} },
     append(...children) { this.children.push(...children); },
     appendChild(child) { this.children.push(child); },
+    replaceChildren(...children) { this.children = children; },
+    addEventListener(name, callback) { this.listeners[name] = callback; },
   };
 }
 
@@ -27,7 +60,9 @@ function textContent(element) {
 async function createKiosk(announcements = []) {
   const timers = new Map();
   let timerId = 0;
-  const element = { classList: { add() {}, remove() {}, toggle() {} } };
+  const element = createElement();
+  element.parentElement = createElement();
+  const clock = { now: 0 };
   const playlist = {
     photos: [],
     statistics: { available: true, stale: false },
@@ -47,16 +82,19 @@ async function createKiosk(announcements = []) {
     },
     clearTimeout: id => timers.delete(id),
     setInterval() {},
+    performance: { now: () => clock.now },
   });
   vm.runInContext(script, context);
   vm.runInContext(
-    "renderComposite = () => {}; renderAnnouncement = () => {};",
+    "renderActualAnnouncement = renderAnnouncement; renderComposite = () => {}; renderAnnouncement = () => {};",
     context
   );
   await new Promise(resolve => setImmediate(resolve));
   return {
     playlist,
     context,
+    element,
+    clock,
     nextDelay() {
       assert.equal(timers.size, 1);
       return [...timers.values()][0].delay;
@@ -85,6 +123,37 @@ test("overview lasts 60 seconds at startup and between announcements", async () 
     assert.equal(display.showingAnnouncement(), false);
     assert.equal(display.nextDelay(), 60000);
   }
+});
+
+test("only opt-in announcement images pan, with time left after loading", async () => {
+  const display = await createKiosk();
+  display.context.announcement = {
+    imageUrl: "/media/announcements/photo.jpg",
+    imageDisplayMode: "pan",
+    displayDurationSeconds: 20,
+    title: "Panorama",
+    body: "Information",
+    priority: "normal",
+  };
+  vm.runInContext("renderActualAnnouncement(announcement)", display.context);
+  const image = display.element.children[0].children[0];
+  assert.equal(image.className, "announcement-image");
+  assert.equal(typeof image.listeners.load, "function");
+  display.clock.now = 2000;
+  image.listeners.load();
+  assert.equal(image.style.properties["--announcement-duration"], "18s");
+
+  for (const mode of [undefined, "fit"]) {
+    display.context.announcement.imageDisplayMode = mode;
+    vm.runInContext("renderActualAnnouncement(announcement)", display.context);
+    const fitted = display.element.children[0].children[0];
+    assert.equal(fitted.listeners.load, undefined);
+    assert.equal(fitted.style.properties["--announcement-duration"], undefined);
+  }
+  delete display.context.announcement.imageUrl;
+  display.context.announcement.imageDisplayMode = "pan";
+  vm.runInContext("renderActualAnnouncement(announcement)", display.context);
+  assert.equal(display.element.children[0].className, "announcement-slide no-image");
 });
 
 test("overview stays visible when there are no announcements", async () => {

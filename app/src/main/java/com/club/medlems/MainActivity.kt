@@ -1,6 +1,7 @@
 package com.club.medlems
 
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
@@ -13,6 +14,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -120,6 +122,25 @@ sealed class NavRoute(val route: String) {
     }
 }
 
+internal fun NavHostController.navigateBackFrom(entry: NavBackStackEntry): Boolean {
+    if (currentBackStackEntry?.id != entry.id) {
+        Log.d("AppNavigation", "Ignored Back from a screen that is no longer current")
+        return false
+    }
+    if (previousBackStackEntry == null) {
+        Log.d("AppNavigation", "Ignored Back at the navigation root")
+        return false
+    }
+    return popBackStack()
+}
+
+@Composable
+private fun NavHostController.backActionFor(entry: NavBackStackEntry): () -> Unit {
+    val onBack: () -> Unit = { navigateBackFrom(entry) }
+    BackHandler(onBack = onBack)
+    return onBack
+}
+
 @Composable
 fun AppRoot(
     navController: NavHostController = rememberNavController(),
@@ -196,20 +217,21 @@ fun AppRoot(
                 )
             }
             composable(NavRoute.PracticeSession.route) { backStackEntry ->
+                val onBack = navController.backActionFor(backStackEntry)
                 val memberId = backStackEntry.arguments?.getString("membershipId") ?: "?"
                 val scanEventId = backStackEntry.arguments?.getString("scanEventId") ?: "?"
                 PracticeSessionScreen(memberId = memberId, scanEventId = scanEventId,
                     onSaved = { navController.popBackStack(NavRoute.Ready.route, inclusive = false) },
-                    onCancel = { navController.popBackStack() }
+                    onCancel = onBack
                 )
             }
-            composable(NavRoute.Leaderboard.route) {
-                LeaderboardScreen(onBack = { navController.popBackStack() })
+            composable(NavRoute.Leaderboard.route) { backStackEntry ->
+                LeaderboardScreen(onBack = navController.backActionFor(backStackEntry))
             }
-            composable(NavRoute.ImportExport.route) {
-                ImportExportScreen(onBack = { navController.popBackStack() })
+            composable(NavRoute.ImportExport.route) { backStackEntry ->
+                ImportExportScreen(onBack = navController.backActionFor(backStackEntry))
             }
-            composable(NavRoute.AttendantMenu.route) {
+            composable(NavRoute.AttendantMenu.route) { backStackEntry ->
                 AttendantMenuScreen(
                     openImportExport = { navController.navigate(NavRoute.ImportExport.route) },
                     openLeaderboard = { navController.navigate(NavRoute.Leaderboard.route) },
@@ -224,26 +246,26 @@ fun AppRoot(
                     openMinIdraetSearch = { navController.navigate(NavRoute.MinIdraetSearch.route) },
                     openConflictResolution = { navController.navigate(NavRoute.ConflictResolution.route) },
                     openDevicePairing = { navController.navigate(NavRoute.DevicePairing.route) },
-                    onBack = { navController.popBackStack() }
+                    onBack = navController.backActionFor(backStackEntry)
                 )
             }
             composable(NavRoute.EditSessions.route) { backStackEntry ->
                 val memberId = backStackEntry.arguments?.getString("membershipId") ?: "?"
-                com.club.medlems.ui.attendant.EditSessionsScreen(memberId = memberId, onBack = { navController.popBackStack() })
+                com.club.medlems.ui.attendant.EditSessionsScreen(memberId = memberId, onBack = navController.backActionFor(backStackEntry))
             }
-            composable(NavRoute.Registration.route) {
-                com.club.medlems.ui.attendant.RegistrationScreen(onBack = { navController.popBackStack() })
+            composable(NavRoute.Registration.route) { backStackEntry ->
+                com.club.medlems.ui.attendant.RegistrationScreen(onBack = navController.backActionFor(backStackEntry))
             }
-            composable(NavRoute.Activities.route) {
+            composable(NavRoute.Activities.route) { backStackEntry ->
                 com.club.medlems.ui.activity.ActivityManagementScreen(
-                    onBack = { navController.popBackStack() }
+                    onBack = navController.backActionFor(backStackEntry)
                 )
             }
             
             // Equipment management screens (Trainer Tablet)
-            composable(NavRoute.EquipmentList.route) {
+            composable(NavRoute.EquipmentList.route) { backStackEntry ->
                 com.club.medlems.ui.equipment.EquipmentListScreen(
-                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateBack = navController.backActionFor(backStackEntry),
                     onNavigateToCheckout = { equipmentId ->
                         navController.navigate(NavRoute.EquipmentCheckout.build(equipmentId))
                     },
@@ -253,16 +275,18 @@ fun AppRoot(
                 )
             }
             composable(NavRoute.EquipmentCheckout.route) { backStackEntry ->
+                val onBack = navController.backActionFor(backStackEntry)
                 val equipmentId = backStackEntry.arguments?.getString("equipmentId")?.takeIf { it != "_" }
                 com.club.medlems.ui.equipment.EquipmentCheckoutScreen(
                     equipmentId = equipmentId,
-                    onNavigateBack = { navController.popBackStack() },
-                    onCheckoutComplete = { navController.popBackStack() }
+                    onNavigateBack = onBack,
+                    onCheckoutComplete = onBack
                 )
             }
-            composable(NavRoute.EquipmentCheckoutScan.route) {
+            composable(NavRoute.EquipmentCheckoutScan.route) { backStackEntry ->
+                val onBack = navController.backActionFor(backStackEntry)
                 com.club.medlems.ui.equipment.EquipmentCheckoutScanScreen(
-                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateBack = onBack,
                     onNavigateToManualCheckout = { equipmentId ->
                         navController.navigate(
                             equipmentId?.let { NavRoute.EquipmentCheckout.build(it) }
@@ -271,12 +295,12 @@ fun AppRoot(
                             popUpTo(NavRoute.EquipmentCheckoutScan.route) { inclusive = true }
                         }
                     },
-                    onCheckoutComplete = { navController.popBackStack() }
+                    onCheckoutComplete = onBack
                 )
             }
-            composable(NavRoute.EquipmentCheckinScan.route) {
+            composable(NavRoute.EquipmentCheckinScan.route) { backStackEntry ->
                 com.club.medlems.ui.equipment.EquipmentCheckinScanScreen(
-                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateBack = navController.backActionFor(backStackEntry),
                     onNavigateToManualList = {
                         navController.navigate(NavRoute.CurrentCheckouts.route) {
                             popUpTo(NavRoute.EquipmentCheckinScan.route) { inclusive = true }
@@ -284,9 +308,9 @@ fun AppRoot(
                     }
                 )
             }
-            composable(NavRoute.CurrentCheckouts.route) {
+            composable(NavRoute.CurrentCheckouts.route) { backStackEntry ->
                 com.club.medlems.ui.equipment.CurrentCheckoutsScreen(
-                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateBack = navController.backActionFor(backStackEntry),
                     onNavigateToScanCheckin = {
                         navController.navigate(NavRoute.EquipmentCheckinScan.route)
                     }
@@ -294,9 +318,9 @@ fun AppRoot(
             }
             
             // Trainer tablet member lookup
-            composable(NavRoute.MemberLookup.route) {
+            composable(NavRoute.MemberLookup.route) { backStackEntry ->
                 com.club.medlems.ui.admin.MemberLookupScreen(
-                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateBack = navController.backActionFor(backStackEntry),
                     onNavigateToPracticeSession = { memberId, scanEventId ->
                         navController.navigate(NavRoute.PracticeSession.build(memberId, scanEventId))
                     },
@@ -307,34 +331,35 @@ fun AppRoot(
             }
 
             // MinIdraet search
-            composable(NavRoute.MinIdraetSearch.route) {
+            composable(NavRoute.MinIdraetSearch.route) { backStackEntry ->
                 com.club.medlems.ui.admin.MinIdraetSearchScreen(
-                    onBack = { navController.popBackStack() }
+                    onBack = navController.backActionFor(backStackEntry)
                 )
             }
             
             // Trainer tablet equipment checkout with pre-selected member
             composable(NavRoute.MemberEquipmentCheckout.route) { backStackEntry ->
+                val onBack = navController.backActionFor(backStackEntry)
                 val membershipId = backStackEntry.arguments?.getString("membershipId")
                 com.club.medlems.ui.equipment.EquipmentCheckoutScreen(
                     equipmentId = null,
                     preselectedMembershipId = membershipId,
-                    onNavigateBack = { navController.popBackStack() },
-                    onCheckoutComplete = { navController.popBackStack() }
+                    onNavigateBack = onBack,
+                    onCheckoutComplete = onBack
                 )
             }
             
             // Conflict resolution screen (Trainer Tablet)
-            composable(NavRoute.ConflictResolution.route) {
+            composable(NavRoute.ConflictResolution.route) { backStackEntry ->
                 com.club.medlems.ui.admin.ConflictResolutionScreen(
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = navController.backActionFor(backStackEntry)
                 )
             }
             
             // Device pairing screen (sync network)
-            composable(NavRoute.DevicePairing.route) {
+            composable(NavRoute.DevicePairing.route) { backStackEntry ->
                 com.club.medlems.ui.sync.DevicePairingScreen(
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = navController.backActionFor(backStackEntry)
                 )
             }
 
@@ -387,7 +412,7 @@ fun AppRoot(
                 val internalId = backStackEntry.arguments?.getString("internalId") ?: return@composable
                 TrialMemberDetailScreen(
                     memberId = internalId,
-                    onBack = { navController.popBackStack() }
+                    onBack = navController.backActionFor(backStackEntry)
                 )
             }
         }

@@ -157,55 +157,69 @@
         if (!confirm('Nulstil adgangskode for ' + name + '?')) {
           e.preventDefault();
         }
+      });
+    });
+  }
 
-        function initAnnouncementArchive() {
-          document.querySelectorAll('form.js-confirm-announcement-archive').forEach(function (form) {
-            form.addEventListener('submit', function (event) {
-              var title = form.dataset.announcementTitle || 'beskeden';
-              if (!confirm('Arkivér "' + title + '"?')) {
-                event.preventDefault();
-              }
-            });
-          });
-        }
-
-        function initAnnouncementEditor() {
-          var form = document.getElementById('announcement-form');
-          if (!form) return;
-
-          var title = document.getElementById('announcement-title');
-          var body = document.getElementById('announcement-body');
-          var priority = document.getElementById('announcement-priority');
-          var imageInput = document.getElementById('announcement-image');
-          var preview = document.getElementById('announcement-preview');
-          var previewImage = document.getElementById('announcement-preview-image');
-          var previewTitle = document.getElementById('announcement-preview-title');
-          var previewBody = document.getElementById('announcement-preview-body');
-          var previewKicker = document.getElementById('announcement-preview-kicker');
-          var objectUrl = '';
-
-          function updatePreview() {
-            previewTitle.textContent = title.value.trim() || 'Din titel vises her';
-            previewBody.textContent = body.value.trim() || 'Din information vises her.';
-            previewKicker.textContent = priority.value === 'important'
-              ? 'Vigtig besked fra ISS'
-              : 'Besked fra ISS';
-          }
-
-          title.addEventListener('input', updatePreview);
-          body.addEventListener('input', updatePreview);
-          priority.addEventListener('change', updatePreview);
-          imageInput.addEventListener('change', function () {
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-            var file = imageInput.files[0];
-            if (!file) return;
-            objectUrl = URL.createObjectURL(file);
-            previewImage.src = objectUrl;
-            previewImage.classList.remove('hidden');
-            preview.classList.remove('no-image');
-          });
+  function initAnnouncementArchive() {
+    document.querySelectorAll('form.js-confirm-announcement-archive').forEach(function (form) {
+      form.addEventListener('submit', function (event) {
+        var title = form.dataset.announcementTitle || 'beskeden';
+        if (!confirm('Arkivér "' + title + '"?')) {
+          event.preventDefault();
         }
       });
+    });
+  }
+
+  function initAnnouncementEditor() {
+    var form = document.getElementById('announcement-form');
+    if (!form) return;
+
+    var title = document.getElementById('announcement-title');
+    var body = document.getElementById('announcement-body');
+    var priority = document.getElementById('announcement-priority');
+    var imageMode = document.getElementById('announcement-image-mode');
+    var duration = document.getElementById('announcement-duration');
+    var imageInput = document.getElementById('announcement-image');
+    var preview = document.getElementById('announcement-preview');
+    var previewImage = document.getElementById('announcement-preview-image');
+    var previewTitle = document.getElementById('announcement-preview-title');
+    var previewBody = document.getElementById('announcement-preview-body');
+    var previewKicker = document.getElementById('announcement-preview-kicker');
+    var objectUrl = '';
+
+    function updatePreview() {
+      previewTitle.textContent = title.value.trim() || 'Din titel vises her';
+      previewBody.textContent = body.value.trim() || 'Din information vises her.';
+      previewKicker.textContent = priority.value === 'important'
+        ? 'Vigtig besked fra ISS'
+        : 'Besked fra ISS';
+      preview.classList.toggle('pan-image', imageMode.value === 'pan');
+      preview.style.setProperty('--announcement-duration', duration.value + 's');
+    }
+
+    function restartImagePreview() {
+      updatePreview();
+      previewImage.getAnimations().forEach(function (animation) {
+        animation.currentTime = 0;
+      });
+    }
+
+    title.addEventListener('input', updatePreview);
+    body.addEventListener('input', updatePreview);
+    priority.addEventListener('change', updatePreview);
+    imageMode.addEventListener('change', restartImagePreview);
+    duration.addEventListener('change', restartImagePreview);
+    previewImage.addEventListener('load', restartImagePreview);
+    imageInput.addEventListener('change', function () {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      var file = imageInput.files[0];
+      if (!file) return;
+      objectUrl = URL.createObjectURL(file);
+      previewImage.src = objectUrl;
+      previewImage.classList.remove('hidden');
+      preview.classList.remove('no-image');
     });
   }
 

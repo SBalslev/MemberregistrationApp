@@ -228,6 +228,8 @@ def _validate_announcement(item: object) -> None:
         raise ValueError("Announcement has invalid body text")
     if item.get("priority") not in ("normal", "important"):
         raise ValueError("Announcement has an invalid priority")
+    if item.get("imageDisplayMode", "fit") not in ("fit", "pan"):
+        raise ValueError("Announcement has an invalid image display mode")
     starts_at = _parse_timestamp(item.get("startsAt"))
     ends_at = _parse_timestamp(item.get("endsAt"))
     if ends_at <= starts_at:

@@ -3,7 +3,7 @@
 **Started:** 2026-10-03 10:55:26 UTC+2
 **Completed:** 2026-10-03 11:30:45 UTC+2
 **Duration:** 35m 19s
-**Last updated:** 2026-11-23 21:13:52 UTC+1 by sbalslev
+**Last updated:** 2026-11-23 23:30:51 UTC+1 by sbalslev
 
 ## Implementation
 
@@ -47,3 +47,29 @@
   - Trainer login and the live display feed loaded without trainer runtime or
     database errors. The feed has no active activity.
   - Member-tablet installation and API/laptop deployment remain pending.
+
+- [>] Fix the trainer's blank screen after Back navigation.
+  - **Started:** 2026-11-23 21:15:23 UTC+1
+  - **Implementation started:** 2026-11-23 21:25:04 UTC+1
+  - **Last updated:** 2026-11-23 23:30:51 UTC+1
+  - Captured an empty trainer UI while the display was awake and the app remained
+    running, with no trainer runtime or database errors.
+  - Restarting only the app restored trainer login without clearing stored data.
+    The restored screen remained visible during three minutes of idle observation.
+  - The user reports the issue after doing work and clicking Back, not from idle.
+    Back at a fresh login exited normally and did not reproduce the blank screen.
+  - Added an entry-aware Back guard: only the current screen can navigate Back,
+    and the final destination is never popped. Hardware Back, toolbar Back, and
+    checkout-completion callbacks share this behavior across working screens.
+  - Added five regression cases for normal Back, the final root, rapid repeated
+    Back, completion from a replaced screen, and no active destination.
+  - **Source and build verified:** 2026-11-23 23:30:51 UTC+1
+  - Passed 20 trainer release tests and five member release Back-navigation tests.
+    Release assembly and vital lint passed. Verified trainer package/version
+    1.3.40 / 10340 and the same signing certificate as the installed release.
+  - Built from a clean worktree containing the prior deployed fixes plus Back
+    protection, excluding unrelated pending changes. Installer and test reports
+    are retained outside the repository.
+  - **Deployment blocked:** USB ADB has no connected tablet, wireless ADB discovery
+    is empty, and Windows has no present Android/ADB tablet interface. Reconnection
+    is required for the fresh backup, in-place update, and working-screen checks.

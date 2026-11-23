@@ -5,7 +5,7 @@
 **Design:** [design.md](design.md)
 **Status:** Not started
 **Created:** 2026-08-31
-**Last updated:** 2026-11-23 21:17:12 UTC+1 by sbalslev
+**Last updated:** 2026-11-23 21:45:59 UTC+1 by sbalslev
 
 ## Delivery order
 
@@ -308,6 +308,29 @@ unauthenticated client cannot change media or settings.
     Personal-best tablet deployment is blocked: no USB ADB device is connected,
     and the member tablet refuses wireless ADB on port 5555.
     Physical TV observation was not performed.
+
+- [x] **6.23** Preserve announcement images and add opt-in panning.
+  - **Started:** 2026-11-23 21:24:14 UTC+1
+  - **Completed:** 2026-11-23 21:33:08 UTC+1
+  - **Duration:** 8m 54s
+  - Default TV and preview rendering shows the whole image without cropping.
+  - Applied all eight camera JPEG EXIF orientations before resizing and metadata removal.
+  - Added validated `fit`/`pan` selection, migration 1.14.0, cloud delivery,
+    cache compatibility, horizontal/vertical panning, and reduced-motion fallback.
+  - Fixed the editor's tightly coupled startup scope and added live preview controls.
+  - Passed PHP image/form/API checks, 12 Node.js tests, 12 focused Python tests,
+    portal-to-Pi portrait processing, and browser sizing/motion checks.
+  - Website/database and Pi deployment remain pending; physical TV observation
+    was not performed.
+  - **Pi deployed and verified:** 2026-11-23 21:45:59 UTC+1
+  - Backed up and atomically replaced only the installed announcement module and
+    kiosk page, then restarted the backend, kiosk, and anti-blanking service.
+  - Installed-module compatibility checks and served-page hash checks passed.
+    All four services are active, statistics are fresh, and blanking/DPMS are off.
+  - The live web feed now supplies `imageDisplayMode` for both announcements.
+    An additional live-browser check was blocked by the browser connection;
+    no physical TV observation was performed.
+  - See [completion summary](completion/SCHEDULED-ANNOUNCEMENTS-COMPLETION-SUMMARY.md).
 
 - [x] **6.22** Investigate activity closure and protect completed activities from stale sync.
   - **Started:** 2026-11-23 19:58:17 UTC+1

@@ -276,9 +276,25 @@
       place-items: center;
     }
     .announcement-image {
+      min-width: 0;
+      min-height: 0;
       width: 100%;
       height: 100%;
+      object-fit: contain;
+    }
+    .announcement-image.pan-image {
       object-fit: cover;
+      animation: announcement-image-pan var(--announcement-duration) linear forwards;
+    }
+    @keyframes announcement-image-pan {
+      0%, 10% { object-position: 0% 0%; }
+      90%, 100% { object-position: 100% 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .announcement-image.pan-image {
+        object-fit: contain;
+        animation: none;
+      }
     }
     .announcement-copy {
       display: flex;
@@ -634,6 +650,14 @@
       if (announcement.imageUrl) {
         const image = document.createElement("img");
         image.className = "announcement-image";
+        if (announcement.imageDisplayMode === "pan") {
+          const startedAt = performance.now();
+          image.addEventListener("load", () => {
+            const remaining = Math.max(0, announcement.displayDurationSeconds - (performance.now() - startedAt) / 1000);
+            image.style.setProperty("--announcement-duration", `${remaining}s`);
+            image.classList.add("pan-image");
+          }, { once: true });
+        }
         image.src = announcement.imageUrl;
         image.alt = "";
         slide.appendChild(image);

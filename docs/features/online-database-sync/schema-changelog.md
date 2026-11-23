@@ -4,6 +4,23 @@ This document tracks all schema changes to the online database and the correspon
 
 ## Version History
 
+### Version 1.14.0 (2026-11-23)
+
+**Summary:** Added optional panning for common-room announcement images.
+
+- Added `display_announcements.image_display_mode` with validated `fit` and `pan`
+  values. Existing rows default to `fit`.
+- Added optional `imageDisplayMode` to the independent display feed, retaining
+  display schema version 1 and compatibility with older cached feeds.
+- No member-sync payload or client schema constant changes are required.
+
+**Migration file:** [V1_14_0__add_announcement_image_display_mode.sql](../../../api/schema/V1_14_0__add_announcement_image_display_mode.sql)
+
+Apply after 1.13.0 and before deploying the updated announcement portal and API.
+The migration has not been applied to production during this task.
+
+---
+
 ### Version 1.12.0 (2026-10-12)
 
 **Summary:** Aligned online equipment enum values with the laptop and tablet sync contract.

@@ -136,6 +136,36 @@ class FeedCacheTest(unittest.TestCase):
 
 
 class AnnouncementCacheTest(unittest.TestCase):
+    def test_image_display_modes_are_validated_and_survive_cache_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = AnnouncementCache(root / "announcements.json", root / "media")
+            item = _announcement(
+                "33333333-3333-4333-8333-333333333333",
+                "Besked",
+                "2026-10-12T16:00:00Z",
+                "2026-10-12T18:00:00Z",
+            )
+            payload = {
+                "schemaVersion": 1,
+                "displayId": "club-display",
+                "serverTime": "2026-10-12T17:00:00Z",
+                "announcements": [item],
+            }
+            cache.update(payload)
+            self.assertNotIn("imageDisplayMode", cache.snapshot(now=1_791_824_400)[0])
+            for mode in ("fit", "pan"):
+                item["imageDisplayMode"] = mode
+                cache.update(payload)
+                restarted = AnnouncementCache(root / "announcements.json", root / "media")
+                self.assertEqual(mode, restarted.snapshot(now=1_791_824_400)[0]["imageDisplayMode"])
+            for invalid in ("scroll", None, 1, True, [], {}):
+                candidate = json.loads(json.dumps(payload))
+                candidate["announcements"][0]["imageDisplayMode"] = invalid
+                with self.assertRaisesRegex(ValueError, "image display mode"):
+                    cache.update(candidate)
+                self.assertEqual("pan", cache.snapshot(now=1_791_824_400)[0]["imageDisplayMode"])
+
     def test_cache_filters_schedule_and_survives_restart(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -197,7 +227,11 @@ class AnnouncementCacheTest(unittest.TestCase):
             item = cache.snapshot(now=1_791_824_400)[0]
             filename = item["imageUrl"].removeprefix("/media/announcements/")
 
-            self.assertIsNotNone(cache.resolve_media(filename))
+            with patch(
+                "common_room_display.announcements.time.time",
+                return_value=1_791_824_400,
+            ):
+                self.assertIsNotNone(cache.resolve_media(filename))
             self.assertIsNone(cache.resolve_media("../outside.jpg"))
 
 
@@ -246,9 +280,13 @@ class AnnouncementPollerTest(unittest.TestCase):
                 open_url.call_args_list[0].args[0].full_url,
             )
             self.assertEqual(["Klubaften"], [item["title"] for item in cache.snapshot(now=1_791_824_400)])
-            self.assertIsNotNone(cache.resolve_media(
-                "44444444-4444-4444-8444-444444444444-1.jpg"
-            ))
+            with patch(
+                "common_room_display.announcements.time.time",
+                return_value=1_791_824_400,
+            ):
+                self.assertIsNotNone(cache.resolve_media(
+                    "44444444-4444-4444-8444-444444444444-1.jpg"
+                ))
 
 
 class PermanentMediaTest(unittest.TestCase):

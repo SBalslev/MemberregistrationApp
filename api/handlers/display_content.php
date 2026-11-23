@@ -14,7 +14,7 @@ function handleDisplayAnnouncements(): void
     $displayId = displayContentDisplayId();
     $rows = dbQuery(
         'SELECT id, title, body, priority, starts_at, ends_at,
-                display_duration_seconds, image_mime, version
+                display_duration_seconds, image_mime, image_display_mode, version
          FROM display_announcements
          WHERE display_id = ? AND status = \'published\'
            AND ends_at > UTC_TIMESTAMP()
@@ -33,6 +33,7 @@ function handleDisplayAnnouncements(): void
                 'startsAt' => displayContentUtcIso($row['starts_at']),
                 'endsAt' => displayContentUtcIso($row['ends_at']),
                 'displayDurationSeconds' => (int)$row['display_duration_seconds'],
+                'imageDisplayMode' => $row['image_display_mode'],
                 'version' => (int)$row['version'],
                 'imagePath' => $row['image_mime']
                     ? '/display-content/' . rawurlencode($displayId)
