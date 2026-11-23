@@ -48,6 +48,13 @@ class ConflictDetector @Inject constructor() {
     ): Boolean {
         // If remote is from laptop and local is not, laptop wins
         if (remoteDeviceType == DeviceType.LAPTOP && localDeviceType != DeviceType.LAPTOP) {
+            // A stale snapshot must not erase a newer tablet edit before the laptop pulls it.
+            if (local.syncedAtUtc == null &&
+                local.syncVersion > remote.syncVersion
+            ) {
+                Log.d(TAG, "Member ${local.internalId}: Keeping newer pending tablet update")
+                return false
+            }
             Log.d(TAG, "Member ${remote.membershipId}: Accepting laptop version over tablet")
             return true
         }

@@ -61,7 +61,8 @@ data class DisplayPersonalBest(
     val displayName: String,
     val discipline: String,
     val points: Int,
-    val previousBest: Int?
+    val previousBest: Int?,
+    val krydser: Int? = null
 )
 
 @Serializable
@@ -173,7 +174,11 @@ object DisplayFeedBuilder {
         val personalBests = displayedMemberSessions
             .groupBy { it.internalMemberId to it.practiceType }
             .mapNotNull { (memberAndDiscipline, memberSessions) ->
-                val bestToday = memberSessions.maxByOrNull { it.points } ?: return@mapNotNull null
+                val bestToday = memberSessions.maxWithOrNull(
+                    compareBy<PracticeSession> { it.points }
+                        .thenBy { it.krydser ?: 0 }
+                        .thenBy { it.createdAtUtc }
+                ) ?: return@mapNotNull null
                 val previousBest = previousBestByMemberAndDiscipline[memberAndDiscipline]
                 if (previousBest != null && bestToday.points <= previousBest) return@mapNotNull null
 
@@ -181,7 +186,8 @@ object DisplayFeedBuilder {
                     displayName = activeMembers.getValue(bestToday.internalMemberId).abbreviatedName(),
                     discipline = bestToday.practiceType.name,
                     points = bestToday.points,
-                    previousBest = previousBest
+                    previousBest = previousBest,
+                    krydser = bestToday.krydser
                 )
             }
             .sortedByDescending { it.points }

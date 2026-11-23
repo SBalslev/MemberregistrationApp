@@ -25,6 +25,65 @@ See [Trial Member Registration](../trial-member-registration/completion/FEATURE-
 
 ## Overview
 
+### Member list filter layout
+
+**Started:** 2026-11-16 22:45:16 UTC+1
+**Completed:** 2026-11-16 23:07:26 UTC+1
+**Duration:** 22m 10s (including the sandbox-access interruption)
+**Last Updated:** 2026-11-16 23:07:26 UTC+1 by sbalslev
+**Status:** Implemented and validated with automated tests and production build
+
+- [x] Replace the crowded dropdown row with one expandable, labelled filter panel.
+- [x] Show active-filter counts, removable chips, and reset without clearing search.
+- [x] Separate result count and exports from the filter controls.
+- [x] Preserve immediate filtering, existing combinations, and CSV export behavior.
+- [x] Update regression tests for panel expansion, all seven chips, reset,
+  combined filters, view switching, filtered CSV downloads, and export-menu dismissal.
+- [x] Run focused tests, TypeScript, production build, ESLint, and whitespace checks.
+
+Validation commands run from `laptop` after sandbox command access was restored:
+
+- `npm run test:run -- src\utils\memberPhotoExport.test.ts src\pages\MembersPage.test.tsx`: 23 passed.
+- `npm run build`: passed, including TypeScript and Vite production output.
+- `.\node_modules\.bin\eslint.cmd src\pages\MembersPage.test.tsx src\utils\memberPhotoExport.ts src\utils\memberPhotoExport.test.ts`: passed.
+- `.\node_modules\.bin\eslint.cmd src\pages\MembersPage.tsx`: no errors; two existing hook-dependency warnings.
+- `git diff --check` from the repository root: passed.
+
+The initial test run exposed an assertion that assumed the test environment hides
+buttons inside a closed native `details` element. It now checks the element's
+actual `open` state; export-menu interactions and dismissal are also tested.
+
+Visual inspection was attempted using a temporary Vite preview. The server
+reported ready, but the integrated browser could not connect through loopback or
+the advertised local network address. No visual approval is claimed. The preview
+server was stopped after the attempts. The updated laptop production output is
+built, but the installed desktop application has not been deployed.
+
+### Member photo follow-up export
+
+**Started:** 2026-11-11 19:03:46 UTC+1
+**Completed:** 2026-11-11 19:10:37 UTC+1
+**Duration:** 6m 51s
+**Last Updated:** 2026-11-11 19:10:37 UTC+1 by sbalslev
+
+- [x] Add a profile-photo filter to the laptop member list, separate from ID-photo status.
+- [x] Export members missing profile photos to CSV, honoring search and other filters.
+- [x] Include member identifiers and contact fields without photo or identity-document data.
+- [x] Handle legacy photos, thumbnail-only photos, blank references, empty lists,
+  Danish text, CSV quoting, and spreadsheet formula escaping.
+- [x] Verify filtering and the actual downloaded CSV contents through UI tests.
+- [x] Validate 11 focused tests, the production build, TypeScript, and new-file lint.
+
+Validation commands (run from `laptop`):
+
+- `npm run test:run -- src\utils\memberPhotoExport.test.ts src\pages\MembersPage.test.tsx`: 11 passed.
+- `npm run build`: passed, including TypeScript and Vite production output.
+- `.\node_modules\.bin\tsc.cmd -b`: passed after the final test changes.
+- `.\node_modules\.bin\eslint.cmd src\utils\memberPhotoExport.ts src\utils\memberPhotoExport.test.ts src\pages\MembersPage.test.tsx`: passed.
+
+The feature is available in source and the laptop production build. Updating an
+already installed desktop application requires packaging/deployment separately.
+
 This task list was designed to implement enhanced member registration including:
 
 1. **Photo sync**: Transfer photo bytes from tablet to laptop (not just file path)

@@ -240,3 +240,61 @@ Production validation used the current 12 participants, 12 results, 2,371 points
 and seven disciplines. All six generated headlines fit at 64 pixels without
 horizontal truncation. The body and statistics panel remained exactly within the
 3840 by 2160 viewport, and the highlight area ended at 2104 pixels.
+
+## Rifle krydser display
+
+**Started:** 2026-11-23 19:35:41 UTC+1
+**Completed:** 2026-11-23 19:53:43 UTC+1
+**Duration:** 18m 2s
+**Last updated:** 2026-11-23 19:53:43 UTC+1 by sbalslev
+
+The tablet already supplied krydser for member and guest results, but the kiosk
+rendered only points. Top results, daily results, and personal-best highlights
+now share `points/krydser` formatting, including `190/0`. Missing or null krydser
+remains points-only, preserving cached and older feeds.
+
+Personal-best DTOs now include optional krydser. Equal-point sessions choose the
+highest krydser, then the latest session; qualifying a new record still requires
+improved points. No schema version, aggregate point total, or rotation timing changed.
+
+Validation:
+
+- `node --test display\tests\kiosk_rotation.test.cjs`: passed, seven tests.
+- `python -m unittest test_display_service.DisplayHttpTest test_display_service.FeedCacheTest -v`
+  with `PYTHONPATH` pointing to `display\tests`: passed, five tests.
+- `.\gradlew.bat :app:testMemberDebugUnitTest --tests 'com.club.medlems.network.display.DisplayFeedBuilderTest' --console=plain --no-daemon`:
+  passed, 12 tests, using the Android Studio Java runtime and an isolated
+  `GRADLE_USER_HOME` after the shared cache failed to read transform metadata.
+- `git diff --check` for the changed files: passed.
+
+**Pi deployed:** 2026-11-23 20:00:05 UTC+1
+
+The installed Pi page was backed up and replaced atomically. The kiosk and
+anti-blanking service restarted successfully; all four display services are
+active and the served page matches the tested source exactly. Configuration,
+photos, and the database were not changed.
+
+Browser-only fixture validation confirmed `198/7` and `190/0` in top results,
+daily results, and highlights at 3840 by 2160 without viewport overflow. The
+fixture was removed afterward and production data was never modified. The
+current air-rifle result has null krydser, so it correctly stays points-only.
+
+The member tablet was discovered at `192.168.1.144`, but wireless ADB on port
+5555 is refused and no USB ADB device is connected. Personal-best tablet
+deployment remains blocked. Physical TV observation was not performed.
+
+The subsequently reported closed-activity issue was upstream of the Pi: both
+fresh feeds initially published activity `test`. The closure later propagated
+through existing device sync. Live validation at 2026-11-23 20:52:21 UTC+1 showed
+no activity, 12 normal club results, and eight rifle leaderboard scores correctly
+displaying recorded krydser, including `195/6` and `173/0`.
+
+Activity lifecycle versioning and stale-replay guards were then implemented and
+tested in the repository. Trainer release 1.3.39 was deployed after USB attachment
+on 2026-11-23, preserving the installed release build type and signing certificate.
+All 18 backed-up app-data file hashes and database table counts matched before
+launch. Member-tablet installation and API/laptop deployment remain pending.
+The earlier live activity clearance was not caused by deploying those changes.
+See the
+[activity closure follow-up](../../activity-results/completion/ACTIVITY-RESULTS-COMPLETION-SUMMARY.md).
+No activity records were altered and no display-only hiding workaround was added.

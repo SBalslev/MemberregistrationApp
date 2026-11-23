@@ -321,7 +321,7 @@ class RegistrationViewModel @Inject constructor(
                     createdAtUtc = now,
                     updatedAtUtc = now,
                     deviceId = null,
-                    syncVersion = 0L,
+                    syncVersion = 1L,
                     syncedAtUtc = null
                 )
                 

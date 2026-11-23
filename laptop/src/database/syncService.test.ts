@@ -675,6 +675,78 @@ describe('Schema consistency guards', () => {
     expect(updateCall?.[0]).toContain('photoThumbnail = COALESCE(?, photoThumbnail)');
   });
 
+  it('should accept consecutive full-member trainer photo retakes and a card request', async () => {
+    let currentVersion = 5;
+    vi.mocked(query).mockImplementation((sql: string) => {
+      if (sql.includes('FROM Member WHERE internalId = ?')) {
+        return [{
+          internalId: 'full-member',
+          syncVersion: currentVersion,
+          photoPath: 'C:\\photos\\profile.jpg',
+          photoThumbnail: 'profile-thumbnail',
+          idPhotoPath: 'C:\\photos\\id.jpg',
+          idPhotoThumbnail: 'id-thumbnail'
+        }];
+      }
+      return [];
+    });
+    vi.mocked(processPhoto)
+      .mockResolvedValueOnce({
+        photoPath: 'C:\\photos\\new-profile.jpg',
+        photoThumbnail: 'new-profile-thumbnail'
+      })
+      .mockResolvedValueOnce({
+        photoPath: 'C:\\photos\\new-id.jpg',
+        photoThumbnail: 'new-id-thumbnail'
+      });
+
+    for (const update of [
+      { syncVersion: 6, photoBase64: 'cHJvZmlsZQ==' },
+      { syncVersion: 7, idPhotoBase64: 'aWQ=' },
+      {
+        syncVersion: 8,
+        cardStatus: 'requested',
+        cardRequestedAtUtc: '2026-11-09T19:00:00Z',
+        cardRequestedByDeviceId: 'trainer-1'
+      }
+    ]) {
+      const result = await processSyncPayload({
+        schemaVersion: '1.12.0',
+        deviceId: 'trainer-1',
+        deviceType: 'TRAINER_TABLET',
+        timestamp: '2026-11-09T19:00:00Z',
+        entities: {
+          members: [{
+            internalId: 'full-member',
+            membershipId: '123',
+            memberType: 'FULL',
+            firstName: 'Test',
+            lastName: 'Member',
+            deviceId: 'trainer-1',
+            createdAtUtc: '2026-01-01T10:00:00Z',
+            modifiedAtUtc: '2026-11-09T19:00:00Z',
+            ...update
+          }]
+        }
+      });
+      expect(result.membersUpdated).toBe(1);
+      currentVersion = update.syncVersion;
+    }
+
+    expect(processPhoto).toHaveBeenNthCalledWith(1, 'full-member', 'cHJvZmlsZQ==');
+    expect(processPhoto).toHaveBeenNthCalledWith(2, 'full-member_id', 'aWQ=');
+    const updates = vi.mocked(execute).mock.calls.filter(([sql]) =>
+      sql.includes('UPDATE Member SET')
+    );
+    expect(updates).toHaveLength(3);
+    expect(updates[0][1]).toContain('C:\\photos\\new-profile.jpg');
+    expect(updates[1][1]).toContain('C:\\photos\\new-id.jpg');
+    expect(updates[2][1]).toEqual(expect.arrayContaining([
+      'requested', '2026-11-09T19:00:00Z', 'trainer-1', 8
+    ]));
+    expect(updates[2][0]).toContain('idPhotoPath = COALESCE(?, idPhotoPath)');
+  });
+
 });
 
 describe('Equipment Sync Operations', () => {

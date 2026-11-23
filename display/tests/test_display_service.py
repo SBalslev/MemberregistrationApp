@@ -79,6 +79,15 @@ class FeedCacheTest(unittest.TestCase):
                 "generatedAt": "2026-08-31T18:00:00Z",
                 "clubDate": "2026-08-31",
                 "stats": {"participantCount": 2, "sessionCount": 3, "totalPoints": 500},
+                "topScoresByDiscipline": [
+                    {"discipline": "Riffel", "entries": [{"points": 198, "krydser": 7}]}
+                ],
+                "recentScores": [
+                    {"discipline": "LuftRiffel", "points": 190, "krydser": 0},
+                    {"discipline": "Pistol", "points": 180, "krydser": None},
+                    {"discipline": "Riffel", "points": 175},
+                ],
+                "personalBests": [{"discipline": "Riffel", "points": 198, "krydser": 7}],
             }
             FeedCache(cache_path, stale_after_seconds=300).update(feed, fetched_at=1_000)
 

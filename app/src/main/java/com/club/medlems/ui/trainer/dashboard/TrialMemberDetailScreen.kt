@@ -55,7 +55,7 @@ import java.util.concurrent.Executors
 import javax.inject.Inject
 
 /**
- * UI state for the trial member detail screen.
+ * UI state for the member detail screen.
  */
 data class TrialMemberDetailState(
     val member: Member? = null,
@@ -73,7 +73,7 @@ data class TrialMemberDetailState(
 )
 
 /**
- * ViewModel for the trial member detail screen.
+ * ViewModel for the member detail screen.
  */
 @HiltViewModel
 class TrialMemberDetailViewModel @Inject constructor(
@@ -150,19 +150,14 @@ class TrialMemberDetailViewModel @Inject constructor(
                 val now = Clock.System.now()
                 val updatedMember = member.copy(
                     registrationPhotoPath = photoPath,
-                    updatedAtUtc = now
+                    updatedAtUtc = now,
+                    syncVersion = member.syncVersion + 1,
+                    syncedAtUtc = null
                 )
 
                 withContext(Dispatchers.IO) {
+                    val photoBase64 = Base64.encodeToString(File(photoPath).readBytes(), Base64.NO_WRAP)
                     memberDao.upsert(updatedMember)
-
-                    // Encode photo for sync
-                    val photoBase64 = try {
-                        val photoFile = File(photoPath)
-                        if (photoFile.exists()) {
-                            Base64.encodeToString(photoFile.readBytes(), Base64.NO_WRAP)
-                        } else null
-                    } catch (e: Exception) { null }
 
                     // Queue for sync
                     syncOutboxManager.queueMember(
@@ -203,35 +198,20 @@ class TrialMemberDetailViewModel @Inject constructor(
                 val now = Clock.System.now()
                 val updatedMember = member.copy(
                     idPhotoPath = photoPath,
-                    updatedAtUtc = now
+                    updatedAtUtc = now,
+                    syncVersion = member.syncVersion + 1,
+                    syncedAtUtc = null
                 )
 
                 withContext(Dispatchers.IO) {
+                    val idPhotoBase64 = Base64.encodeToString(File(photoPath).readBytes(), Base64.NO_WRAP)
                     memberDao.upsert(updatedMember)
-
-                    // Encode both photos for sync
-                    val photoBase64 = try {
-                        member.registrationPhotoPath?.let { path ->
-                            val photoFile = File(path)
-                            if (photoFile.exists()) {
-                                Base64.encodeToString(photoFile.readBytes(), Base64.NO_WRAP)
-                            } else null
-                        }
-                    } catch (e: Exception) { null }
-
-                    val idPhotoBase64 = try {
-                        val idPhotoFile = File(photoPath)
-                        if (idPhotoFile.exists()) {
-                            Base64.encodeToString(idPhotoFile.readBytes(), Base64.NO_WRAP)
-                        } else null
-                    } catch (e: Exception) { null }
 
                     // Queue for sync
                     syncOutboxManager.queueMember(
                         updatedMember,
                         trustManager.getThisDeviceId(),
                         OutboxOperation.UPDATE,
-                        photoBase64 = photoBase64,
                         idPhotoBase64 = idPhotoBase64
                     )
                     syncManager.notifyEntityChanged("Member", updatedMember.internalId)
@@ -272,7 +252,9 @@ class TrialMemberDetailViewModel @Inject constructor(
                     cardStatus = "requested",
                     cardRequestedAtUtc = now.toString(),
                     cardRequestedByDeviceId = trustManager.getThisDeviceId(),
-                    updatedAtUtc = now
+                    updatedAtUtc = now,
+                    syncVersion = member.syncVersion + 1,
+                    syncedAtUtc = null
                 )
 
                 withContext(Dispatchers.IO) {
@@ -305,7 +287,7 @@ class TrialMemberDetailViewModel @Inject constructor(
 }
 
 /**
- * Trial member detail screen with photo viewing and retake functionality.
+ * Member detail screen with photo viewing and retake functionality.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -340,7 +322,7 @@ fun TrialMemberDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Prøvemedlem") },
+                title = { Text("Medlemsdetaljer") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Tilbage")
@@ -404,7 +386,7 @@ fun TrialMemberDetailScreen(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Billede gemt og synkroniseret")
+                            Text("Ændringer gemt og sat i kø til synkronisering")
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))

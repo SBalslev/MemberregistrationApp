@@ -668,3 +668,70 @@ Phase 3:
 
 **Remaining:**
 - [ ] Manual testing on physical devices (Task 8.0 checklist)
+
+## Trainer photo and membership-card replication repair
+
+- [x] Persist a new member version for every profile retake, ID retake, and card request, and queue that exact version.
+- [x] Align registration and checkout ID-capture callers with the persisted-version contract.
+- [x] Keep newer pending tablet edits when an older laptop snapshot arrives before the laptop pulls.
+- [x] Preserve device-local photo paths when a member snapshot omits photo bytes.
+- [x] Include profile and ID photo bytes for full members in tablet pull responses.
+- [x] Report unreadable captures as save errors and distinguish queued changes from confirmed delivery.
+- [x] Add and run focused Android and laptop regression coverage.
+
+**Started:** 2026-11-09 20:27:07 UTC+1
+**Completed:** 2026-11-09 20:45:15 UTC+1
+**Duration:** 18m 8s
+**Last Updated:** 2026-11-09 20:45:15 UTC+1 by sbalslev
+
+### Investigation evidence
+
+- The connected trainer tablet runs version 1.3.38.
+- Device logs show laptop member pushes followed by laptop pulls from the tablet. The laptop-master
+  rule previously accepted each snapshot unconditionally, clearing local photo
+  references and replacing pending card-request fields before the pull.
+- Trainer edits previously left the stored version unchanged, while the outbox
+  alone added one. Subsequent edits could therefore reuse a version already
+  processed by the laptop. Pull responses also used the unchanged stored version.
+- Full-member photo paths were returned by tablet pulls without their photo bytes.
+- A tablet-initiated pull received HTTP 401 Unauthorized while laptop-initiated
+  requests still reached the tablet. The pairing issue is separate from the
+  member-data fixes and may require re-pairing.
+
+### Validation and deployment
+
+- Trainer Android compilation and 37 focused unit tests passed: member replication,
+  detail ViewModel, outbox, and registration sync.
+- Used the existing Gradle 8.13 installation because the Gradle 8.7 transform cache
+  has a missing metadata file. The project wrapper and shared cache were not changed.
+- Laptop command `npm run test:run -- src\database\syncService.test.ts`: 41 passed.
+- Laptop command `.\node_modules\.bin\tsc.cmd -b`: passed.
+- No application was installed, no member records were changed on the connected
+  device, and pairing was not modified.
+- Install an updated trainer build before validating real photo retakes and card
+  requests end to end. These changes do not automatically reconstruct references
+  already cleared by an earlier sync.
+
+### Clean trainer deployment attempt
+
+**Started:** 2026-11-09 20:48:54 UTC+1
+**Last Updated:** 2026-11-09 21:17:40 UTC+1 by sbalslev
+**Status:** Blocked by tablet USB disconnection during installation
+
+- [x] Build `:app:assembleTrainerRelease` using the existing Gradle 8.13 installation.
+  Release compilation and release lint passed.
+- [x] Verify the APK contains the heading and sync fixes and differs from the old installed APK.
+- [x] Create and validate a pre-uninstall Android backup: APK, consistent SQLite
+  database with WAL/SHM, and 20 photo files. The backup preserves 103 members and
+  53 pending/in-progress/failed outbox entries.
+- [x] Uninstall `com.club.medlems.trainer` and verify the package is absent before installing.
+- [ ] Confirm installation and launch. The APK transferred, but USB disconnected
+  during Android's install operation. Installation success was not reported.
+- [ ] Verify the installed APK hash and runtime, and restore the temporary
+  `stay_on_while_plugged_in` setting from USB-on (`2`) to its original value (`0`).
+
+The verified release remains version 1.3.38 (10338), with SHA-256
+`39eeccdbdf9172bcd827d744bb4a61bfd4d4ba03de051c0269293e09b51e17f5`.
+The installer waiting for the missing device was stopped. Reconnect and unlock
+the trainer tablet before resuming installation. Do not automatically restore the
+old pairing from the backup.

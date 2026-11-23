@@ -26,6 +26,14 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
   - Laptop: Preview of records to be transferred (check-ins, practice sessions, equipment, scans)
   - Laptop: Atomic merge with FK updates and `mergedIntoId` tracking on merged member
 
+### Fixed
+
+- Activity creation and lifecycle changes now persist increasing sync versions.
+- Android, laptop, and cloud synchronization no longer let stale activity records
+  reopen completed activities; explicitly newer restarts remain supported.
+- Raspberry Pi results now show recorded krydser as `points/krydser`, including
+  zero, in leaderboards, daily results, and personal-best highlights.
+
 ### Changed
 - Member entity now uses `internalId` (UUID) as primary key instead of `membershipId`
 - All foreign key references updated from `membershipId` to `internalMemberId`
@@ -131,4 +139,3 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Enhanced camera error reporting with user-friendly messages and recovery suggestions
 - Improved frame processing reliability with better exception handling
 - Better debouncing logic to prevent duplicate scan events
-

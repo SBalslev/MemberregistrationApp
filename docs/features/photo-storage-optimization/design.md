@@ -53,6 +53,16 @@ base64 encode (full quality)
 
 ## Data Model
 
+### Device-local photo references
+
+**Last Updated:** 2026-11-09 by sbalslev
+
+Photo paths belong to the device that stores the file. An incoming member snapshot
+without photo bytes preserves the receiving tablet's existing profile and ID photo
+paths. It must not replace them with a laptop path or null. Tablet pull responses
+include available photo bytes for full members as well as trial members, so trainer
+retakes can reach the laptop through either push or pull.
+
 ### Database Schema
 
 ```sql

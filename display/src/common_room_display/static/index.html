@@ -390,6 +390,10 @@
       return new Intl.NumberFormat("da-DK").format(value);
     }
 
+    function formatScore(score) {
+      return score.krydser == null ? String(score.points) : `${score.points}/${score.krydser}`;
+    }
+
     function buildClubPulse(feed) {
       const headlines = [];
       const participantCount = Number(feed.stats.participantCount) || 0;
@@ -472,7 +476,7 @@
             entry.affiliation ? `${entry.displayName} · ${entry.affiliation}` : entry.displayName,
             "score-name"
           ),
-          textElement("strong", String(entry.points), "score-points")
+          textElement("strong", formatScore(entry), "score-points")
         );
         element.appendChild(row);
       });
@@ -513,7 +517,7 @@
             "result-discipline"
           )
         );
-        row.append(label, textElement("strong", String(score.points), "score-points"));
+        row.append(label, textElement("strong", formatScore(score), "score-points"));
         list.appendChild(row);
       });
       section.appendChild(list);
@@ -579,7 +583,7 @@
       if (feed.personalBests.length > 0) {
         highlightPages.push({
           title: "Nye personlige rekorder",
-          items: feed.personalBests.map(best => `${best.displayName}: ${best.points} point`)
+          items: feed.personalBests.map(best => `${best.displayName}: ${formatScore(best)} point`)
         });
       }
       highlightPage %= Math.max(1, highlightPages.length);

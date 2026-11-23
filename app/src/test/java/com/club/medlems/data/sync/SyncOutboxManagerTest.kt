@@ -397,6 +397,7 @@ class SyncOutboxManagerTest {
         manager.queueMember(member, "trainer-1", OutboxOperation.UPDATE)
 
         val payload = json.decodeFromString<SyncableMember>(fakeDao.entries.values.single().payload)
+        assertEquals(member.syncVersion, payload.syncVersion)
         assertEquals("requested", payload.cardStatus)
         assertEquals("card.pdf", payload.cardFileReference)
         assertEquals("2026-09-06T10:00:00Z", payload.cardPrintedAtUtc)

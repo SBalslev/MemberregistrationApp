@@ -3,7 +3,7 @@
 **Started:** 2026-10-03 10:55:26 UTC+2
 **Completed:** 2026-10-03 11:30:45 UTC+2
 **Duration:** 35m 19s
-**Last updated:** 2026-10-03 14:36:00 UTC+2 by sbalslev
+**Last updated:** 2026-11-23 21:13:52 UTC+1 by sbalslev
 
 ## What was implemented
 
@@ -114,6 +114,88 @@ Its live feed then reported the preserved **Skydesportens Dag 2026** activity,
 three results totaling 313 points, and 10 participants. The member tablet still
 requires the same 1.3.38 update before the Raspberry Pi receives the corrected
 check-in count from its configured feed source.
+
+## Activity closure and stale replay follow-up
+
+**Started:** 2026-11-23 19:58:17 UTC+1
+**Completed:** 2026-11-23 20:52:21 UTC+1
+**Duration:** 54m 4s
+**Last updated:** 2026-11-23 20:52:21 UTC+1 by sbalslev
+
+The member tablet and Pi initially both published activity `test` in fresh feeds.
+The activity subsequently cleared through existing synchronization while the fix
+was being prepared. Live browser validation confirmed normal club results and
+eight rifle leaderboard scores with recorded krydser, including `195/6` and `173/0`.
+No activity records were changed manually and no Pi-only hiding workaround was added.
+
+Code inspection identified unchanged lifecycle versions and unconditional or
+version-only merges that could restore stale active records. Creation now starts
+at version 1; completion, restart, editing, and automatic completion increment
+the persisted version and clear the sync timestamp. Android, laptop, and cloud
+activity merges compare modification times first, prefer completion on ties, and
+accept later explicit restarts.
+
+Validation:
+
+```powershell
+.\gradlew.bat :app:testMemberReleaseUnitTest `
+  --tests 'com.club.medlems.network.display.DisplayFeedBuilderTest' `
+  --tests 'com.club.medlems.data.sync.SyncRepositoryActivityTest' `
+  --tests 'com.club.medlems.ui.activity.ActivityManagementViewModelTest' `
+  :app:assembleMemberRelease :app:assembleTrainerRelease --console=plain --no-daemon
+```
+
+- The command above passed 15 Android tests and built both release APKs.
+  It ran in a clean worktree with an isolated Gradle cache; unrelated pending
+  working-tree changes were excluded.
+- `npm run test:run -- src\database\activitySync.test.ts src\database\syncService.test.ts`:
+  passed, 42 tests, including actual SQLite execution of the activity merge SQL.
+- `npx tsc -b --pretty false` in `laptop`: passed.
+- `php -l api\handlers\sync_push.php`: passed.
+- `php api\tests\activity-sync.php`: passed, eight ordering cases.
+- APK metadata and signature verification passed for `com.club.medlems` and
+  `com.club.medlems.trainer`, version 1.3.39, version code 10339.
+
+At implementation completion, neither signed APK was installed because tablet
+ADB access was unavailable. The trainer was subsequently attached and updated
+as described below. The member APK and API/laptop deployment remain pending.
+The observed live activity clearance at 20:52 was not caused by deploying these
+new tablet or API changes.
+
+## Trainer 1.3.39 data-preserving deployment
+
+**Started:** 2026-11-23 21:03:22 UTC+1
+**Completed:** 2026-11-23 21:13:52 UTC+1
+**Duration:** 10m 30s
+**Last updated:** 2026-11-23 21:13:52 UTC+1 by sbalslev
+
+The attached trainer tablet had release 1.3.38, not a debug build. Both the saved
+installed APK and prepared release 1.3.39 APK passed signature verification with
+the same signing certificate. The update used `adb install -r` without uninstalling
+or clearing data; version 1.3.39 / 10339 remains a release build.
+
+The pre-upgrade Android backup was validated to contain the database and its WAL.
+A second backup after installation, before application launch, had identical
+SHA-256 hashes for all 18 backed-up app-data files. Database integrity checks
+passed, schema 21 was unchanged, and every table count matched, including:
+
+- 111 members, 887 practice sessions, and 1,107 check-ins.
+- Three activities, 12 guests, and 12 guest results.
+- Existing equipment, trainer configuration, preferences, and synchronization rows.
+
+The package UID remained 10190, the first-install timestamp remained
+2026-11-09 21:13:59, and the data directory remained
+`/data/user/0/com.club.medlems.trainer`. Only the production trainer package is
+installed.
+
+The upgraded application launched successfully to trainer login. Its live
+display feed responded with schema 1, no active activity, 21 participants,
+16 sessions, and 3,284 points. No fatal, SQLite, or Room errors were logged for
+the trainer process. Temporary device files and the local feed-forwarding helper
+were removed after verification. The old APK and verified data backups are
+retained outside the repository for recovery.
+
+Member-tablet installation and API/laptop deployment are still pending.
 
 ## Known limitations
 

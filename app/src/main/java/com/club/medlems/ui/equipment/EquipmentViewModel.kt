@@ -452,7 +452,9 @@ class EquipmentViewModel @Inject constructor(
                 val now = Clock.System.now()
                 val updatedMember = pending.member.copy(
                     idPhotoPath = photoPath,
-                    updatedAtUtc = now
+                    updatedAtUtc = now,
+                    syncVersion = pending.member.syncVersion + 1,
+                    syncedAtUtc = null
                 )
 
                 withContext(Dispatchers.IO) {

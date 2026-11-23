@@ -171,6 +171,9 @@ interface ActivityDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(activity: Activity)
 
+    @Query("SELECT * FROM Activity WHERE id = :id")
+    suspend fun get(id: String): Activity?
+
     @Query("SELECT * FROM Activity ORDER BY startsAtUtc DESC")
     fun observeAll(): Flow<List<Activity>>
 

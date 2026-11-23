@@ -114,6 +114,14 @@ Leaderboard entries and daily-result rows use a responsive font that reaches 32
 pixels at the production 3840 by 2160 resolution. This keeps individual results
 readable across the common room while preserving the full statistics overview.
 
+Individual results use `points/krydser` whenever krydser is recorded, including
+zero, matching the tablet's score presentation. Missing or null krydser retains
+the points-only format. The shared kiosk formatter is used by leaderboards,
+daily results, and personal-best highlights. Personal-best DTOs add optional
+`krydser` without changing schema version 1; equal-point sessions select the
+highest krydser, then the latest session. Record qualification remains based on
+improving points, and aggregate point totals are unchanged.
+
 On ordinary training nights, the main heading rotates every 12 seconds through a
 live club pulse derived from existing feed data. It can celebrate personal
 records, participant count, total points, represented disciplines, the highest

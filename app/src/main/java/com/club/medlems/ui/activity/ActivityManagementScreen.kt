@@ -162,6 +162,7 @@ class ActivityManagementViewModel @Inject constructor(
                 startsAtUtc = now,
                 status = ActivityStatus.ACTIVE,
                 displayEnabled = true,
+                syncVersion = 1,
                 createdAtUtc = now,
                 updatedAtUtc = now,
                 deviceId = deviceId
@@ -183,7 +184,9 @@ class ActivityManagementViewModel @Inject constructor(
                 startsAtUtc = now,
                 endsAtUtc = null,
                 updatedAtUtc = now,
-                deviceId = deviceId
+                deviceId = deviceId,
+                syncVersion = activity.syncVersion + 1,
+                syncedAtUtc = null
             )
             activityDao.upsert(updated)
             syncOutboxManager.queueActivity(updated, deviceId)
@@ -199,7 +202,9 @@ class ActivityManagementViewModel @Inject constructor(
                 status = ActivityStatus.COMPLETED,
                 endsAtUtc = now,
                 updatedAtUtc = now,
-                deviceId = deviceId
+                deviceId = deviceId,
+                syncVersion = activity.syncVersion + 1,
+                syncedAtUtc = null
             )
             activityDao.upsert(updated)
             syncOutboxManager.queueActivity(updated, deviceId)
@@ -227,7 +232,9 @@ class ActivityManagementViewModel @Inject constructor(
                 type = type,
                 displayEnabled = displayEnabled,
                 updatedAtUtc = now,
-                deviceId = deviceId
+                deviceId = deviceId,
+                syncVersion = activity.syncVersion + 1,
+                syncedAtUtc = null
             )
             activityDao.upsert(updated)
             syncOutboxManager.queueActivity(updated, deviceId)
@@ -396,7 +403,9 @@ class ActivityManagementViewModel @Inject constructor(
             status = ActivityStatus.COMPLETED,
             endsAtUtc = now,
             updatedAtUtc = now,
-            deviceId = deviceId
+            deviceId = deviceId,
+            syncVersion = current.syncVersion + 1,
+            syncedAtUtc = null
         )
         activityDao.upsert(completed)
         syncOutboxManager.queueActivity(completed, deviceId)

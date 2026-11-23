@@ -3,7 +3,7 @@
  */
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, Plus, ChevronRight, User, X, Camera, Trash2, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { Search, Plus, ChevronRight, ChevronDown, SlidersHorizontal, User, X, Camera, Trash2, AlertTriangle, GitMerge, Edit2, CreditCard, CheckCircle2, Clock, AlertCircle, Loader2, Download } from 'lucide-react';
 import { getAllMembers, searchMembers, upsertMember, assignMembershipId, getMemberByMembershipId, getMembersWithDuplicates, previewMerge, mergeMembers, getSkvRegistration, getSkvWeaponsByRegistrationId, upsertSkvRegistration, ensureSkvRegistration, addSkvWeapon, updateSkvWeapon, deleteSkvWeapon, SKV_WEAPON_TYPES, SKV_CALIBERS, getMemberActivityTimeline, getSeasonDateRange, getMemberDeletePreview, deleteMemberPermanently, getMemberFeeStatus, query, type ActivityType } from '../database';
 import type { Member, Gender } from '../types';
 import { getIdPhotoStatus } from '../types/entities';
@@ -13,6 +13,7 @@ import type { MergeResult, MemberDeletePreview } from '../database/memberReposit
 import { useAppStore } from '../store';
 import { showSuccess, showError } from '../store/toastStore';
 import { getPhotoSrc } from '../utils/photoStorage';
+import { buildMissingPhotoCsv, hasProfilePhoto } from '../utils/memberPhotoExport';
 import { ConfirmDialog } from '../components';
 import { QuickFeePaymentDialog } from '../components/finance';
 import { getFeeRatesForYear, createPendingFeePayment, consolidatePendingFeePayments } from '../database';
@@ -26,17 +27,30 @@ export function MembersPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'ACTIVE' | 'INACTIVE'>('all');
   const [memberTypeFilter, setMemberTypeFilter] = useState<'all' | 'TRIAL' | 'FULL'>('all');
   const [idPhotoFilter, setIdPhotoFilter] = useState<'all' | 'has_id' | 'needs_id' | 'not_required'>('all');
+  const [profilePhotoFilter, setProfilePhotoFilter] = useState<'all' | 'missing'>('all');
   const [feeCategoryFilter, setFeeCategoryFilter] = useState<'all' | 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY'>('all');
   const [cardStatusFilter, setCardStatusFilter] = useState<'all' | 'requested' | 'missing'>('all');
   const [activityFilter, setActivityFilter] = useState<'all' | 'inactive_unpaid'>('all');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [viewMode, setViewMode] = useState<'members' | 'duplicates'>('members');
   const listRef = useRef<HTMLUListElement>(null);
+  const exportMenuRef = useRef<HTMLDetailsElement>(null);
   const [enlargedPhoto, setEnlargedPhoto] = useState<{ src: string; title: string } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<{ member: Member; duplicate: Member } | null>(null);
   const { selectedMember, setSelectedMember } = useAppStore();
+
+  useEffect(() => {
+    function closeExportMenu(event: PointerEvent) {
+      if (event.target instanceof Node && !exportMenuRef.current?.contains(event.target)) {
+        if (exportMenuRef.current) exportMenuRef.current.open = false;
+      }
+    }
+
+    document.addEventListener('pointerdown', closeExportMenu);
+    return () => document.removeEventListener('pointerdown', closeExportMenu);
+  }, []);
 
   function loadMembers() {
     const allMembers = getAllMembers();
@@ -95,6 +109,10 @@ export function MembersPage() {
       result = result.filter((m) => m.memberLifecycleStage === memberTypeFilter);
     }
 
+    if (profilePhotoFilter === 'missing') {
+      result = result.filter((member) => !hasProfilePhoto(member));
+    }
+
     // Apply ID photo filter
     if (idPhotoFilter !== 'all') {
       result = result.filter((m) => {
@@ -147,7 +165,76 @@ export function MembersPage() {
     });
 
     return result;
-  }, [members, searchQuery, statusFilter, memberTypeFilter, idPhotoFilter, feeCategoryFilter, cardStatusFilter, activityFilter, feePaidByMemberId, lastCheckInByMemberId, inactiveCutoffDate]);
+  }, [members, searchQuery, statusFilter, memberTypeFilter, profilePhotoFilter, idPhotoFilter, feeCategoryFilter, cardStatusFilter, activityFilter, feePaidByMemberId, lastCheckInByMemberId, inactiveCutoffDate]);
+
+  const membersWithoutPhotos = filteredMembers.filter((member) => !hasProfilePhoto(member));
+
+  const activeFilters = [
+    {
+      id: 'memberType', active: memberTypeFilter !== 'all',
+      label: memberTypeFilter === 'TRIAL' ? 'Prøvemedlemmer' : 'Fulde medlemmer',
+      clear: () => setMemberTypeFilter('all')
+    },
+    {
+      id: 'status', active: statusFilter !== 'all',
+      label: statusFilter === 'ACTIVE' ? 'Aktive' : 'Inaktive',
+      clear: () => setStatusFilter('all')
+    },
+    {
+      id: 'profilePhoto', active: profilePhotoFilter !== 'all',
+      label: 'Mangler profilbillede',
+      clear: () => setProfilePhotoFilter('all')
+    },
+    {
+      id: 'idPhoto', active: idPhotoFilter !== 'all',
+      label: idPhotoFilter === 'has_id' ? 'Har ID-billede' : idPhotoFilter === 'needs_id' ? 'Mangler ID-billede' : 'ID-billede ikke krævet',
+      clear: () => setIdPhotoFilter('all')
+    },
+    {
+      id: 'feeCategory', active: feeCategoryFilter !== 'all',
+      label: feeCategoryFilter === 'ADULT' ? 'Kontingent: Voksen' : feeCategoryFilter === 'CHILD' ? 'Kontingent: Barn' : feeCategoryFilter === 'CHILD_PLUS' ? 'Kontingent: Barn+' : 'Kontingent: Æresmedlem',
+      clear: () => setFeeCategoryFilter('all')
+    },
+    {
+      id: 'cardStatus', active: cardStatusFilter !== 'all',
+      label: cardStatusFilter === 'requested' ? 'Kort anmodet' : 'Mangler medlemskort',
+      clear: () => setCardStatusFilter('all')
+    },
+    {
+      id: 'activity', active: activityFilter !== 'all',
+      label: 'Ubetalt + intet fremmøde i 30 dage',
+      clear: () => setActivityFilter('all')
+    }
+  ].filter((filter) => filter.active);
+
+  function resetFilters() {
+    setMemberTypeFilter('all');
+    setStatusFilter('all');
+    setProfilePhotoFilter('all');
+    setIdPhotoFilter('all');
+    setFeeCategoryFilter('all');
+    setCardStatusFilter('all');
+    setActivityFilter('all');
+  }
+
+  function handleMissingPhotoExport() {
+    if (exportMenuRef.current) exportMenuRef.current.open = false;
+    let url: string | undefined;
+    try {
+      const csv = buildMissingPhotoCsv(membersWithoutPhotos);
+      url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `medlemmer-uden-profilbillede-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      showSuccess(`${membersWithoutPhotos.length} medlemmer uden profilbillede eksporteret`);
+    } catch (error) {
+      console.error('Missing profile photo export failed:', error);
+      showError('Kunne ikke eksportere medlemmer uden profilbillede');
+    } finally {
+      if (url) URL.revokeObjectURL(url);
+    }
+  }
 
   // Count trial members for badge
   const trialMemberCount = useMemo(() => {
@@ -298,9 +385,9 @@ export function MembersPage() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h1 className="text-xl font-bold text-gray-900">Medlemmer</h1>
-              <p className="text-sm text-gray-600">
-                {viewMode === 'members' ? `${filteredMembers.length} medlemmer` : `${duplicatesData.length} potentielle dubletter`}
-              </p>
+              {viewMode === 'duplicates' && (
+                <p className="text-sm text-gray-600">{duplicatesData.length} potentielle dubletter</p>
+              )}
             </div>
             <div className="flex items-center gap-3">
               {/* View Mode Toggle */}
@@ -347,7 +434,6 @@ export function MembersPage() {
           {/* Search and Filter - only show in members view */}
           {viewMode === 'members' && (
           <div className="space-y-2" role="search">
-            {/* Search bar with inline filter dropdowns */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true" />
               <input
@@ -359,82 +445,182 @@ export function MembersPage() {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               />
             </div>
-            {/* Compact filter row */}
-            <div className="flex flex-wrap gap-1.5">
-              <select
-                value={memberTypeFilter}
-                onChange={(e) => setMemberTypeFilter(e.target.value as 'all' | 'TRIAL' | 'FULL')}
-                aria-label="Filtrer efter medlemstype"
-                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
-              >
-                <option value="all">Type: Alle</option>
-                <option value="TRIAL">Prøve ({trialMemberCount})</option>
-                <option value="FULL">Fuld ({fullMemberCount})</option>
-              </select>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as 'all' | 'ACTIVE' | 'INACTIVE')}
-                aria-label="Filtrer efter status"
-                className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
-              >
-                <option value="all">Status: Alle</option>
-                <option value="ACTIVE">Aktive ({statusCounts.active})</option>
-                <option value="INACTIVE">Inaktive ({statusCounts.inactive})</option>
-              </select>
+            <div className="flex items-center justify-between gap-2">
               <button
                 type="button"
                 onClick={() => setShowAdvancedFilters((current) => !current)}
-                className="px-2 py-1 text-xs border border-gray-300 rounded bg-white text-gray-600 hover:bg-gray-50"
+                aria-expanded={showAdvancedFilters}
+                aria-controls="member-filter-panel"
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-blue-500"
               >
-                {showAdvancedFilters ? 'Skjul filtre' : 'Flere filtre'}
+                <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
+                Filtre{activeFilters.length > 0 ? ` (${activeFilters.length})` : ''}
+                <ChevronDown className={`w-4 h-4 transition-transform ${showAdvancedFilters ? 'rotate-180' : ''}`} aria-hidden="true" />
               </button>
+              {activeFilters.length > 0 && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="px-2 py-1 text-sm text-blue-700 hover:underline rounded focus-visible:outline-2 focus-visible:outline-blue-500"
+                >
+                  Nulstil filtre
+                </button>
+              )}
             </div>
-            {showAdvancedFilters && (
-              <div className="flex flex-wrap gap-1.5">
-                <select
-                  value={idPhotoFilter}
-                  onChange={(e) => setIdPhotoFilter(e.target.value as 'all' | 'has_id' | 'needs_id' | 'not_required')}
-                  aria-label="Filtrer efter ID-billede status"
-                  className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
-                >
-                  <option value="all">ID: Alle</option>
-                  <option value="has_id">Har ID ({idPhotoStatusCounts.has_id})</option>
-                  <option value="needs_id">Mangler ({idPhotoStatusCounts.needs_id})</option>
-                  <option value="not_required">Ej krævet ({idPhotoStatusCounts.not_required})</option>
-                </select>
-                <select
-                  value={feeCategoryFilter}
-                  onChange={(e) => setFeeCategoryFilter(e.target.value as 'all' | 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY')}
-                  aria-label="Filtrer efter kontingenttype"
-                  className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
-                >
-                  <option value="all">Kont: Alle</option>
-                  <option value="ADULT">Voksen ({feeCategoryCounts.ADULT})</option>
-                  <option value="CHILD">Barn ({feeCategoryCounts.CHILD})</option>
-                  <option value="CHILD_PLUS">Barn+ ({feeCategoryCounts.CHILD_PLUS})</option>
-                  <option value="HONORARY">Æresmedlem ({feeCategoryCounts.HONORARY})</option>
-                </select>
-                <select
-                  value={cardStatusFilter}
-                  onChange={(e) => setCardStatusFilter(e.target.value as 'all' | 'requested' | 'missing')}
-                  aria-label="Filtrer efter medlemskort status"
-                  className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
-                >
-                  <option value="all">Kort: Alle</option>
-                  <option value="requested">Kort: Anmodet ({cardStatusCounts.requested})</option>
-                  <option value="missing">Kort: Mangler ({cardStatusCounts.missing})</option>
-                </select>
-                <select
-                  value={activityFilter}
-                  onChange={(e) => setActivityFilter(e.target.value as 'all' | 'inactive_unpaid')}
-                  aria-label="Filtrer efter aktivitet"
-                  className="flex-1 min-w-0 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white truncate"
-                >
-                  <option value="all">Aktivitet: Alle</option>
-                  <option value="inactive_unpaid">Mangler kontingent + ingen check-in 30d (ink. trial) ({activityFilterCounts.inactiveUnpaid})</option>
-                </select>
+            {activeFilters.length > 0 && (
+              <div className="flex flex-wrap gap-2" aria-label="Aktive filtre">
+                {activeFilters.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    onClick={filter.clear}
+                    aria-label={`Fjern filter: ${filter.label}`}
+                    className="inline-flex items-center gap-1.5 max-w-full px-2.5 py-1 text-xs font-medium text-blue-800 bg-blue-50 border border-blue-100 rounded-full hover:bg-blue-100 focus-visible:outline-2 focus-visible:outline-blue-500"
+                  >
+                    <span className="text-left">{filter.label}</span>
+                    <X className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  </button>
+                ))}
               </div>
             )}
+            {showAdvancedFilters && (
+              <div
+                id="member-filter-panel"
+                role="region"
+                aria-label="Medlemsfiltre"
+                className="grid grid-cols-2 gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50 max-h-[40vh] overflow-y-auto"
+              >
+                <label className="min-w-0 space-y-1 text-sm font-medium text-gray-700">
+                  <span>Medlemstype</span>
+                  <select
+                    value={memberTypeFilter}
+                    onChange={(e) => setMemberTypeFilter(e.target.value as 'all' | 'TRIAL' | 'FULL')}
+                    aria-label="Filtrer efter medlemstype"
+                    className="w-full min-w-0 px-2 py-2 text-sm font-normal border border-gray-300 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="all">Alle typer</option>
+                    <option value="TRIAL">Prøve ({trialMemberCount})</option>
+                    <option value="FULL">Fuld ({fullMemberCount})</option>
+                  </select>
+                </label>
+                <label className="min-w-0 space-y-1 text-sm font-medium text-gray-700">
+                  <span>Status</span>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as 'all' | 'ACTIVE' | 'INACTIVE')}
+                    aria-label="Filtrer efter status"
+                    className="w-full min-w-0 px-2 py-2 text-sm font-normal border border-gray-300 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="all">Alle statusser</option>
+                    <option value="ACTIVE">Aktive ({statusCounts.active})</option>
+                    <option value="INACTIVE">Inaktive ({statusCounts.inactive})</option>
+                  </select>
+                </label>
+                <label className="min-w-0 space-y-1 text-sm font-medium text-gray-700">
+                  <span>Profilbillede</span>
+                  <select
+                    value={profilePhotoFilter}
+                    onChange={(e) => setProfilePhotoFilter(e.target.value as 'all' | 'missing')}
+                    aria-label="Filtrer efter profilbillede"
+                    className="w-full min-w-0 px-2 py-2 text-sm font-normal border border-gray-300 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="all">Alle</option>
+                    <option value="missing">Mangler profilbillede</option>
+                  </select>
+                </label>
+                <label className="min-w-0 space-y-1 text-sm font-medium text-gray-700">
+                  <span>ID-billede</span>
+                  <select
+                    value={idPhotoFilter}
+                    onChange={(e) => setIdPhotoFilter(e.target.value as 'all' | 'has_id' | 'needs_id' | 'not_required')}
+                    aria-label="Filtrer efter ID-billede status"
+                    className="w-full min-w-0 px-2 py-2 text-sm font-normal border border-gray-300 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="all">Alle</option>
+                    <option value="has_id">Har ID ({idPhotoStatusCounts.has_id})</option>
+                    <option value="needs_id">Mangler ({idPhotoStatusCounts.needs_id})</option>
+                    <option value="not_required">Ej krævet ({idPhotoStatusCounts.not_required})</option>
+                  </select>
+                </label>
+                <label className="min-w-0 space-y-1 text-sm font-medium text-gray-700">
+                  <span>Kontingenttype</span>
+                  <select
+                    value={feeCategoryFilter}
+                    onChange={(e) => setFeeCategoryFilter(e.target.value as 'all' | 'ADULT' | 'CHILD' | 'CHILD_PLUS' | 'HONORARY')}
+                    aria-label="Filtrer efter kontingenttype"
+                    className="w-full min-w-0 px-2 py-2 text-sm font-normal border border-gray-300 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="all">Alle</option>
+                    <option value="ADULT">Voksen ({feeCategoryCounts.ADULT})</option>
+                    <option value="CHILD">Barn ({feeCategoryCounts.CHILD})</option>
+                    <option value="CHILD_PLUS">Barn+ ({feeCategoryCounts.CHILD_PLUS})</option>
+                    <option value="HONORARY">Æresmedlem ({feeCategoryCounts.HONORARY})</option>
+                  </select>
+                </label>
+                <label className="min-w-0 space-y-1 text-sm font-medium text-gray-700">
+                  <span>Medlemskort</span>
+                  <select
+                    value={cardStatusFilter}
+                    onChange={(e) => setCardStatusFilter(e.target.value as 'all' | 'requested' | 'missing')}
+                    aria-label="Filtrer efter medlemskort status"
+                    className="w-full min-w-0 px-2 py-2 text-sm font-normal border border-gray-300 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="all">Alle</option>
+                    <option value="requested">Anmodet ({cardStatusCounts.requested})</option>
+                    <option value="missing">Mangler ({cardStatusCounts.missing})</option>
+                  </select>
+                </label>
+                <label className="col-span-2 min-w-0 space-y-1 text-sm font-medium text-gray-700">
+                  <span>Aktivitet</span>
+                  <select
+                    value={activityFilter}
+                    onChange={(e) => setActivityFilter(e.target.value as 'all' | 'inactive_unpaid')}
+                    aria-label="Filtrer efter aktivitet"
+                    className="w-full min-w-0 px-2 py-2 text-sm font-normal border border-gray-300 rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="all">Alle</option>
+                    <option value="inactive_unpaid">Ubetalt + intet fremmøde i 30 dage ({activityFilterCounts.inactiveUnpaid})</option>
+                  </select>
+                  <span className="block text-xs font-normal text-gray-500">Gælder aktive medlemmer, også prøvemedlemmer. Æresmedlemmer er undtaget.</span>
+                </label>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-200">
+              <p className="text-sm text-gray-600" role="status">{filteredMembers.length} medlemmer</p>
+              <details
+                ref={exportMenuRef}
+                className="relative"
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) {
+                    event.currentTarget.open = false;
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && event.currentTarget.open) {
+                    event.currentTarget.open = false;
+                    event.currentTarget.querySelector('summary')?.focus();
+                  }
+                }}
+              >
+                <summary className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 rounded-lg cursor-pointer list-none hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-blue-500 [&::-webkit-details-marker]:hidden">
+                  <Download className="w-4 h-4" aria-hidden="true" />
+                  Eksportér
+                  <ChevronDown className="w-4 h-4" aria-hidden="true" />
+                </summary>
+                <div className="absolute right-0 top-full z-20 mt-1 w-64 p-1 bg-white border border-gray-200 rounded-lg shadow-lg">
+                  <button
+                    type="button"
+                    onClick={handleMissingPhotoExport}
+                    disabled={membersWithoutPhotos.length === 0}
+                    title="Eksportér medlemmer uden profilbillede med de valgte filtre"
+                    className="w-full px-3 py-2 text-sm text-left text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-blue-500"
+                  >
+                    Eksportér uden billede ({membersWithoutPhotos.length})
+                  </button>
+                  <p className="px-3 pb-2 text-xs text-gray-500">CSV med de valgte filtre.</p>
+                </div>
+              </details>
+            </div>
           </div>
           )}
         </div>
@@ -2938,4 +3124,3 @@ function AddMemberModal({ onClose, onSave }: AddMemberModalProps) {
     </div>
   );
 }
-

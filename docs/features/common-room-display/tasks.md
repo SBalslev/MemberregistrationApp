@@ -286,6 +286,50 @@ unauthenticated client cannot change media or settings.
     and the playlist contains fresh statistics and one announcement.
     Physical TV observation was not performed.
 
+- [x] **6.21** Show krydser alongside rifle points on the Pi display.
+  - **Started:** 2026-11-23 19:35:41 UTC+1
+  - **Completed:** 2026-11-23 19:53:43 UTC+1
+  - **Duration:** 18m 2s
+  - Added shared `points/krydser` formatting to top results, daily results, and
+    personal-best highlights, including zero and points-only legacy feeds.
+  - Added optional personal-best krydser to the tablet DTO and selected the
+    highest krydser among equal-point sessions without changing record qualification.
+  - Verified 12 member-tablet feed tests, seven JavaScript rendering/timing tests,
+    and five Pi service/cache tests. Used an isolated Gradle cache because the
+    shared transform cache had corrupt metadata.
+  - **Pi deployed:** 2026-11-23 20:00:05 UTC+1
+  - Backed up and atomically replaced the installed Pi page, preserving its
+    configuration, photos, and database. Kiosk, backend, anti-blanking, and
+    watchdog services are active; the served page matches the tested source.
+  - Browser-only fixture validation rendered `198/7` and `190/0` in top results,
+    daily results, and highlights at 3840 by 2160 without viewport overflow.
+    Production data was not modified.
+  - The current air-rifle result has null krydser and correctly remains points-only.
+    Personal-best tablet deployment is blocked: no USB ADB device is connected,
+    and the member tablet refuses wireless ADB on port 5555.
+    Physical TV observation was not performed.
+
+- [x] **6.22** Investigate activity closure and protect completed activities from stale sync.
+  - **Started:** 2026-11-23 19:58:17 UTC+1
+  - **Completed:** 2026-11-23 20:52:21 UTC+1
+  - **Duration:** 54m 4s
+  - Initial tablet and Pi feeds both contained activity `test`, ruling out a stale
+    browser. The closure subsequently propagated through existing device sync.
+    Fresh feeds and the live browser now show no activity and normal daily results.
+  - Incremented activity lifecycle versions and added timestamp-first merge guards
+    to Android, laptop, and cloud source. Equal-time conflicts prefer completion;
+    later explicit restarts remain supported.
+  - Verified 15 Android tests, 42 laptop sync tests, laptop type-checking, and eight
+    PHP ordering cases. Built and signature-verified member and trainer 1.3.39 APKs
+    from a clean worktree without unrelated pending changes.
+  - Live validation confirmed eight rifle leaderboard scores render their recorded
+    krydser, including `195/6` and `173/0`, with fresh statistics.
+  - Trainer release 1.3.39 was subsequently deployed over release 1.3.38 after USB
+    attachment, with identical backed-up app-data hashes and unchanged row counts.
+    Member-tablet installation and API/laptop deployment remain pending.
+    No activity records were altered manually and no Pi-only hiding workaround
+    was added.
+
 **Exit criteria:** The pilot has no unresolved privacy or reliability blocker, and
 trainers have a tested recovery procedure.
 

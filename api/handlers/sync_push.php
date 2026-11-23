@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 // File version - increment when making changes
-const SYNC_PUSH_VERSION = '1.7.0';  // 1.7.0: Return JSON details for all sync runtime failures
+const SYNC_PUSH_VERSION = '1.7.1';  // 1.7.1: Prevent stale activity updates from reopening completed activities
 
 // ===== Helper Functions =====
 
@@ -673,8 +673,25 @@ function processActivityUpserts(array $records, string $deviceId, string $table,
             $stats['deleted']++;
             continue;
         }
-        $existing = dbQueryOne("SELECT sync_version FROM $table WHERE id = ?", [$id]);
-        if ($existing && (int)$existing['sync_version'] > (int)($record['sync_version'] ?? 1)) continue;
+        $fields = $table === 'activities' ? 'sync_version, modified_at_utc, status' : 'sync_version';
+        $existing = dbQueryOne("SELECT $fields FROM $table WHERE id = ?", [$id]);
+        if ($existing) {
+            if ($table === 'activities') {
+                $modifiedAt = toMySqlDateTime($record['modified_at_utc'] ?? null);
+                if ($modifiedAt === null) {
+                    throw new InvalidArgumentException('Activity modified_at_utc is required');
+                }
+                $incomingTime = new DateTimeImmutable($modifiedAt, new DateTimeZone('UTC'));
+                $existingTime = new DateTimeImmutable($existing['modified_at_utc'], new DateTimeZone('UTC'));
+                $sameTimeUpdate = $incomingTime == $existingTime &&
+                    !($existing['status'] === 'COMPLETED' && $record['status'] !== 'COMPLETED') &&
+                    ((int)($record['sync_version'] ?? 1) > (int)$existing['sync_version'] ||
+                        ($record['status'] === 'COMPLETED' && $existing['status'] !== 'COMPLETED'));
+                if (!($incomingTime > $existingTime || $sameTimeUpdate)) continue;
+            } elseif ((int)$existing['sync_version'] > (int)($record['sync_version'] ?? 1)) {
+                continue;
+            }
+        }
         $values = array_map(function ($key) use ($record) {
             $value = $record[$key] ?? null;
             if ($value !== null && in_array($key, ['starts_at_utc','ends_at_utc','created_at_utc','modified_at_utc','deleted_at_utc'], true)) {

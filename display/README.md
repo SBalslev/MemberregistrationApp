@@ -29,7 +29,7 @@ node --test display\tests\kiosk_rotation.test.cjs
 node --test display\tests\photo_upload.test.cjs
 ```
 
-The kiosk timing tests use Node.js's built-in test runner; Node.js is not required
+The kiosk rendering and timing tests use Node.js's built-in test runner; Node.js is not required
 on the Raspberry Pi.
 
 ## Phone photo uploads
@@ -57,6 +57,16 @@ The two pages are deployed independently: deploy
 `api/handlers/display_relay.php` to update the internet QR page, and
 `display/src/common_room_display/static/upload.html` to update the Pi fallback.
 Updating only the Pi does not change the internet upload page.
+
+## Score format
+
+Results with recorded krydser show `points/krydser`, for example `198/7` or
+`190/0`, in the top results, daily results, and personal-best highlights.
+Scores without recorded krydser stay points-only; missing values are not treated
+as zero. This also supports cached feeds from older tablet versions.
+
+Top and daily results already carry krydser in the tablet feed. Personal-best
+krydser requires the updated member-tablet app as well as the updated Pi page.
 
 ## Display timing
 

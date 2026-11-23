@@ -223,6 +223,8 @@ Discipline-specific trainer levels shall be tracked in a separate `TrainerDiscip
 - Refresh on sync completion
 
 ### FR-8: Photo Viewing
+
+- The shared detail screen uses the title "Medlemsdetaljer" for both trial and full members.
 - Display profile photo at full resolution
 - Display ID photo at full resolution (adults only)
 - Support pinch-to-zoom or tap-to-expand
@@ -535,4 +537,3 @@ interface EquipmentTransaction {
 | 0.2 | 2026-01-21 | | Resolved Q1-Q9; added TrainerDiscipline entity; updated data models |
 | 0.3 | 2026-01-21 | | Resolved Q10-Q12; reuse existing PracticeType enum; laptop admin for trainer designation; extend session popup |
 | 0.4 | 2026-01-27 | sbalslev | Added US-7 to US-11 for trial member management, photo viewing/retake, assisted check-in, and assisted practice session. Added FR-7 to FR-11. |
-

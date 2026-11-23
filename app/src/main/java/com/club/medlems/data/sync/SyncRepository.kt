@@ -18,6 +18,7 @@ import com.club.medlems.data.dao.TrainerDisciplineDao
 import com.club.medlems.data.dao.TrainerInfoDao
 import com.club.medlems.data.entity.CheckIn
 import com.club.medlems.data.entity.Activity
+import com.club.medlems.data.entity.ActivityStatus
 import com.club.medlems.data.entity.ActivityGuest
 import com.club.medlems.data.entity.GuestResult
 import com.club.medlems.data.entity.Member
@@ -173,7 +174,7 @@ class SyncRepository @Inject constructor(
                 val existing = memberDao.getByInternalId(syncMember.internalId)
                 if (existing == null || shouldAcceptMemberUpdate(existing, syncMember, payload.deviceType)) {
                     // Save photos from base64 if present
-                    val memberWithPhotos = saveMemberPhotosFromSync(syncMember)
+                    val memberWithPhotos = saveMemberPhotosFromSync(syncMember, existing)
                     memberDao.upsert(memberWithPhotos.toEntity())
                     membersProcessed++
                 } else {
@@ -216,8 +217,21 @@ class SyncRepository @Inject constructor(
         
         payload.entities.activities.forEach { syncActivity ->
             try {
-                activityDao.upsert(syncActivity.toEntity())
-                activitiesProcessed++
+                val existing = activityDao.get(syncActivity.id)
+                val isNewer = existing == null ||
+                    syncActivity.modifiedAtUtc > existing.updatedAtUtc ||
+                    (syncActivity.modifiedAtUtc == existing.updatedAtUtc &&
+                        !(existing.status == ActivityStatus.COMPLETED &&
+                            syncActivity.status != ActivityStatus.COMPLETED) &&
+                        (syncActivity.syncVersion > existing.syncVersion ||
+                            (syncActivity.status == ActivityStatus.COMPLETED &&
+                                existing.status != ActivityStatus.COMPLETED)))
+                if (isNewer) {
+                    activityDao.upsert(syncActivity.toEntity())
+                    activitiesProcessed++
+                } else {
+                    Log.d(TAG, "Ignoring stale or duplicate activity ${syncActivity.id}")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing activity ${syncActivity.id}", e)
             }
@@ -597,8 +611,7 @@ class SyncRepository @Inject constructor(
     // Extension functions to convert between entity and syncable types
     
     private fun Member.toSyncable(deviceId: String): SyncableMember {
-        // Encode photos to base64 for trial members
-        val photoBase64 = if (memberType == MemberType.TRIAL && !registrationPhotoPath.isNullOrEmpty()) {
+        val photoBase64 = if (!registrationPhotoPath.isNullOrEmpty()) {
             try {
                 val photoFile = java.io.File(registrationPhotoPath)
                 if (photoFile.exists()) {
@@ -610,8 +623,7 @@ class SyncRepository @Inject constructor(
             }
         } else null
 
-        // Encode ID photo for adult trial members
-        val idPhotoBase64 = if (memberType == MemberType.TRIAL && !idPhotoPath.isNullOrEmpty()) {
+        val idPhotoBase64 = if (!idPhotoPath.isNullOrEmpty()) {
             try {
                 val idPhotoFile = java.io.File(idPhotoPath)
                 if (idPhotoFile.exists()) {
@@ -1053,8 +1065,12 @@ class SyncRepository @Inject constructor(
      * Saves member photos from base64 encoded data received via sync.
      * Returns the SyncableMember with updated photo paths pointing to local files.
      */
-    private fun saveMemberPhotosFromSync(syncMember: SyncableMember): SyncableMember {
-        var updatedMember = syncMember
+    private fun saveMemberPhotosFromSync(syncMember: SyncableMember, existing: Member?): SyncableMember {
+        // Paths belong to the receiving device; only photo bytes can replace them.
+        var updatedMember = syncMember.copy(
+            registrationPhotoPath = existing?.registrationPhotoPath,
+            idPhotoPath = existing?.idPhotoPath
+        )
         val photosDir = java.io.File(context.filesDir, "member_photos")
         if (!photosDir.exists()) {
             photosDir.mkdirs()

@@ -813,8 +813,10 @@ class SyncOutboxManager @Inject constructor(
      * @param member The Member entity
      * @param deviceId The device ID creating/updating this member
      * @param operation INSERT for new members, UPDATE for modifications
-     * @param photoBase64 Optional base64-encoded profile photo data (for trial members)
-     * @param idPhotoBase64 Optional base64-encoded ID photo data (for adult trial members)
+     * The caller persists the new syncVersion before queuing the same version here.
+     *
+     * @param photoBase64 Optional base64-encoded profile photo data
+     * @param idPhotoBase64 Optional base64-encoded ID photo data (for adults)
      */
     suspend fun queueMember(
         member: Member,
@@ -852,7 +854,7 @@ class SyncOutboxManager @Inject constructor(
             cardRequestedAtUtc = member.cardRequestedAtUtc,
             cardRequestedByDeviceId = member.cardRequestedByDeviceId,
             deviceId = deviceId,
-            syncVersion = member.syncVersion + 1,
+            syncVersion = member.syncVersion,
             createdAtUtc = member.createdAtUtc,
             modifiedAtUtc = member.updatedAtUtc,
             syncedAtUtc = null

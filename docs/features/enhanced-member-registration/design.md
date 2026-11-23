@@ -25,6 +25,50 @@ The original design proposed using `NewMemberRegistration` entities that would b
 2. **Laptop Direct Entry**: Admin creates Member directly (can be TRIAL or FULL)
 3. **Legacy Flow** (backward compatibility): Old tablets send `NewMemberRegistration` → auto-converted to trial Member via FR-7.3
 
+### Finding members without profile photos
+
+**Last Updated:** 2026-11-11 by sbalslev
+
+The laptop member list provides a **Profilbillede** filter with **Mangler
+profilbillede**, plus an **Eksportér uden billede (antal)** button. Export works
+without selecting the photo filter and respects the current search and other
+member filters. Choose active status to limit the list to active members.
+
+A member is missing a profile photo when none of `photoThumbnail`, `photoPath`,
+or legacy `registrationPhotoPath` contains a nonblank value. ID-document photos
+do not count as profile photos. This checks stored photo references, not whether
+an existing file path still resolves to a readable image.
+
+The download is a semicolon-separated UTF-8 CSV with a BOM for Danish characters.
+It contains membership number, first name, last name, lifecycle stage, status,
+email, phone, and internal ID. No image bytes or ID-document data are exported.
+CSV fields are quoted and spreadsheet formula prefixes are escaped. Empty results
+disable export; download failures produce an error notification.
+
+### Member list filter layout
+
+**Last Updated:** 2026-11-16 by sbalslev
+
+- Search is always visible in the members view.
+- A **Filtre** button opens all seven filters in one labelled, two-column panel.
+  The button shows the number of active filters and exposes its expanded state
+  to assistive technology. The panel scrolls on shorter screens.
+- Active filters remain visible as individually removable chips even when the
+  panel is collapsed.
+- **Nulstil filtre** clears all seven filters without changing the search.
+- The result count and **Eksportér** menu sit in a separate row below the filters.
+  The menu contains the existing missing-profile-photo CSV export and explains
+  that the selected filters apply. It closes after export, on Escape, when focus
+  leaves it, or when clicking outside.
+- Filtering still applies immediately; no apply step or new default restrictions
+  are introduced. Switching to duplicates and back preserves filter selections.
+
+The layout and export regressions pass (23 tests), and the laptop production build
+passes TypeScript and Vite compilation. Browser visual inspection was attempted
+with a temporary Vite preview, but the integrated browser could not connect to it.
+The temporary server was stopped. The installed desktop application has not been
+updated.
+
 ### Implementation Status
 
 | Feature | Status |

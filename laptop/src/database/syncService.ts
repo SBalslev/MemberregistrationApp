@@ -1334,13 +1334,20 @@ async function processPracticeSession(session: SyncablePracticeSession): Promise
 }
 
 function upsertActivity(activity: SyncableActivity): void {
+  if (Number.isNaN(Date.parse(activity.modifiedAtUtc))) {
+    throw new Error('Invalid activity modification timestamp');
+  }
   execute(
     `INSERT INTO Activity (id,title,type,startsAtUtc,endsAtUtc,status,displayEnabled,createdAtUtc,updatedAtUtc,deviceId,syncVersion,syncedAtUtc)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET title=excluded.title,type=excluded.type,startsAtUtc=excluded.startsAtUtc,
        endsAtUtc=excluded.endsAtUtc,status=excluded.status,displayEnabled=excluded.displayEnabled,
        updatedAtUtc=excluded.updatedAtUtc,deviceId=excluded.deviceId,syncVersion=excluded.syncVersion,syncedAtUtc=excluded.syncedAtUtc
-     WHERE excluded.syncVersion >= Activity.syncVersion`,
+     WHERE julianday(excluded.updatedAtUtc) > julianday(Activity.updatedAtUtc)
+        OR (julianday(excluded.updatedAtUtc) = julianday(Activity.updatedAtUtc)
+          AND NOT (Activity.status = 'COMPLETED' AND excluded.status != 'COMPLETED')
+          AND (excluded.syncVersion > Activity.syncVersion
+            OR (excluded.status = 'COMPLETED' AND Activity.status != 'COMPLETED')))`,
     [activity.id, activity.title, activity.type, activity.startsAtUtc, activity.endsAtUtc ?? null,
       activity.status, activity.displayEnabled ? 1 : 0, activity.createdAtUtc, activity.modifiedAtUtc,
       activity.deviceId, activity.syncVersion, new Date().toISOString()]

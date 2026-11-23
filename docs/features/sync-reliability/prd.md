@@ -16,6 +16,19 @@ The current synchronization system has a solid architectural foundation but lack
 **Scope:** Tablet ↔ Tablet mesh sync + Laptop as occasional sync participant
 **Deferred:** TLS encryption (separate future initiative)
 
+### Trainer member updates
+
+**Last Updated:** 2026-11-09 by sbalslev
+
+- Each photo retake or membership-card request increments the stored member version and clears its sync timestamp.
+- The outbox sends that same stored version. Consecutive edits must not reuse a version.
+- A stale laptop snapshot must not overwrite a newer unsynced tablet version before the laptop pulls it.
+- Equal-version acknowledgements and newer laptop updates remain accepted under the laptop-master policy.
+- Profile and ID photo bytes are included in tablet pull responses for both trial and full members.
+- Incoming device paths are not portable. Without replacement photo bytes, tablets preserve their own photo paths.
+- Saving a captured photo must report unreadable files as errors rather than silently queueing an update without the photo.
+- The success message confirms local save and queuing, not delivery to the laptop.
+
 ---
 
 ## Network Topology

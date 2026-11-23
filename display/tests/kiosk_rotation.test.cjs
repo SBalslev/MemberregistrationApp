@@ -10,6 +10,20 @@ const kiosk = fs.readFileSync(
 );
 const script = [...kiosk.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
+function createElement() {
+  return {
+    children: [],
+    textContent: "",
+    classList: { add() {}, remove() {}, toggle() {} },
+    append(...children) { this.children.push(...children); },
+    appendChild(child) { this.children.push(child); },
+  };
+}
+
+function textContent(element) {
+  return element.textContent + element.children.map(textContent).join("");
+}
+
 async function createKiosk(announcements = []) {
   const timers = new Map();
   let timerId = 0;
@@ -20,7 +34,11 @@ async function createKiosk(announcements = []) {
     announcements,
   };
   const context = vm.createContext({
-    document: { getElementById: () => element },
+    document: {
+      getElementById: () => element,
+      createElement,
+      createTextNode: text => ({ textContent: text, children: [] }),
+    },
     fetch: async () => ({ ok: true, json: async () => playlist }),
     setTimeout(callback, delay) {
       const id = ++timerId;
@@ -101,4 +119,63 @@ test("playlist refresh does not shorten the overview interval", async () => {
   ]);
   await vm.runInContext("refresh()", display.context);
   assert.equal(display.nextDelay(), 60000);
+});
+
+test("rifle leaderboards render points/krydser including zero", async () => {
+  const display = await createKiosk();
+  for (const discipline of ["Riffel", "LuftRiffel"]) {
+    display.context.group = {
+      discipline,
+      entries: [
+        { displayName: "Anna N.", discipline, points: 198, krydser: 7 },
+        { displayName: "Bo H.", discipline, points: 190, krydser: 0 },
+      ],
+    };
+    const rendered = textContent(vm.runInContext("leaderboard(group)", display.context));
+    assert.ok(rendered.includes("198/7"));
+    assert.ok(rendered.includes("190/0"));
+  }
+});
+
+test("daily score pages preserve krydser and support older feeds", async () => {
+  const display = await createKiosk();
+  display.context.scores = [
+    { displayName: "Anna N.", discipline: "Riffel", points: 198, krydser: 7 },
+    { displayName: "Bo H.", discipline: "LuftRiffel", points: 190, krydser: 0 },
+    { displayName: "Carl H.", discipline: "Pistol", points: 180, krydser: null },
+    { displayName: "Dina K.", discipline: "Riffel", points: 175 },
+  ];
+  vm.runInContext("allScores = scores", display.context);
+  const rendered = textContent(vm.runInContext("allScoresSection()", display.context));
+  assert.ok(rendered.includes("198/7"));
+  assert.ok(rendered.includes("190/0"));
+  assert.ok(rendered.includes("180"));
+  assert.ok(rendered.includes("175"));
+  assert.ok(!rendered.includes("180/"));
+  assert.ok(!rendered.includes("175/"));
+  assert.ok(!rendered.includes("undefined"));
+  assert.ok(!rendered.includes("null"));
+});
+
+test("personal best highlights include recorded krydser", async () => {
+  const display = await createKiosk();
+  display.context.snapshot = {
+    available: true,
+    feed: {
+      activity: { title: "Klubskydning" },
+      stats: { participantCount: 1, sessionCount: 1, totalPoints: 198 },
+      topScoresByDiscipline: [],
+      recentScores: [],
+      birthdays: [],
+      personalBests: [
+        { displayName: "Anna N.", discipline: "Riffel", points: 198, krydser: 7 },
+        { displayName: "Bo H.", discipline: "LuftRiffel", points: 190, krydser: 0 },
+        { displayName: "Carl H.", discipline: "Pistol", points: 180 },
+      ],
+    },
+  };
+  const rendered = textContent(vm.runInContext("statisticsPanel(snapshot)", display.context));
+  assert.ok(rendered.includes("Anna N.: 198/7 point"));
+  assert.ok(rendered.includes("Bo H.: 190/0 point"));
+  assert.ok(rendered.includes("Carl H.: 180 point"));
 });

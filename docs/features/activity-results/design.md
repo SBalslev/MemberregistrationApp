@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 **Created:** 2026-10-03 10:55:26 UTC+2
-**Last updated:** 2026-10-03 12:35:00 UTC+2 by sbalslev
+**Last updated:** 2026-11-23 21:13:52 UTC+1 by sbalslev
 
 ## Data model
 
@@ -49,6 +49,18 @@ Activities, guests, and guest results use the existing outbox and idempotent syn
 patterns. `PracticeSession.activityId` remains optional for backward-compatible
 deserialization and existing rows.
 
+Activity creation starts at version 1. Starting, completing, editing, and
+automatically completing the previous activity persist an incremented version
+and clear the synchronization timestamp before queuing that same record.
+
+Android, laptop, and cloud activity merges compare modification timestamps
+before versions. This prevents stale active records from restoring a completed
+activity, including records whose versions were inflated by older clients.
+Equal-timestamp conflicts prefer completion; duplicates are ignored. A restart
+with a later modification timestamp is accepted. The cloud compares timestamps
+at its existing MySQL second precision, while the laptop normalizes timestamp
+representations through SQLite date functions.
+
 Guest-result removal uses the normal upsert path with `deletedAtUtc` as a removal
 marker. This makes removal idempotent and preserves it across Android peer, laptop,
 and cloud synchronization.
@@ -82,3 +94,16 @@ activity, guest, member, or synchronization entities.
 - Tablet unavailable: the Raspberry Pi continues showing its last valid cached
   feed and marks it stale.
 - Sync unavailable: local activity entry continues through the existing outbox.
+
+## Deployment verification
+
+Match the installed debug or release build type and verify the signing certificate
+before updating the existing package with `adb install -r`. Never uninstall or
+clear application data as an upgrade workaround. Preserve the package UID,
+first-install timestamp, and data directory.
+
+When Android backup access is available, validate that the backup contains the
+database and compare the backed-up database and settings before launching the
+updated application. Trainer 1.3.39 keeps database schema 21; its release deployment
+verified identical hashes for all 18 backed-up app-data files and unchanged table
+counts before startup.

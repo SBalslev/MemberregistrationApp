@@ -47,6 +47,30 @@ class DisplayFeedBuilderTest {
     }
 
     @Test
+    fun `rifle scores preserve krydser in leaderboards recent scores and personal bests`() {
+        val today = LocalDate(2026, 8, 31)
+        for (discipline in listOf(PracticeType.Riffel, PracticeType.LuftRiffel)) {
+            val sessions = listOf(
+                session("first", "member", today, discipline, 198, generatedAt.toString()).copy(krydser = 4),
+                session("best", "member", today, discipline, 198, generatedAt.toString()).copy(krydser = 7),
+                session("zero", "other", today, discipline, 190, generatedAt.toString()).copy(krydser = 0)
+            )
+            val feed = DisplayFeedBuilder.build(
+                today, generatedAt,
+                listOf(member("member", "Anna", "Nielsen"), member("other", "Bo", "Hansen")),
+                sessions
+            )
+
+            assertEquals(listOf(7, 0), feed.topScoresByDiscipline.single().entries.map { it.krydser })
+            assertEquals(listOf(4, 7, 0), feed.recentScores.map { it.krydser })
+            assertEquals(listOf(7, 0), feed.personalBests.map { it.krydser })
+            val json = Json.encodeToString(DisplayFeed.serializer(), feed)
+            assertTrue(json.contains("\"krydser\":7"))
+            assertTrue(json.contains("\"krydser\":0"))
+        }
+    }
+
+    @Test
     fun `build includes every score from the club date`() {
         val today = LocalDate(2026, 8, 31)
         val members = listOf(member("member-1", "Søren", "Balslev"))
