@@ -4,7 +4,7 @@
 **Start date:** 2026-11-23 20:14:34 UTC+1
 **End date:** 2026-11-23 20:20:51 UTC+1
 **Duration:** 6m 17s
-**Last updated:** 2026-11-23 20:56:02 UTC+1 by sbalslev
+**Last updated:** 2026-11-23 21:17:12 UTC+1 by sbalslev
 
 ## Changes
 
@@ -81,3 +81,56 @@ emulation verifies page behavior, not operating-system picker choices. HEIC/HEIF
 conversion is not implemented; JPEG, PNG, and WebP remain the supported formats.
 
 See the [design](../design.md) and [display guide](../../../../display/README.md).
+
+## Preview compatibility follow-up
+
+**Task:** 4.11
+**Started:** 2026-11-23 21:00:06 UTC+1
+**Verified and Pi deployed:** 2026-11-23 21:07:45 UTC+1
+**Duration:** 7m 39s
+
+The visitor reported that an ordinary gallery photo could not be loaded. The
+original page cleared its file inputs before starting the preview and used one
+image element's events for every selection. The page now preserves the selected
+input file and isolates decoding callbacks per selection.
+
+WebKit testing also exposed missing MIME metadata for a valid WebP file. Supported
+filename extensions now supply the upload content type only when metadata is
+missing, generic, or the nonstandard `image/jpg`. The server still validates the
+actual image format.
+
+Failed blob previews retry with a data URL. If bytes can be read but both image
+decoding attempts fail, the page explicitly offers sending without a preview.
+This avoids treating browser preview support as a substitute for authoritative
+server validation. File-reader errors remain blocking and visible.
+
+Validation passed:
+
+- `node --test display\tests\photo_upload.test.cjs`: 34 tests.
+- With `PYTHONPATH=display\src;display\tests`,
+  `python -m unittest test_display_service.UploadServiceTest test_display_service.DisplayHttpTest -v`:
+  10 tests, including rejection of non-image bytes.
+- `php -l api\handlers\display_relay.php`: passed.
+- Isolated WebKit checks in an iPhone-sized context: 16 scenarios across both
+  pages, including 12-megapixel JPEG, progressive JPEG, EXIF portrait orientation,
+  PNG, WebP, rapid replacement, readable upload bytes, forced blob failure, and
+  explicit sending when all previews are blocked.
+- Live Pi WebKit checks: eight photo/preview combinations, plus a Chromium check
+  of a 12-megapixel JPEG with missing MIME metadata. No production uploads occurred.
+- Served page SHA-256 matches the validated source:
+  `ac04c9075e7bf9ab35ecf0e5e58ad69593a1d3beea3abfda943e48cb35ba20ef`.
+- Health and all four display services remain healthy, with backend PID 1340 and
+  zero restarts.
+
+The previous page is backed up as
+`upload.html.bak-20261123-210703` beside the installed runtime page. Temporary
+WebKit tooling and generated photo fixtures were removed after testing; no
+repository dependencies were added.
+
+A synthetic 12-megapixel JPEG also decoded on the original page, so the visitor's
+exact photo-specific failure was not reproduced without their device/file.
+Physical phone validation is still needed. The internet handler was fixed in
+source but was not deployed to the website.
+
+**Visitor confirmation:** On 2026-11-23 at 21:17:12 UTC+1, the user reported that
+the gallery flow now works. Device and photo-format details were not provided.

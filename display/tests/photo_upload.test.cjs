@@ -23,13 +23,15 @@ function createPage(page, options = {}) {
   const requests = [];
   const revoked = [];
   const timers = new Map();
+  const images = [];
+  const readers = [];
   let sequence = 0;
   let replacedUrl;
   function element(id) {
     if (!elements.has(id)) {
       const handlers = new Map();
-      elements.set(id, {
-        files: [], value: "", hidden: true, disabled: id === "submit",
+      const node = {
+        files: [], hidden: true, disabled: id === "submit",
         naturalWidth: 1920, naturalHeight: 1080, textContent: "",
         addEventListener: (name, callback) => handlers.set(name, callback),
         dispatch: (name) => handlers.get(name)?.({ preventDefault() {} }),
@@ -37,7 +39,13 @@ function createPage(page, options = {}) {
         focus() { this.focused = true; },
         setAttribute(name, value) { this[name] = value; },
         removeAttribute(name) { delete this[name]; },
+      };
+      let value = "";
+      Object.defineProperty(node, "value", {
+        get: () => value,
+        set(next) { value = next; if (!next) node.files = []; },
       });
+      elements.set(id, node);
     }
     return elements.get(id);
   }
@@ -48,6 +56,13 @@ function createPage(page, options = {}) {
     URL: {
       createObjectURL: () => `blob:${++sequence}`,
       revokeObjectURL: url => revoked.push(url),
+    },
+    Image: class {
+      constructor() { images.push(this); }
+    },
+    FileReader: class {
+      constructor() { readers.push(this); }
+      readAsDataURL(file) { this.file = file; }
     },
     AbortController, TypeError,
     setTimeout(callback, delay) { timers.set(++sequence, { callback, delay }); return sequence; },
@@ -60,13 +75,24 @@ function createPage(page, options = {}) {
   const script = [...page.html.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
   vm.runInContext(script, context);
   return {
-    element, requests, revoked, timers,
+    element, requests, revoked, timers, images, readers,
     replacedUrl: () => replacedUrl,
     choose(file = { name: "klub.jpg", type: "image/jpeg", size: 1024 }, source = "photo", decode = true) {
       element(source).files = file ? [file] : [];
+      if (file) element(source).value = file.name;
       element(source).dispatch("change");
-      if (decode && !element("preview").hidden) element("preview").dispatch("load");
+      if (decode && images.at(-1)?.src) this.decode();
       return file;
+    },
+    decode(image = images.at(-1)) {
+      image.naturalWidth = element("preview").naturalWidth;
+      image.naturalHeight = element("preview").naturalHeight;
+      image.onload();
+    },
+    failDecode: (image = images.at(-1)) => image.onerror(),
+    readDataUrl(reader = readers.at(-1)) {
+      reader.result = "data:image/jpeg;base64,fixture";
+      reader.onload();
     },
     send: () => element("upload-form").dispatch("submit"),
   };
@@ -89,7 +115,7 @@ for (const page of pages) {
     assert.equal(ui.element("submit").disabled, true);
     ui.choose(undefined, "photo", false);
     assert.equal(ui.element("submit").disabled, true);
-    ui.element("preview").dispatch("load");
+    ui.decode();
     assert.equal(ui.element("submit").disabled, false);
     const url = ui.element("preview").src;
     ui.choose(null, "camera");
@@ -128,7 +154,7 @@ for (const page of pages) {
     assert.equal(ui.element("gallery").focused, true);
   });
 
-  test(`${page.name}: unsupported, empty, corrupt and over-20MP images are rejected`, async () => {
+  test(`${page.name}: unsupported, empty and over-20MP images are rejected`, async () => {
     for (const type of ["image/heic", "image/svg+xml", "image/gif", ""]) {
       const ui = createPage(page);
       ui.choose({ name: "bad", type, size: 1024 });
@@ -139,11 +165,6 @@ for (const page of pages) {
     const empty = createPage(page);
     empty.choose({ name: "empty.jpg", type: "image/jpeg", size: 0 });
     assert.equal(empty.element("submit").disabled, true);
-    const corrupt = createPage(page);
-    corrupt.choose(undefined, "photo", false);
-    corrupt.element("preview").dispatch("error");
-    assert.equal(corrupt.element("submit").disabled, true);
-    assert.equal(corrupt.element("message").className, "error");
     const huge = createPage(page);
     huge.element("preview").naturalWidth = 5001;
     huge.element("preview").naturalHeight = 4000;
@@ -254,5 +275,95 @@ for (const page of pages) {
     assert.equal(ui.element("details").textContent, "small.jpg · 2 KB");
     ui.choose({ name: "large.jpg", type: "image/jpeg", size: 2097152 });
     assert.equal(ui.element("details").textContent, "large.jpg · 2 MB");
+  });
+
+  test(`${page.name}: the selected gallery file remains attached until removal or success`, async () => {
+    const ui = createPage(page);
+    const file = ui.choose();
+    assert.equal(ui.element("photo").files[0], file);
+    assert.equal(ui.element("photo").value, file.name);
+    await ui.send();
+    assert.equal(ui.element("photo").files.length, 0);
+  });
+
+  test(`${page.name}: blob preview failure retries with a data URL`, () => {
+    const ui = createPage(page);
+    const file = ui.choose(undefined, "photo", false);
+    ui.failDecode();
+    assert.equal(ui.element("submit").disabled, true);
+    assert.equal(ui.readers.length, 1);
+    assert.equal(ui.readers[0].file, file);
+    ui.readDataUrl();
+    assert.match(ui.images[0].src, /^data:/);
+    ui.decode();
+    assert.equal(ui.element("submit").disabled, false);
+    assert.equal(ui.element("preview").hidden, false);
+    assert.match(ui.element("preview").src, /^data:/);
+  });
+
+  test(`${page.name}: old image and file-reader callbacks cannot reject a new selection`, () => {
+    const ui = createPage(page);
+    ui.choose(undefined, "photo", false);
+    const oldImage = ui.images[0];
+    ui.failDecode();
+    const oldReader = ui.readers[0];
+    ui.choose({ name: "new.jpg", type: "image/jpeg", size: 4096 });
+    const newPreview = ui.element("preview").src;
+    ui.failDecode(oldImage);
+    ui.decode(oldImage);
+    ui.readDataUrl(oldReader);
+    oldReader.onerror();
+    assert.equal(ui.element("preview").src, newPreview);
+    assert.equal(ui.element("submit").disabled, false);
+    assert.match(ui.element("details").textContent, /new.jpg/);
+    assert.equal(ui.element("message").className, "");
+  });
+
+  test(`${page.name}: unreadable gallery files display an error and cannot be sent`, async () => {
+    const ui = createPage(page);
+    ui.choose(undefined, "photo", false);
+    ui.failDecode();
+    ui.readers[0].onerror();
+    assert.equal(ui.element("message").className, "error");
+    assert.match(ui.element("message").textContent, /læses fra galleriet/);
+    await ui.send();
+    assert.equal(ui.requests.length, 0);
+  });
+
+  test(`${page.name}: unsupported browser decoding offers explicit server-validated upload`, async () => {
+    const ui = createPage(page, { fetch: async () => ({ ok: false, status: 400 }) });
+    const file = ui.choose(undefined, "photo", false);
+    ui.failDecode();
+    ui.readDataUrl();
+    ui.failDecode();
+    assert.equal(ui.element("submit").disabled, false);
+    assert.match(ui.element("submit").textContent, /uden forhåndsvisning/);
+    assert.match(ui.element("message").textContent, /kontrollerer filen/);
+    assert.equal(ui.element("preview").hidden, true);
+    await ui.send();
+    assert.equal(ui.requests[0].body, file);
+    assert.equal(ui.element("message").className, "error");
+    assert.equal(ui.element("photo").files[0], file);
+  });
+
+  test(`${page.name}: gallery files without MIME metadata use a supported filename extension`, async () => {
+    for (const [name, type, expected] of [
+      ["today.JPG", "", "image/jpeg"],
+      ["today.jpeg", "image/jpg", "image/jpeg"],
+      ["today.png", "application/octet-stream", "image/png"],
+      ["today.webp", "", "image/webp"],
+    ]) {
+      const ui = createPage(page);
+      const file = ui.choose({ name, type, size: 2048 });
+      await ui.send();
+      assert.equal(ui.requests.length, 1);
+      assert.equal(ui.requests[0].headers["Content-Type"], expected);
+      assert.equal(ui.requests[0].body, file);
+    }
+    for (const name of ["photo", "photo.heic", "photo.svg", "photo.gif", "photo.constructor"]) {
+      const ui = createPage(page);
+      ui.choose({ name, type: "", size: 2048 });
+      assert.equal(ui.element("submit").disabled, true);
+    }
   });
 }

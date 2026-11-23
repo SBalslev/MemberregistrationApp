@@ -15,7 +15,7 @@ const DISPLAY_RELAY_MAX_UPLOADS_PER_IP = 5;
 function handleDisplayRelayUploadPage(): void
 {
     header('Content-Type: text/html; charset=utf-8');
-    header("Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; form-action 'none'; base-uri 'none'");
+    header("Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; form-action 'none'; base-uri 'none'");
     header('Referrer-Policy: no-referrer');
     header('Cache-Control: no-store');
 
@@ -148,6 +148,7 @@ function handleDisplayRelayUploadPage(): void
     const message = document.getElementById("message");
     let invitationValid = /^[a-f0-9]{64}$/.test(token);
     let selectedFile = null;
+    let selectedContentType = "";
     let previewUrl = null;
     let ready = false;
     let busy = false;
@@ -160,21 +161,29 @@ function handleDisplayRelayUploadPage(): void
       submit.disabled = busy || !invitationValid || !ready;
       form.setAttribute("aria-busy", String(busy));
     }
-    function clearPhoto() {
+    function clearPhoto(resetInputs = true) {
       selectedFile = null;
+      selectedContentType = "";
       ready = false;
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       previewUrl = null;
       preview.removeAttribute("src");
       preview.hidden = details.hidden = remove.hidden = true;
-      photo.value = camera.value = "";
+      if (resetInputs) photo.value = camera.value = "";
+      submit.textContent = "2. Send til skærmen";
       updateControls();
     }
     function selectPhoto(input) {
       const file = input.files[0];
       if (!file || busy || !invitationValid) return;
-      clearPhoto();
-      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      clearPhoto(false);
+      const extensionTypes = new Map([["jpg", "image/jpeg"], ["jpeg", "image/jpeg"], ["png", "image/png"], ["webp", "image/webp"]]);
+      const contentType = ["image/jpeg", "image/png", "image/webp"].includes(file.type)
+        ? file.type
+        : (!file.type || file.type === "application/octet-stream" || file.type === "image/jpg")
+          ? extensionTypes.get(file.name.split(".").pop().toLowerCase())
+          : "";
+      if (!contentType) {
         showMessage("Vælg et JPEG-, PNG- eller WebP-foto. Gem HEIC/HEIF som JPEG først.", "error");
         return;
       }
@@ -183,35 +192,58 @@ function handleDisplayRelayUploadPage(): void
         return;
       }
       selectedFile = file;
+      selectedContentType = contentType;
       previewUrl = URL.createObjectURL(file);
-      preview.src = previewUrl;
-      preview.hidden = details.hidden = remove.hidden = false;
+      details.hidden = remove.hidden = false;
       const size = file.size < 1048576
         ? `${Math.ceil(file.size / 1024)} KB`
         : `${(file.size / 1048576).toLocaleString("da-DK", { maximumFractionDigits: 1 })} MB`;
       details.textContent = `${file.name} · ${size}`;
       showMessage("Tjek fotoet, og send det til skærmen.");
       updateControls();
+      loadPreview(file, previewUrl);
+    }
+    function loadPreview(file, url) {
+      const image = new Image();
+      const isCurrent = () => selectedFile === file && previewUrl === url;
+      let triedDataUrl = false;
+      image.onload = () => {
+        if (!isCurrent()) return;
+        if (image.naturalWidth * image.naturalHeight > 20000000) {
+          clearPhoto();
+          showMessage("Fotoet er for stort. Vælg et foto på højst 20 megapixel.", "error");
+          return;
+        }
+        preview.src = image.src;
+        preview.hidden = false;
+        ready = true;
+        updateControls();
+      };
+      image.onerror = () => {
+        if (!isCurrent()) return;
+        if (triedDataUrl) {
+          ready = true;
+          submit.textContent = "2. Send uden forhåndsvisning";
+          showMessage("Forhåndsvisningen kunne ikke vises. Du kan stadig sende fotoet; skærmen kontrollerer filen.");
+          updateControls();
+          return;
+        }
+        triedDataUrl = true;
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (isCurrent()) image.src = reader.result;
+        };
+        reader.onerror = () => {
+          if (isCurrent()) showMessage("Fotoet kunne ikke læses fra galleriet. Vælg det igen, eller prøv et andet foto.", "error");
+        };
+        reader.readAsDataURL(file);
+      };
+      image.src = url;
     }
     gallery.addEventListener("click", () => photo.click());
     takePhoto.addEventListener("click", () => camera.click());
     photo.addEventListener("change", () => selectPhoto(photo));
     camera.addEventListener("change", () => selectPhoto(camera));
-    preview.addEventListener("load", () => {
-      if (!selectedFile) return;
-      if (preview.naturalWidth * preview.naturalHeight > 20000000) {
-        clearPhoto();
-        showMessage("Fotoet er for stort. Vælg et foto på højst 20 megapixel.", "error");
-        return;
-      }
-      ready = true;
-      updateControls();
-    });
-    preview.addEventListener("error", () => {
-      if (!selectedFile) return;
-      clearPhoto();
-      showMessage("Fotoet kunne ikke åbnes. Vælg et andet JPEG-, PNG- eller WebP-foto.", "error");
-    });
     remove.addEventListener("click", () => {
       clearPhoto();
       showMessage("Fotoet er fjernet. Vælg et nyt foto.");
@@ -238,7 +270,7 @@ function handleDisplayRelayUploadPage(): void
         const response = await fetch("./photos", {
           method: "POST",
           headers: {
-            "Content-Type": file.type,
+            "Content-Type": selectedContentType,
             "X-Display-Upload-Token": token
           },
           body: file,

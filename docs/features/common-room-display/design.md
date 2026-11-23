@@ -3,7 +3,7 @@
 **Feature:** Raspberry Pi common-room display
 **Status:** Draft
 **Created:** 2026-08-31
-**Last updated:** 2026-11-23 20:20:51 UTC+1 by sbalslev
+**Last updated:** 2026-11-23 21:07:45 UTC+1 by sbalslev
 
 ## Architecture
 
@@ -131,15 +131,27 @@ Unsupported formats, empty files, and decoded images above 20 megapixels are
 rejected explicitly. The relay also checks its 10 MiB limit before decoding.
 HEIC/HEIF conversion is not added; the page explains how to export as JPEG.
 
-Sending is disabled until the preview loads. The page locks selection during
-upload, releases previews on replacement/removal/success, retains a photo after
-failure, and aborts a stalled request after 60 seconds. Expired relay invitations
-disable further uploads and instruct the visitor to scan the current QR code.
-Localized error messages handle non-JSON error responses such as HTTP 413.
+The selected gallery file stays attached to its input while decoding. Each
+selection has an isolated image decoder; callbacks from superseded selections
+cannot clear the new photo. Blob failures retry through `FileReader.readAsDataURL`.
+Missing or generic MIME metadata uses only the JPEG, PNG, and WebP filename
+extensions to choose a request content type; the server still validates actual
+image bytes.
+
+Sending is disabled while decoding. If the file can be read but neither preview
+path works, the button explicitly offers sending without a preview. The server
+remains responsible for decoded format, pixel count, and size checks in that
+case. A file-reader failure remains an explicit blocking error.
+
+The page locks selection during upload, releases previews on
+replacement/removal/success, retains a photo after failure, and aborts a stalled
+request after 60 seconds. Expired relay invitations disable further uploads and
+instruct the visitor to scan the current QR code. Localized error messages handle
+non-JSON error responses such as HTTP 413.
 
 The lightweight standalone pages remain independently deployable with no new
 dependencies. Their corresponding browser behavior is covered by one shared
-parameterized Node.js test suite. The relay CSP permits `blob:` image previews
+parameterized Node.js test suite. The relay CSP permits `blob:` and `data:` image previews
 while preserving same-origin connections, no-referrer policy, and no-store caching.
 
 The preferred QR points to a rotating HTTPS capability URL on

@@ -5,7 +5,7 @@
 **Design:** [design.md](design.md)
 **Status:** Not started
 **Created:** 2026-08-31
-**Last updated:** 2026-11-23 20:56:02 UTC+1 by sbalslev
+**Last updated:** 2026-11-23 21:17:12 UTC+1 by sbalslev
 
 ## Delivery order
 
@@ -100,6 +100,22 @@ restart, and works for 24 hours without the membership tablet.
     Browser preview checks passed at 390 pixels without uploading production media.
   - Internet QR page deployment and physical Android/iOS picker checks remain.
   - See [completion summary](completion/MOBILE-PHOTO-UPLOAD-COMPLETION-SUMMARY.md).
+- [x] **4.11** Fix mobile gallery preview compatibility and avoid unnecessary upload blocking.
+  - **Started:** 2026-11-23 21:00:06 UTC+1
+  - **Completed:** 2026-11-23 21:07:45 UTC+1
+  - **Duration:** 7m 39s
+  - Kept the selected file attached during decoding, isolated preview callbacks,
+    added a data-URL retry, and handled missing MIME metadata for supported files.
+  - Added explicit sending without a preview when the file is readable but the
+    browser decoder fails; server-side validation remains authoritative.
+    Unreadable files stay blocked.
+  - Passed 34 Node.js tests, 10 upload/HTTP Python tests, PHP syntax, 16 isolated
+    WebKit phone checks, and eight live Pi WebKit checks.
+  - **Pi deployed:** 2026-11-23 21:07:45 UTC+1
+  - Backed up and atomically replaced the local page, verified its served hash,
+    and confirmed all display services remain active without a restart.
+    Internet-page deployment remains pending. The user confirmed the gallery flow
+    works on 2026-11-23 at 21:17:12 UTC+1; device/photo-format details were not provided.
 
 **Exit criteria:** A valid phone upload joins the slideshow, invalid content is
 rejected, metadata is removed, and temporary media expires automatically.

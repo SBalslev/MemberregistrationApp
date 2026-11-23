@@ -41,6 +41,10 @@ system controls the native picker, so desktop browsers may show a file picker fo
 both choices.
 
 The selected photo is previewed before sending and can be replaced or removed.
+The page retains the gallery file while decoding and retries failed blob previews
+using a data URL. If the browser still cannot show a readable file, **Send uden
+forhåndsvisning** lets the visitor submit it for the existing server-side validation.
+Files that cannot be read from the gallery remain blocked with an explicit error.
 Failed requests retain the photo for retry. The pages support light and dark
 themes, touch-sized controls, and screen-reader status messages.
 
